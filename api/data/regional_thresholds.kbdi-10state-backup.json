@@ -1,0 +1,270 @@
+{
+  "version": "v2",
+  "fitted_at": "2026-05-07",
+  "algorithm_version": "v2-vpd-multiplicative-kbdi",
+  "drought_input": "kbdi",
+  "percentiles": {
+    "low": 50,
+    "moderate": 75,
+    "high": 90,
+    "extreme": 97
+  },
+  "global": {
+    "low": 0.3,
+    "moderate": 0.6,
+    "high": 0.8,
+    "extreme": 1.0
+  },
+  "states": {
+    "CA": {
+      "n_fires": 100,
+      "bbox": [
+        -124.1108,
+        33.3339,
+        -114.5811,
+        41.9017
+      ],
+      "centroid": [
+        37.8402,
+        -120.3519
+      ],
+      "thresholds": {
+        "low": 0.4674,
+        "moderate": 0.5718,
+        "high": 0.662,
+        "extreme": 0.7124
+      },
+      "score_summary": {
+        "min": 0.1355,
+        "median": 0.4674,
+        "mean": 0.4591,
+        "max": 0.8004
+      }
+    },
+    "OR": {
+      "n_fires": 100,
+      "bbox": [
+        -124.5144,
+        42.0529,
+        -116.5211,
+        46.1104
+      ],
+      "centroid": [
+        44.0651,
+        -120.5633
+      ],
+      "thresholds": {
+        "low": 0.4515,
+        "moderate": 0.5302,
+        "high": 0.5963,
+        "extreme": 0.6211
+      },
+      "score_summary": {
+        "min": 0.1281,
+        "median": 0.4515,
+        "mean": 0.4375,
+        "max": 0.7972
+      }
+    },
+    "WA": {
+      "n_fires": 100,
+      "bbox": [
+        -123.8945,
+        45.5942,
+        -117.0806,
+        48.9489
+      ],
+      "centroid": [
+        47.4092,
+        -119.9096
+      ],
+      "thresholds": {
+        "low": 0.3925,
+        "moderate": 0.4929,
+        "high": 0.6163,
+        "extreme": 0.6952
+      },
+      "score_summary": {
+        "min": 0.0529,
+        "median": 0.3925,
+        "mean": 0.3922,
+        "max": 0.7075
+      }
+    },
+    "ID": {
+      "n_fires": 100,
+      "bbox": [
+        -117.09,
+        41.9766,
+        -111.0644,
+        48.6458
+      ],
+      "centroid": [
+        44.6363,
+        -115.2142
+      ],
+      "thresholds": {
+        "low": 0.458,
+        "moderate": 0.581,
+        "high": 0.663,
+        "extreme": 0.7183
+      },
+      "score_summary": {
+        "min": 0.0966,
+        "median": 0.458,
+        "mean": 0.461,
+        "max": 0.8173
+      }
+    },
+    "MT": {
+      "n_fires": 100,
+      "bbox": [
+        -115.845,
+        45.0225,
+        -104.9078,
+        48.8886
+      ],
+      "centroid": [
+        46.9977,
+        -110.6386
+      ],
+      "thresholds": {
+        "low": 0.3582,
+        "moderate": 0.4516,
+        "high": 0.5516,
+        "extreme": 0.6272
+      },
+      "score_summary": {
+        "min": 0.1077,
+        "median": 0.3582,
+        "mean": 0.3515,
+        "max": 0.6512
+      }
+    },
+    "UT": {
+      "n_fires": 52,
+      "bbox": [
+        -113.9915,
+        37.0283,
+        -109.0833,
+        41.9384
+      ],
+      "centroid": [
+        39.3924,
+        -112.0069
+      ],
+      "thresholds": {
+        "low": 0.554,
+        "moderate": 0.6195,
+        "high": 0.685,
+        "extreme": 0.7477
+      },
+      "score_summary": {
+        "min": 0.1979,
+        "median": 0.554,
+        "mean": 0.5348,
+        "max": 0.7837
+      }
+    },
+    "AZ": {
+      "n_fires": 100,
+      "bbox": [
+        -114.7456,
+        31.3573,
+        -109.0867,
+        36.5333
+      ],
+      "centroid": [
+        33.744,
+        -111.3741
+      ],
+      "thresholds": {
+        "low": 0.5512,
+        "moderate": 0.6521,
+        "high": 0.7282,
+        "extreme": 0.7561
+      },
+      "score_summary": {
+        "min": 0.1134,
+        "median": 0.5512,
+        "mean": 0.5324,
+        "max": 0.8057
+      }
+    },
+    "NM": {
+      "n_fires": 100,
+      "bbox": [
+        -108.9745,
+        31.5106,
+        -103.1453,
+        36.9382
+      ],
+      "centroid": [
+        34.4761,
+        -106.0238
+      ],
+      "thresholds": {
+        "low": 0.396,
+        "moderate": 0.5592,
+        "high": 0.6867,
+        "extreme": 0.7706
+      },
+      "score_summary": {
+        "min": 0.0599,
+        "median": 0.396,
+        "mean": 0.4261,
+        "max": 0.8479
+      }
+    },
+    "CO": {
+      "n_fires": 100,
+      "bbox": [
+        -109.0258,
+        36.9986,
+        -102.1635,
+        40.9364
+      ],
+      "centroid": [
+        38.8279,
+        -106.4586
+      ],
+      "thresholds": {
+        "low": 0.433,
+        "moderate": 0.5527,
+        "high": 0.6272,
+        "extreme": 0.6784
+      },
+      "score_summary": {
+        "min": 0.1,
+        "median": 0.433,
+        "mean": 0.4134,
+        "max": 0.7619
+      }
+    },
+    "TX": {
+      "n_fires": 86,
+      "bbox": [
+        -104.4519,
+        26.9425,
+        -93.7466,
+        36.2473
+      ],
+      "centroid": [
+        32.0297,
+        -98.6704
+      ],
+      "thresholds": {
+        "low": 0.3676,
+        "moderate": 0.5828,
+        "high": 0.6666,
+        "extreme": 0.7608
+      },
+      "score_summary": {
+        "min": 0.055,
+        "median": 0.3676,
+        "mean": 0.3876,
+        "max": 0.896
+      }
+    }
+  }
+}
