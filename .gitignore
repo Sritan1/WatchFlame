@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Node / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.log
+.DS_Store
+
+# Local env
+app/.env
+app/.env.local
+
+# Data (raw downloads + caches — all too large for git; >100 MB hits GitHub's hard limit)
+data/raw/
+data/*.csv
+data/*.zip
+data/*.sqlite
+data/*.db
+data/*.json
+data/*.log
+!data/.gitkeep
+
+# Runtime caches (NDVI per-location JSON files, etc.)
+api/cache/
+
+# OS / editors
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Claude Code runtime artifacts (lock files, local-only settings)
+.claude/*.lock
+.claude/settings.local.json
+
+# Build outputs
+*.tsbuildinfo
+ios/
+android/
