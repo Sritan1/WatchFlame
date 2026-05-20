@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Local env
+web/.env
+web/.env.local
+
+# Datasets and caches, big and rebuildable from the scripts. Some are over
+# GitHub's 100 MB limit. Only the README is tracked.
+data/*
+!data/README.md
+
+# Runtime caches, NDVI JSON per location
+api/cache/
+
+# OS / editors
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Build outputs
+*.tsbuildinfo
+
+# Microsoft Office temp/lock files
+~$*
+
+# New one-off probes. _probe_openmeteo.py predates this rule and is still tracked.
+scripts/_probe_*.py
+
+# Regenerable chart copies. The published ones live in docs/.
+notebooks/figures/
