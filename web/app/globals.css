@@ -1,0 +1,273 @@
+@import "tailwindcss";
+
+/* Theme tokens — exposed to Tailwind v4 utility generation.
+   Tailwind picks up --color-* / --font-* / --radius-* and emits matching
+   bg-*, text-*, font-*, rounded-* utilities. */
+@theme inline {
+  --color-ember-bg:          #0B0E12;
+  --color-ember-surface:     #10141B;
+  --color-ember-surface-2:   #161B24;
+  --color-ember-text:        #F2F4F7;
+  --color-ember-text-dim:    rgba(255, 255, 255, 0.62);
+  --color-ember-text-mute:   rgba(255, 255, 255, 0.42);
+  --color-ember-line:        rgba(255, 255, 255, 0.07);
+  --color-ember-line-strong: rgba(255, 255, 255, 0.14);
+
+  --color-risk-low-500: #3FB68B;
+  --color-risk-mod-500: #E8B339;
+  --color-risk-high-500: #FF7A3A;
+  --color-risk-ext-500: #F04438;
+
+  --font-display: var(--font-inter-tight), -apple-system, system-ui, sans-serif;
+  --font-body:    var(--font-inter), -apple-system, system-ui, sans-serif;
+  --font-mono:    var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  --radius-ember:    12px;
+  --radius-ember-lg: 16px;
+}
+
+html, body, #root {
+  background: var(--color-ember-bg);
+  color: var(--color-ember-text);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  overflow-x: hidden;
+}
+
+/* Always-dark scrollbar — match the slate aesthetic everywhere. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.14); background-clip: padding-box; }
+
+.ember-scroll::-webkit-scrollbar { display: none; }
+.ember-scroll { scrollbar-width: none; }
+
+/* ───── Keyframes (ported verbatim from interactions.jsx + primitives.jsx) ───── */
+@keyframes ember-pulse {
+  0%   { transform: scale(0.8); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes ember-pulse-2 {
+  0%   { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes ember-flicker {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+@keyframes ember-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes skeleton-pulse {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
+@keyframes px-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+@keyframes px-rotate { to { transform: rotate(360deg); } }
+@keyframes px-slow-rot     { to { transform: rotate(360deg); } }
+@keyframes px-slow-rot-rev { to { transform: rotate(-360deg); } }
+@keyframes px-spring-in {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.96); filter: blur(4px); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes px-bar-rise {
+  0%   { transform: scaleY(0); opacity: 0; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+@keyframes px-bar-shimmer {
+  0%, 100% { box-shadow: 0 0 10px var(--bar-color, transparent), inset 0 1px 0 rgba(255,255,255,0.4); }
+  50%      { box-shadow: 0 0 18px var(--bar-color, transparent), inset 0 1px 0 rgba(255,255,255,0.55); }
+}
+@keyframes px-word-in {
+  from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@keyframes px-ripple {
+  0%   { transform: scale(0); opacity: 0.5; }
+  80%  { opacity: 0.15; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+.ember-fade-up { animation: ember-fade-up 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.px-word       { display: inline-block; animation: px-word-in 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.px-ring       { animation: px-slow-rot 28s linear infinite; }
+.px-ring-rev   { animation: px-slow-rot-rev 40s linear infinite; }
+.px-spring-in  { animation: px-spring-in 0.7s cubic-bezier(0.2, 0.7, 0.3, 1.2) both; }
+.px-bar        { transform-origin: center bottom; animation: px-bar-rise 0.6s cubic-bezier(0.3, 1.2, 0.4, 1) both; }
+.px-bar-active { animation: px-bar-shimmer 2.4s ease-in-out infinite; }
+
+/* Containment-bar traveling sheen */
+.px-sweep {
+  position: absolute; top: 0; left: 0; height: 100%; width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  animation: px-sweep 2.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  animation-delay: 1s;
+  pointer-events: none;
+}
+
+/* TiltCard shine — radial highlight that follows --mx/--my set by the JS handler */
+.tilt-card.with-shine::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle 220px at var(--mx, 50%) var(--my, 50%),
+              rgba(255,255,255,0.08), transparent 60%);
+  pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
+  mix-blend-mode: overlay;
+}
+.tilt-card:hover.with-shine::before { opacity: 1; }
+.tilt-card.with-shine::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle 280px at var(--mx, 50%) var(--my, 50%),
+              rgba(255,255,255,0.18), transparent 60%);
+  pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;       mask-composite: exclude;
+  padding: 0.5px;
+}
+.tilt-card:hover.with-shine::after { opacity: 1; }
+
+/* Premium button — mouse-tracked highlight + sheen for primary variant */
+.px-btn {
+  position: relative; isolation: isolate;
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1),
+              box-shadow 0.3s ease, background 0.3s ease;
+  will-change: transform;
+  overflow: hidden;
+}
+.px-btn::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle 180px at var(--mx, 50%) var(--my, 50%),
+              rgba(255, 255, 255, 0.22), transparent 60%);
+  opacity: 0; transition: opacity 0.3s ease;
+  pointer-events: none; z-index: 0;
+}
+.px-btn:hover::before { opacity: 1; }
+.px-btn:hover { transform: translateY(-1px) scale(1.005); }
+.px-btn:active { transform: translateY(0px) scale(0.985); transition-duration: 0.08s; }
+.px-btn > * { position: relative; z-index: 1; }
+.px-btn .px-icon { transition: transform 0.32s cubic-bezier(0.2, 0.7, 0.3, 1); }
+.px-btn:hover .px-icon { transform: translateX(2px); }
+.px-btn.px-primary::after {
+  content: ""; position: absolute; inset: -50%; border-radius: 50%;
+  background: conic-gradient(from 0deg,
+              transparent 0deg,
+              rgba(255,255,255,0.18) 30deg,
+              transparent 90deg,
+              transparent 360deg);
+  animation: px-rotate 8s linear infinite;
+  opacity: 0.55;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  z-index: 0;
+}
+
+/* Sidebar nav hover (rule lives here so the Sidebar Link inline-style can be terse) */
+.web-nav-item { text-decoration: none; }
+.web-nav-item:hover { background: rgba(255, 255, 255, 0.04) !important; color: var(--color-ember-text) !important; }
+.web-nav-item[data-active="true"]:hover {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04)) !important;
+}
+.web-cmdk:hover { background: rgba(255, 255, 255, 0.06) !important; }
+
+/* ───── Leaflet map markers (rendered via L.divIcon HTML) ───── */
+.fire-marker-wrapper, .user-marker-wrapper { background: transparent !important; border: none !important; }
+
+.fire-marker {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fire-marker__pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  opacity: 0.42;
+  animation: ember-pulse-marker 2s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+  pointer-events: none;
+}
+.fire-marker__core {
+  position: relative;
+  border-radius: 50%;
+  transition: all 0.25s ease;
+}
+.fire-marker[data-selected="true"] .fire-marker__core {
+  transform: scale(1.05);
+}
+
+@keyframes ember-pulse-marker {
+  0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+}
+
+.user-marker {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-marker__pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #3B82F6;
+  opacity: 0.16;
+  animation: ember-pulse-marker 4s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+  pointer-events: none;
+}
+.user-marker__core {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3B82F6;
+  border: 3px solid #fff;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.8);
+}
+
+/* Leaflet attribution + zoom controls: match dark theme */
+.leaflet-control-attribution {
+  background: rgba(13, 16, 18, 0.78) !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  font-family: var(--font-mono);
+  font-size: 9.5px !important;
+  letter-spacing: 0.04em;
+  border-radius: 6px 0 0 0;
+  border: 0.5px solid rgba(255, 255, 255, 0.07);
+  border-bottom: none;
+  border-right: none;
+  padding: 3px 8px !important;
+}
+.leaflet-control-attribution a { color: rgba(255, 255, 255, 0.62) !important; }
+/* `.leaflet-pane` uses z-index 200-700 *inside* the container. Without an
+ * explicit stacking context the container's `position: relative` doesn't trap
+ * those, and leaflet panes punch through portal-rendered modals (which sit at
+ * zIndex 100). `isolation: isolate` forces a new stacking context. */
+.leaflet-container { font-family: var(--font-body); isolation: isolate; }

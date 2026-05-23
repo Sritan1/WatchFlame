@@ -1,0 +1,154 @@
+'use client';
+
+// Generic centered dialog. Click backdrop or press Escape to close.
+// Renders via React portal into document.body so z-index ordering is correct
+// regardless of where the trigger lives. Constrained max-width for readability.
+
+import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+
+import { Icon } from '@/components/Icon';
+import { useAesthetic } from '@/lib/aesthetic';
+import { hexToRgb } from '@/lib/theme';
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  eyebrow,
+  children,
+  maxWidth = 560,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  eyebrow?: string;
+  children: ReactNode;
+  maxWidth?: number;
+}) {
+  const { ae } = useAesthetic();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!open || typeof document === 'undefined') return null;
+
+  const bgRgb = hexToRgb(ae.bg);
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `rgba(${bgRgb}, 0.78)`,
+        backdropFilter: 'blur(12px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(140%)',
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth,
+          maxHeight: 'calc(100vh - 48px)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
+          border: ae.cardBorder,
+          borderRadius: ae.radiusLg,
+          boxShadow: '0 30px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+        }}
+      >
+        {/* Header */}
+        {(title || eyebrow) ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px 24px',
+              borderBottom: `0.5px solid ${ae.line}`,
+              gap: 16,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              {eyebrow ? (
+                <div
+                  style={{
+                    fontFamily: ae.fontMono,
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    color: ae.textMute,
+                    textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                    marginBottom: title ? 6 : 0,
+                  }}
+                >
+                  {eyebrow}
+                </div>
+              ) : null}
+              {title ? (
+                <h2
+                  style={{
+                    margin: 0,
+                    fontFamily: ae.fontDisplay,
+                    fontSize: 20,
+                    fontWeight: ae.titleWeight,
+                    letterSpacing: ae.titleTracking,
+                    color: ae.text,
+                  }}
+                >
+                  {title}
+                </h2>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                border: `0.5px solid ${ae.line}`,
+                background: 'rgba(255, 255, 255, 0.04)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: ae.textDim,
+              }}
+            >
+              <Icon name="plus" size={16} color={ae.textDim} style={{ transform: 'rotate(45deg)' }} />
+            </button>
+          </div>
+        ) : null}
+
+        {/* Body */}
+        <div style={{ overflowY: 'auto', padding: 24 }}>{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
