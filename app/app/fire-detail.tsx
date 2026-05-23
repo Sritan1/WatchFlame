@@ -145,7 +145,14 @@ export default function FireDetailScreen() {
               <View className="mt-5 gap-3">
                 <View className="flex-row gap-3">
                   <View className="flex-1">
-                    <RiskTile level={risk.data?.danger_level} />
+                    <RiskTile
+                      level={risk.data?.danger_level}
+                      loading={
+                        weather.isLoading ||
+                        risk.isLoading ||
+                        (weather.data != null && risk.data == null)
+                      }
+                    />
                   </View>
                   <StatCard
                     label="Distance"
@@ -161,6 +168,11 @@ export default function FireDetailScreen() {
                     }
                   />
                 </View>
+                {/* New: Threat to You — instant heuristic (distance + size). */}
+                <RiskTile
+                  label="Threat to You"
+                  level={threatLevelFor(distFromMe, matched?.acres)}
+                />
                 <View className="flex-row gap-3">
                   <StatCard
                     label="Brightness"
@@ -404,14 +416,28 @@ function Header() {
   );
 }
 
-function RiskTile({ level }: { level: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME' | undefined }) {
+function RiskTile({
+  label = 'Risk Level',
+  level,
+  loading = false,
+}: {
+  /** Tile heading. Defaults to "Risk Level" so existing call sites stay valid. */
+  label?: string;
+  level: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME' | undefined;
+  /** True while /weather or /risk is still in flight. Cold fetches (Open-Meteo
+   *  + KBDI history) can take several seconds; without a placeholder the tile
+   *  shows a bare "—" that looks indistinguishable from "no data". */
+  loading?: boolean;
+}) {
   return (
     <View className="rounded-xl bg-ink-800 p-4">
       <Text className="text-[10px] font-semibold uppercase tracking-[2px] text-chalk-400">
-        Risk Level
+        {label}
       </Text>
       <View className="mt-2">
-        {level ? (
+        {loading ? (
+          <Skeleton width={140} height={28} rounded="full" />
+        ) : level ? (
           <DangerPill level={level} />
         ) : (
           <Text className="text-2xl font-bold text-chalk-400">—</Text>
@@ -442,4 +468,22 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** Distance + size heuristic for "Threat to You" — answers
+ *  "how scary is this fire to me", in contrast to RiskTile's "Risk Level"
+ *  which is the fire weather (VPD/wind/drought) at the fire's location.
+ *  Synchronous (no network) so it resolves instantly even while the
+ *  fire-weather pill is still fetching. Identical breakpoints to the web's
+ *  severityOf in components/status/ClosestFiresList.tsx. */
+function threatLevelFor(
+  distMi: number | null,
+  acres: number | null | undefined,
+): 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME' | undefined {
+  if (distMi == null) return undefined;
+  const a = acres ?? 0;
+  if (distMi < 6 || a > 1000) return 'EXTREME';
+  if (distMi < 12 || a > 300) return 'HIGH';
+  if (distMi < 25 || a > 50) return 'MODERATE';
+  return 'LOW';
 }
