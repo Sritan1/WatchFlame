@@ -52,3 +52,26 @@ Thumbs.db
 *.tsbuildinfo
 ios/
 android/
+
+# Reference scaffolding from the design phase — kept locally for inspiration
+# but not part of the shipped app. Do not push.
+home.jsx
+interactions.jsx
+premium.jsx
+primitives.jsx
+screens.jsx
+tokens.jsx
+web-map.jsx
+web-risk.jsx
+web-safety.jsx
+web-shell.jsx
+web-status.jsx
+background-waves.jsx
+styleUI.md
+handoff.md
+Ember.html
+Risk Screen 1.png
+Risk Screen 2.png
+Risk Screen 3.png
+Safety screen 1.png
+Safety screen 2.png
