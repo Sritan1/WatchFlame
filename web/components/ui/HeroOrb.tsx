@@ -2,9 +2,10 @@
 
 // The cinematic instrument-panel orb that anchors the Status hero.
 // Composition (radii from interactions.jsx HeroOrb):
-//   - outer tick ring at r=96 (60 ticks, every 5th elongated)
-//   - risk arc at r=86 with linear-gradient stroke, fills by level
-//     (low: 0.18 of circle, moderate: 0.45, high: 0.72, extreme: 0.95)
+//   - outer tick ring at r=96 (60 ticks, every 6th elongated → 10 long ticks)
+//   - risk arc at r=86 with linear-gradient stroke; arc LENGTH = the actual
+//     numeric risk score (0–1), regionally re-mapped when thresholds are
+//     supplied so the dial agrees with the regional level pill
 //   - counter-rotating dashed ring at r=72 (slow spin)
 //   - scanner sweep when alarming (high/extreme), spinning at 6s
 //   - glassy core (86px) with icon — shield when calm, flame when alarming
@@ -12,6 +13,7 @@
 import { Icon } from '@/components/Icon';
 import { CursorParallax } from '@/components/ui/CursorParallax';
 import { useAesthetic } from '@/lib/aesthetic';
+import type { RegionalThresholds } from '@/lib/api';
 import { getRisk, type RiskLevel } from '@/lib/theme';
 
 const SIZE = 220;
@@ -19,23 +21,56 @@ const RING_R = 96;
 const ARC_R = 86;
 const DASH_R = 72;
 const SCAN_R = 80;
+// Floor so the endpoint dot is always visible even when score is tiny.
+const ARC_MIN_FRACTION = 0.04;
 
 // Round trig outputs so SSR and client produce the same SVG attribute strings
 // (V8 in Node and browsers stringify some floats differently — pure cosmetic
 // hydration mismatch otherwise).
 const round = (n: number): number => Math.round(n * 1000) / 1000;
-const RATIO: Record<RiskLevel, number> = {
+// Fallback arc fractions for callers that only know the LEVEL, not the score
+// (e.g. transitional / loading state where /risk hasn't returned yet).
+const FALLBACK_RATIO: Record<RiskLevel, number> = {
   low: 0.18,
   moderate: 0.45,
   high: 0.72,
   extreme: 0.95,
 };
 
+/** Map an absolute 0–1 risk score to the arc fraction the dial should show.
+ *  Ported from mobile (app/components/ui/HeroOrb.tsx scoreToFraction):
+ *  piecewise linear so each bucket boundary lands at a meaningful visual
+ *  position when regional thresholds are present. Without thresholds, raw
+ *  score is the fraction. */
+function scoreToFraction(score: number, t: RegionalThresholds | null | undefined): number {
+  if (!t) return score;
+  if (!(t.low > 0 && t.moderate > t.low && t.extreme > t.moderate && t.score_max >= t.extreme)) {
+    return score;
+  }
+  if (score <= 0) return 0;
+  if (score < t.low) return (score / t.low) * 0.50;
+  if (score < t.moderate) return 0.50 + ((score - t.low) / (t.moderate - t.low)) * 0.25;
+  if (score < t.extreme) return 0.75 + ((score - t.moderate) / (t.extreme - t.moderate)) * 0.22;
+  if (t.score_max <= t.extreme) return 1.0;
+  const past = (score - t.extreme) / (t.score_max - t.extreme);
+  return Math.min(1.0, 0.97 + past * 0.03);
+}
+
 export function HeroOrb({
   risk,
+  score,
+  thresholds,
   pulseSpeed = 70,
 }: {
   risk: RiskLevel;
+  /** Actual numeric risk score 0–1. When provided, drives the arc fill so
+   *  the dial reflects the real percentile, not just the bucket. Falls back
+   *  to FALLBACK_RATIO[risk] when omitted (transitional loading state). */
+  score?: number | null;
+  /** Per-state cutoffs from /risk. When present, the arc maps regionally so
+   *  it agrees with the regional-level pill (e.g. Florida's 97th percentile
+   *  pegs the dial at 97% even though absolute score is lower). */
+  thresholds?: RegionalThresholds | null;
   pulseSpeed?: number;
 }) {
   const { ae, accent } = useAesthetic();
@@ -46,14 +81,22 @@ export function HeroOrb({
   const cx = SIZE / 2;
   const cy = SIZE / 2;
   const arcLen = 2 * Math.PI * ARC_R;
-  const ratio = RATIO[risk];
+  // Arc fraction — derived from real score when available (with regional
+  // re-mapping), else falls back to the per-level constant so the orb still
+  // has visual presence during the brief load window before /risk lands.
+  const ratio =
+    score != null
+      ? Math.max(ARC_MIN_FRACTION, Math.min(1, scoreToFraction(score, thresholds)))
+      : FALLBACK_RATIO[risk];
 
-  // Outer tick ring (60 ticks)
+  // Outer tick ring — 60 ticks total, every 6th elongated, yielding 10
+  // prominent ticks at 36° intervals. Matches mobile (was every 5th = 12
+  // long ticks, which read as a clock face). Total density unchanged.
   const ticks: React.ReactElement[] = [];
   const N = 60;
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2 - Math.PI / 2;
-    const long = i % 5 === 0;
+    const long = i % 6 === 0;
     const r1 = RING_R + (long ? 2 : 4);
     const r2 = RING_R + (long ? 10 : 7);
     ticks.push(

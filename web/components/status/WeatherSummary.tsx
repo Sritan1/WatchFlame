@@ -50,6 +50,7 @@ export function WeatherSummary({ w }: { w: WeatherResponse | undefined }) {
 
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         background: ae.surface,
         border: ae.cardBorder,

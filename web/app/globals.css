@@ -18,9 +18,9 @@
   --color-risk-high-500: #FF7A3A;
   --color-risk-ext-500: #F04438;
 
-  --font-display: var(--font-inter-tight), -apple-system, system-ui, sans-serif;
-  --font-body:    var(--font-inter), -apple-system, system-ui, sans-serif;
-  --font-mono:    var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+  --font-display: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+  --font-body:    var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+  --font-mono:    var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
   --radius-ember:    12px;
   --radius-ember-lg: 16px;
@@ -35,6 +35,99 @@ body {
   margin: 0;
   font-family: var(--font-body);
   overflow-x: hidden;
+}
+
+/* Apply tabular-nums to every numeric readout so digit widths stay locked
+ * during animation/refresh. Toggleable per-element via class="ember-num". */
+.ember-num { font-variant-numeric: tabular-nums; }
+
+/* Custom focus ring — :focus-visible only (mouse clicks don't trigger it).
+ * 2px ring offset from the element, in a faded white so it works on any
+ * surface tone. Buttons / links / inputs all opt-in via this global rule. */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+/* Disabled buttons get the not-allowed cursor for accessibility. */
+button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
+
+/* ───── Card chrome system ─────────────────────────────────────────────────
+ * `.ember-card` applies the always-on "lit from above" inset highlight + a
+ * 200ms transition. `.ember-card-hover` adds the hover lift. Hero-level cards
+ * also render a top accent stripe + soft corner glow via two pseudo-elements
+ * — opt in with `.ember-hero-card` and set --card-accent on the parent. */
+.ember-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
+              border-radius 0.25s ease,
+              border-color 0.25s ease,
+              background-color 0.25s ease;
+}
+.ember-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
+              0 12px 28px rgba(0, 0, 0, 0.35);
+}
+.ember-hero-card {
+  position: relative;
+  overflow: hidden;
+}
+.ember-hero-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--card-accent, rgba(255, 255, 255, 0.4)) 50%,
+    transparent 100%
+  );
+  box-shadow: 0 0 14px var(--card-accent, rgba(255, 255, 255, 0.4));
+  pointer-events: none;
+  z-index: 1;
+}
+.ember-hero-card::after {
+  content: '';
+  position: absolute;
+  top: -80px; right: -80px;
+  width: 240px; height: 240px;
+  background: radial-gradient(
+    circle at center,
+    var(--card-accent-soft, rgba(255, 255, 255, 0.10)) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.ember-hero-card > * { position: relative; z-index: 1; }
+
+/* SVG-noise grain overlay for hero bands. Apply to a positioned container. */
+.ember-grain {
+  position: relative;
+}
+.ember-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+  z-index: 2;
+}
+
+/* Gradient hairline divider — replace flat ae.line for editorial sections. */
+.ember-hairline {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 50%,
+    transparent 100%
+  );
 }
 
 /* Always-dark scrollbar — match the slate aesthetic everywhere. */
@@ -69,8 +162,28 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes skeleton-pulse {
-  from { opacity: 0.55; }
-  to   { opacity: 1; }
+  /* Two-shade tonal pulse reads more refined than a flat opacity fade. */
+  0%, 100% { background-color: #24242a; }
+  50%      { background-color: #34343c; }
+}
+@keyframes ember-route-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ember-route-fade {
+  animation: ember-route-fade-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+/* Staggered grid entrance — apply `ember-grid-stagger` to a container and the
+ * first N children fade up with an 80ms cascade. Caps at 6 children. */
+.ember-grid-stagger > *:nth-child(1) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 0ms both; }
+.ember-grid-stagger > *:nth-child(2) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 80ms both; }
+.ember-grid-stagger > *:nth-child(3) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 160ms both; }
+.ember-grid-stagger > *:nth-child(4) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 240ms both; }
+.ember-grid-stagger > *:nth-child(5) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 320ms both; }
+.ember-grid-stagger > *:nth-child(6) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 400ms both; }
+@keyframes ember-pin-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--pin-glow, 255, 255, 255), 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(var(--pin-glow, 255, 255, 255), 0.10); }
 }
 @keyframes px-sweep {
   0%   { transform: translateX(-100%); }
@@ -175,13 +288,56 @@ body {
   z-index: 0;
 }
 
-/* Sidebar nav hover (rule lives here so the Sidebar Link inline-style can be terse) */
-.web-nav-item { text-decoration: none; }
-.web-nav-item:hover { background: rgba(255, 255, 255, 0.04) !important; color: var(--color-ember-text) !important; }
-.web-nav-item[data-active="true"]:hover {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04)) !important;
+/* ───── Floating glass shell — sidebar + topbar interactions ─────
+ * Hover/active visuals are rendered as separate absolutely-positioned layers
+ * inside the rail (magnetic pill, hover ghost, ambient glow). The buttons
+ * themselves stay background-transparent so those layers read cleanly. */
+.web-nav-item { text-decoration: none; transition: transform .18s ease, color .18s ease; }
+.web-nav-item:hover .web-nav-stone { transform: translateY(-1px); }
+.web-nav-item:active { transform: scale(0.985); }
+
+.web-region {
+  transition: background .2s ease, border-color .2s ease, transform .15s ease;
 }
-.web-cmdk:hover { background: rgba(255, 255, 255, 0.06) !important; }
+.web-region:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.03)) !important;
+  border-color: rgba(255,255,255,0.14) !important;
+}
+.web-region:active { transform: scale(0.985); }
+
+.web-icon-btn { transition: background .15s ease, transform .15s ease, border-color .15s ease; }
+.web-icon-btn:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.025)) !important;
+  transform: translateY(-1px);
+}
+.web-icon-btn:active { transform: translateY(0) scale(0.96); }
+
+/* Soft "ping" expansion — used by Live indicator + Feeds Live dot. */
+@keyframes web-ping {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  80%  { transform: scale(2.2); opacity: 0;   }
+  100% { transform: scale(2.2); opacity: 0;   }
+}
+
+/* Settings — aesthetic option cards lift on hover. */
+.settings-aesthetic-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+.settings-aesthetic-card[data-selected="true"]:hover { transform: translateY(-1px); }
+.settings-aesthetic-card:active { transform: translateY(0) scale(0.995); }
+
+/* Fire Detail — premium glass panels + back chip + CTA hover states. */
+.inc-back { transition: background .18s ease, color .18s ease, border-color .18s ease; }
+.inc-back:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.inc-panel { transition: border-color .25s ease, box-shadow .25s ease; }
+.inc-panel:hover { border-color: rgba(255, 255, 255, 0.14); }
+.inc-open-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
+.inc-open-btn:active { transform: translateY(0) scale(0.992); }
 
 /* ───── Leaflet map markers (rendered via L.divIcon HTML) ───── */
 .fire-marker-wrapper, .user-marker-wrapper { background: transparent !important; border: none !important; }
@@ -271,3 +427,25 @@ body {
  * those, and leaflet panes punch through portal-rendered modals (which sit at
  * zIndex 100). `isolation: isolate` forces a new stacking context. */
 .leaflet-container { font-family: var(--font-body); isolation: isolate; }
+/* Tile fade-in — leaflet adds `.leaflet-tile-loaded` once the request resolves.
+ * Fading from 0 → 1 lets tiles bloom in rather than snap. */
+.leaflet-tile { opacity: 0; transition: opacity 0.3s ease; }
+.leaflet-tile-loaded { opacity: 1; }
+
+/* Hover state for SVG-based markers (FIRMS dots, incident circles). 1.15×
+ * scale around the marker's center, plus a brightness bump. transform-box
+ * fill-box anchors the scale to the SVG element's bounding box. */
+.leaflet-interactive {
+  transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1), filter 0.14s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.leaflet-interactive:hover {
+  transform: scale(1.18);
+  filter: brightness(1.15);
+  cursor: pointer;
+}
+/* DivIcon-based incident markers (HTML inside a positioned wrapper) need a
+ * different hover target — the wrapper is .fire-marker-wrapper. */
+.fire-marker-wrapper { transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1); }
+.fire-marker-wrapper:hover { transform: scale(1.12); cursor: pointer; }

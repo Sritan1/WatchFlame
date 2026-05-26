@@ -56,24 +56,18 @@ export function ActiveIncidentCard({
       </SectionEyebrow>
 
       <div
+        className="ember-card ember-hero-card"
         style={{
-          position: 'relative',
-          overflow: 'hidden',
           background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
           border: `0.5px solid rgba(${r.glow}, 0.25)`,
           borderRadius: ae.radiusLg,
-          boxShadow: `0 30px 80px rgba(${r.glow}, 0.10), inset 0 1px 0 rgba(255,255,255,0.04)`,
+          boxShadow: `0 30px 80px rgba(${r.glow}, 0.10)`,
+          // Drive the .ember-hero-card pseudo-elements (top stripe + corner
+          // halo) from the risk accent so they switch when severity changes.
+          ['--card-accent' as string]: r.color,
+          ['--card-accent-soft' as string]: `rgba(${r.glow}, 0.18)`,
         }}
       >
-        {/* Top stripe */}
-        <div
-          style={{
-            height: 3,
-            background: `linear-gradient(90deg, transparent, ${r.color}, transparent)`,
-            boxShadow: `0 0 14px ${r.color}`,
-          }}
-        />
-
         <div style={{ padding: 28 }}>
           {/* Header row */}
           <div
@@ -91,15 +85,16 @@ export function ActiveIncidentCard({
                 style={{
                   margin: '6px 0 0',
                   fontFamily: ae.fontDisplay,
-                  fontSize: 36,
-                  fontWeight: ae.titleWeight,
-                  letterSpacing: '-0.025em',
+                  fontSize: 52,
+                  fontWeight: 800,
+                  letterSpacing: '-0.045em',
                   color: ae.text,
                   lineHeight: 1,
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 {incident.acres != null ? incident.acres.toLocaleString() : '—'}{' '}
-                <span style={{ fontSize: 18, color: ae.textDim, fontWeight: 400 }}>
+                <span style={{ fontSize: 18, color: ae.textDim, fontWeight: 300, letterSpacing: '0.04em' }}>
                   acres burning
                 </span>
               </h2>

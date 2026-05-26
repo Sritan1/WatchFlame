@@ -184,6 +184,10 @@ export function MapImpl({
     return () => window.removeEventListener('ember-map-zoom', onZoom);
   }, []);
 
+  // Broadcast current center + zoom whenever they change. MapScreen reads
+  // this to draw the scale bar (which depends on latitude + zoom). The first
+  // emit runs once on mount so the bar isn't blank before the first move.
+
   return (
     <MapContainer
       ref={mapRef}
@@ -297,8 +301,33 @@ export function MapImpl({
       })}
 
       <CameraController center={center} selection={selection} fires={fires} />
+      <ZoomBroadcaster />
     </MapContainer>
   );
+}
+
+/** Watches the leaflet map and dispatches `ember-map-state` whenever the
+ *  center or zoom changes. Used by MapScreen's floating scale bar. */
+function ZoomBroadcaster() {
+  const map = useMap();
+  useEffect(() => {
+    const emit = () => {
+      const c = map.getCenter();
+      window.dispatchEvent(
+        new CustomEvent('ember-map-state', {
+          detail: { lat: c.lat, zoom: map.getZoom() },
+        }),
+      );
+    };
+    map.on('zoomend', emit);
+    map.on('moveend', emit);
+    emit();
+    return () => {
+      map.off('zoomend', emit);
+      map.off('moveend', emit);
+    };
+  }, [map]);
+  return null;
 }
 
 // Re-export for type narrowing convenience
