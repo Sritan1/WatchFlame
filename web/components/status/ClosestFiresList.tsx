@@ -54,6 +54,7 @@ export function ClosestFiresList({ fires }: { fires: NamedIncident[] }) {
 
   return (
     <div
+      className="ember-card"
       style={{
         background: ae.surface,
         border: ae.cardBorder,

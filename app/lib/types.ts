@@ -80,6 +80,11 @@ export type RiskResponse = {
   // Keetch-Byram Drought Index (0-800) used in place of days_since_rain.
   // Present only when lat/lon was sent and the upstream archive responded.
   kbdi?: number | null;
+  // Observed days-since-rain from Open-Meteo's Forecast endpoint (which has
+  // no archive lag). Surfaced so the Risk Calculator's Days Since Rain
+  // slider can auto-seed with the real local value. Null on no-coords /
+  // upstream failure.
+  days_since_rain_observed?: number | null;
   // NDVI anomaly (current − same-month climatology), the vegetation-stress
   // signal that replaces the calendar season multiplier when satellite
   // data is available. Negative = drier/sparser than normal (higher risk),

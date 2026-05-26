@@ -24,14 +24,17 @@ import {
   useActiveDisasters,
   useActiveLocation,
   useFiresAroundMe,
+  useNamedIncidentsNear,
   useNearbyShelters,
   useNearestFire,
   useRiskFromWeather,
   useWeather,
 } from '@/lib/hooks';
 import { openDirectionsInMaps, openLocationInMaps } from '@/lib/maps';
+import { threatLevelFor } from '@/lib/threat';
 import type { DangerLevel } from '@/lib/types';
 import { formatDistance, useUnits } from '@/lib/units';
+import type { BannerSignal } from '@/components/ui/WarningBanner';
 
 const CHECKLIST = [
   { id: 'go_bag', label: "Pack emergency 'Go Bag'" },
@@ -70,6 +73,7 @@ export default function SafetyScreen() {
   const loc = useActiveLocation();
   const fires = useFiresAroundMe(loc.coords);
   const nearest = useNearestFire(loc.coords, fires.data);
+  const incidents = useNamedIncidentsNear(loc.coords);
   const weather = useWeather(loc.coords);
   const risk = useRiskFromWeather(weather.data);
 
@@ -80,6 +84,40 @@ export default function SafetyScreen() {
 
   const level: DangerLevel = risk.data?.danger_level ?? 'LOW';
   const palette = LEVEL_PALETTE[level];
+
+  // ── Combined Safety Status banner ─────────────────────────────────────
+  // Factors in BOTH local fire-weather (from /risk) and the closest fire's
+  // distance + size (from FIRMS satellite hits + named NIFC/Cal Fire
+  // incidents). Mirrors the web's computeBannerSignal exactly so both
+  // platforms read the same way.
+  //
+  // Pick the CLOSER of the two sources for the threat heuristic; if it's a
+  // named incident we have acres, otherwise treat acres as 0 so distance
+  // alone drives the bucket (matches Fire Detail's "Threat to You" tile).
+  const nearestIncident = incidents.data?.[0] ?? null;
+  const closestDistanceMi: number | null = (() => {
+    const fromIncident = nearestIncident?.distance_mi ?? null;
+    const fromSat = nearest?.distance ?? null;
+    if (fromIncident == null && fromSat == null) return null;
+    if (fromIncident == null) return fromSat;
+    if (fromSat == null) return fromIncident;
+    return Math.min(fromIncident, fromSat);
+  })();
+  const closestIsIncident =
+    nearestIncident != null &&
+    (nearest == null || (nearestIncident.distance_mi ?? Infinity) <= nearest.distance);
+  const threatLevel: DangerLevel | undefined = threatLevelFor(
+    closestDistanceMi,
+    closestIsIncident && nearestIncident ? nearestIncident.acres : null,
+  );
+  const weatherSignal: DangerLevel | null = risk.data ? level : null;
+  const bannerSignal: BannerSignal = computeBannerSignal(weatherSignal, threatLevel ?? null);
+
+  // Skeleton until ALL inputs are resolved enough to compute the banner.
+  // Uses isLoading (first fetch with no cached data) — refetches with a
+  // cached payload don't flash the skeleton.
+  const bannerLoading =
+    weather.isLoading || risk.isLoading || incidents.isLoading || fires.isLoading;
   const checklist = useChecklist(CHECKLIST.map((c) => c.id));
   const checkedCount = Object.values(checklist.state).filter(Boolean).length;
   const { units } = useUnits();
@@ -157,8 +195,8 @@ export default function SafetyScreen() {
                 }}
               >
                 <WarningBanner
-                  level={level}
-                  isLoading={risk.isLoading}
+                  banner={bannerSignal}
+                  isLoading={bannerLoading}
                   premium={!femaActive}
                 />
               </View>
@@ -1029,4 +1067,72 @@ function ModalItem({ title, body }: { title: string; body: string }) {
       <Text className="mt-1 text-sm text-chalk-400">{body}</Text>
     </View>
   );
+}
+
+/** Build the Safety Status banner from the two independent signals.
+ *
+ *  - **weather**: raw fire-weather risk from /risk (LOW | MODERATE | HIGH |
+ *    EXTREME). Null while the risk query is still in flight.
+ *  - **threat**: distance-and-size heuristic for the closest active fire
+ *    (LOW | MODERATE | HIGH | EXTREME). Null when no fire is detected.
+ *
+ *  Decision matrix (must match web/components/safety/SafetyScreen.tsx's
+ *  computeBannerSignal — both platforms read the same way):
+ *
+ *  | weather | threat  | banner                                    |
+ *  | ------- | ------- | ----------------------------------------- |
+ *  | EXT     | EXT     | Evacuation Warning (orange / HIGH palette)|
+ *  | HIGH+   | HIGH+   | Stay Aware — combined copy (amber)        |
+ *  | HIGH+   | ≤ MOD   | Stay Aware — weather copy (amber)         |
+ *  | ≤ MOD   | HIGH+   | Stay Aware — threat copy (amber)          |
+ *  | ≤ MOD   | ≤ MOD   | All Clear (green)                         |
+ *
+ *  Per product spec, this function never emits the 'EXTREME' palette —
+ *  even the both-extreme case maps to 'HIGH' so the UI says "Evacuation
+ *  Warning" rather than the more authoritative "EVACUATE IMMEDIATELY". */
+function computeBannerSignal(
+  weather: DangerLevel | null,
+  threat: DangerLevel | null,
+): BannerSignal {
+  const isElevated = (r: DangerLevel | null) => r === 'HIGH' || r === 'EXTREME';
+  const weatherHot = isElevated(weather);
+  const threatHot = isElevated(threat);
+
+  if (weather === 'EXTREME' && threat === 'EXTREME') {
+    return {
+      level: 'HIGH',
+      title: 'Evacuation Warning',
+      subtitle:
+        'Both local fire weather and a nearby active fire are at extreme levels. Prepare to evacuate and follow official guidance from local authorities.',
+    };
+  }
+  if (weatherHot && threatHot) {
+    return {
+      level: 'MODERATE',
+      title: 'Stay Aware',
+      subtitle:
+        'Fire weather is elevated and an active fire has been detected nearby. Review your evacuation plan and monitor conditions closely.',
+    };
+  }
+  if (weatherHot) {
+    return {
+      level: 'MODERATE',
+      title: 'Stay Aware',
+      subtitle:
+        'Conditions favor fire growth. Review your plan and keep an eye on local alerts.',
+    };
+  }
+  if (threatHot) {
+    return {
+      level: 'MODERATE',
+      title: 'Stay Aware',
+      subtitle:
+        'An active fire is nearby. Review your evacuation plan and stay alert for changes.',
+    };
+  }
+  return {
+    level: 'LOW',
+    title: 'All Clear',
+    subtitle: 'No immediate fire risk for your area. Stay informed and check back regularly.',
+  };
 }

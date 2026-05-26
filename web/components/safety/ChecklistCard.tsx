@@ -46,6 +46,7 @@ export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {
 
   return (
     <div
+      className="ember-card"
       style={{
         background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
         border: ae.cardBorder,

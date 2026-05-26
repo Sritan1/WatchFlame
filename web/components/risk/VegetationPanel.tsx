@@ -4,10 +4,13 @@
 // "Season proxy" mode shows the 4 season buttons with their multipliers.
 // "Vegetation (NDVI)" mode swaps in an NDVI anomaly slider [-0.30..+0.30].
 
+import type { ReactNode } from 'react';
+
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
 import { Icon } from '@/components/Icon';
 import { InputPanel } from '@/components/risk/InputPanel';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { Season } from '@/lib/api';
 
@@ -32,6 +35,8 @@ export function VegetationPanel({
   onNdviChange,
   color,
   glowRgb,
+  ndviFooter,
+  isLoading = false,
 }: {
   mode: VegMode;
   onModeChange: (m: VegMode) => void;
@@ -41,11 +46,19 @@ export function VegetationPanel({
   onNdviChange: (n: number) => void;
   color: string;
   glowRgb: string;
+  /** Slot rendered inside the NDVI InputPanel when mode === 'ndvi'. Used for
+   *  the "Couldn't fetch NDVI" warning when CDSE Sentinel-2 fetch fails. */
+  ndviFooter?: ReactNode;
+  /** True during location-switch transitions — renders skeletons for the
+   *  season-button grid (or the inner NDVI slider via its own isLoading)
+   *  so the panel matches the slider tiles' loading rhythm. */
+  isLoading?: boolean;
 }) {
   const { ae } = useAesthetic();
 
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         gridColumn: '1 / span 2',
         position: 'relative',
@@ -54,7 +67,6 @@ export function VegetationPanel({
         border: ae.cardBorder,
         borderRadius: ae.radius,
         padding: 18,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
       <div
@@ -69,8 +81,10 @@ export function VegetationPanel({
         <GlassSegmented<VegMode>
           value={mode}
           options={[
-            { id: 'season', label: 'Season proxy' },
+            // NDVI listed first so the default "measured satellite data"
+            // option reads as primary; season proxy reads as the fallback.
             { id: 'ndvi', label: 'Vegetation (NDVI)' },
+            { id: 'season', label: 'Season proxy' },
           ]}
           onChange={onModeChange}
           color={color}
@@ -79,7 +93,14 @@ export function VegetationPanel({
         />
       </div>
 
-      {mode === 'season' ? (
+      {mode === 'season' && isLoading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[0, 1, 2, 3].map((i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <Skeleton key={i} width="100%" height={56} rounded="md" />
+          ))}
+        </div>
+      ) : mode === 'season' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {(['winter', 'spring', 'summer', 'fall'] as Season[]).map((s) => {
             const active = season === s;
@@ -140,6 +161,8 @@ export function VegetationPanel({
           index={5}
           caption="Current NDVI minus the same-month climatology. Negative = drier/sparser than normal (higher risk)."
           onChange={onNdviChange}
+          footer={ndviFooter}
+          isLoading={isLoading}
         />
       )}
 
