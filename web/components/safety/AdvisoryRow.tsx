@@ -1,8 +1,9 @@
 'use client';
 
 // 2-col row below the checklist:
-//   1. Level-driven Safety Status card (title + body change per risk level —
-//      ports mobile's WarningBanner CONFIG verbatim).
+//   1. Safety Status banner — title + body are computed UPSTREAM in
+//      SafetyScreen's computeBannerSignal() so the rule that combines
+//      fire-weather and closest-fire-threat lives in one place.
 //   2. "Closest Active Fire" mini stat with proximity meter.
 // Real data via incidents + FIRMS queries.
 
@@ -10,7 +11,7 @@ import { Icon } from '@/components/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
-import { getRisk, type RiskLevel } from '@/lib/theme';
+import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUnits } from '@/lib/use-units';
 
 /** Minimal shape for AdvisoryRow's closest-fire display — works for both
@@ -20,51 +21,23 @@ export interface ClosestFireSummary {
   distance_mi: number;
 }
 
-interface LevelConfig {
-  color: string;
-  rgb: string;
+/** Resolved banner content. Computed in SafetyScreen so the
+ *  fire-weather × closest-fire rule lives in one place. */
+export interface BannerSignal {
+  /** Drives palette + icon (low = green check, else amber/orange warn). */
+  level: RiskLevel;
   title: string;
   subtitle: string;
 }
 
-// Mirrors app/components/ui/WarningBanner.tsx CONFIG exactly. Don't tweak
-// these strings without also updating mobile.
-const LEVEL_CONFIG: Record<RiskLevel, LevelConfig> = {
-  low: {
-    color: '#7ee787',
-    rgb: '126, 231, 135',
-    title: 'All Clear',
-    subtitle: 'No immediate fire risk for your area. Stay informed and check back regularly.',
-  },
-  moderate: {
-    color: '#e8b339',
-    rgb: '232, 179, 57',
-    title: 'Stay Aware',
-    subtitle: 'Conditions favor fire growth. Review your plan and keep an eye on local alerts.',
-  },
-  high: {
-    color: '#fb923c',
-    rgb: '251, 146, 60',
-    title: 'Evacuation Warning',
-    subtitle: 'Prepare to evacuate. Monitor conditions and remain alert for official orders.',
-  },
-  extreme: {
-    color: '#ef4444',
-    rgb: '239, 68, 68',
-    title: 'EVACUATE IMMEDIATELY',
-    subtitle:
-      'Extreme fire conditions. Leave now via your nearest evacuation route. Call 911 if you cannot evacuate safely.',
-  },
-};
-
 export function AdvisoryRow({
-  riskLevel,
+  banner,
   closestFire,
   closestBearingLabel,
   closestSeverity,
   isLoading = false,
 }: {
-  riskLevel: RiskLevel;
+  banner: BannerSignal;
   closestFire: ClosestFireSummary | null;
   closestBearingLabel: string;
   closestSeverity: RiskLevel | null;
@@ -73,64 +46,74 @@ export function AdvisoryRow({
   const { ae, accent } = useAesthetic();
   const units = useUnits();
   const distConverted = (mi: number) => (units.distance === 'km' ? mi * 1.60934 : mi);
-  const r = getRisk(riskLevel, accent);
+  // Palette for the banner — driven by `banner.level`. Use the raw RISK_LEVELS
+  // (not getRisk with accent override) so 'low' stays green even when the
+  // user's accent is amber/orange/red.
+  const tone = RISK_LEVELS[banner.level];
+  // Palette for the closest-fire side. When unresolved (no fire OR loading),
+  // fall back to the banner's tone so the row reads cohesively.
   const fr = closestSeverity ? getRisk(closestSeverity, accent) : null;
-  const cfg = LEVEL_CONFIG[riskLevel];
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      {/* Level-driven Safety Status — title + body change per risk level */}
+      {/* Safety Status — title + body driven by the combined banner signal */}
       <div
         style={{
           background: ae.surface,
-          border: `0.5px solid rgba(${cfg.rgb}, 0.20)`,
+          border: `0.5px solid rgba(${tone.glow}, 0.20)`,
           borderRadius: ae.radius,
           padding: 18,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: `rgba(${cfg.rgb}, 0.10)`,
-              border: `0.5px solid rgba(${cfg.rgb}, 0.28)`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Icon
-              name={riskLevel === 'low' ? 'check' : 'warn'}
-              size={15}
-              color={cfg.color}
-              strokeWidth={1.8}
-            />
-          </div>
-          <span
-            style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 16,
-              fontWeight: ae.titleWeight,
-              color: cfg.color,
-              letterSpacing: ae.titleTracking,
-            }}
-          >
-            {cfg.title}
-          </span>
-        </div>
-        <p
-          style={{
-            margin: 0,
-            fontFamily: ae.fontBody,
-            fontSize: 13.5,
-            lineHeight: 1.5,
-            color: ae.textDim,
-          }}
-        >
-          {cfg.subtitle}
-        </p>
+        {isLoading ? (
+          <SafetyStatusSkeleton />
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: `rgba(${tone.glow}, 0.10)`,
+                  border: `0.5px solid rgba(${tone.glow}, 0.28)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon
+                  name={banner.level === 'low' ? 'check' : 'warn'}
+                  size={15}
+                  color={tone.color}
+                  strokeWidth={1.8}
+                />
+              </div>
+              <span
+                style={{
+                  fontFamily: ae.fontDisplay,
+                  fontSize: 16,
+                  fontWeight: ae.titleWeight,
+                  color: tone.color,
+                  letterSpacing: ae.titleTracking,
+                }}
+              >
+                {banner.title}
+              </span>
+            </div>
+            <p
+              style={{
+                margin: 0,
+                fontFamily: ae.fontBody,
+                fontSize: 13.5,
+                lineHeight: 1.5,
+                color: ae.textDim,
+              }}
+            >
+              {banner.subtitle}
+            </p>
+          </>
+        )}
       </div>
 
       {/* Closest Active Fire */}
@@ -148,14 +131,14 @@ export function AdvisoryRow({
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: `rgba(${fr?.glow ?? r.glow}, 0.10)`,
-              border: `0.5px solid rgba(${fr?.glow ?? r.glow}, 0.28)`,
+              background: `rgba(${fr?.glow ?? tone.glow}, 0.10)`,
+              border: `0.5px solid rgba(${fr?.glow ?? tone.glow}, 0.28)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Icon name="flame" size={15} color={fr?.color ?? r.color} strokeWidth={1.6} />
+            <Icon name="flame" size={15} color={fr?.color ?? tone.color} strokeWidth={1.6} />
           </div>
           <Eyebrow>Closest Active Fire</Eyebrow>
         </div>
@@ -241,12 +224,30 @@ export function AdvisoryRow({
            *  (tallest) bar lit; farther fire → leftmost bar; >50 mi → leftmost. */}
           <ProximityMeter
             distanceMi={closestFire?.distance_mi ?? null}
-            color={fr?.color ?? r.color}
-            glow={fr?.glow ?? r.glow}
+            color={fr?.color ?? tone.color}
+            glow={fr?.glow ?? tone.glow}
           />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Inline skeleton for the Safety Status card. Matches the live layout's
+ *  icon-tile + title + two body lines, so the swap when data lands doesn't
+ *  jolt the row height. */
+function SafetyStatusSkeleton() {
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <Skeleton width={32} height={32} rounded="md" />
+        <Skeleton width={140} height={16} rounded="sm" />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Skeleton width={'100%'} height={12} rounded="sm" />
+        <Skeleton width={'82%'} height={12} rounded="sm" />
+      </div>
+    </>
   );
 }
 

@@ -15,7 +15,7 @@ from ..core.risk_algorithm import compute_risk
 from ..services.census import reverse_geocode
 from ..services.ndvi_cache import get_climatology as get_ndvi_climatology
 from ..services.ndvi_cache import get_current as get_ndvi_current
-from ..services.openmeteo_history import fetch_kbdi_today
+from ..services.openmeteo_history import fetch_days_since_rain_today, fetch_kbdi_today
 
 router = APIRouter(prefix="/risk", tags=["risk"])
 
@@ -87,6 +87,12 @@ class RiskResponse(BaseModel):
     # None when the request was manual (slider-driven days_since_rain) or when
     # the upstream weather archive was unreachable.
     kbdi: float | None = None
+    # Days since the last rainfall >= 1 mm at the user's coords, derived from
+    # the same Open-Meteo precipitation pull that KBDI uses. None when the
+    # request was manual or when the archive was unreachable. Surfaced so the
+    # web Risk Calculator can auto-seed the "days since rain" slider with a
+    # real local value instead of a KBDI/100 proxy.
+    days_since_rain_observed: int | None = None
     # NDVI anomaly (current − same-month climatology) used in place of the
     # calendar-based season multiplier. Negative = drier than normal (raises
     # risk). Present only when lat/lon was sent and the CDSE satellite
@@ -98,6 +104,10 @@ class RiskResponse(BaseModel):
 async def post_risk(body: RiskRequest) -> RiskResponse:
     kbdi_value: float | None = body.kbdi
     ndvi_anom: float | None = body.ndvi_anomaly
+    # Observed days-since-rain from the archive (when fetched). Stays None on
+    # manual / no-coords requests; surfaced in the response so the Calculator
+    # can auto-seed its Days Since Rain slider with a real value.
+    days_observed: int | None = None
     # Explicit state override (Risk Calculator dropdown) wins over any
     # geocoded lookup — the user picked a state, honor it.
     state_hint: str | None = body.state.upper() if body.state else None
@@ -116,6 +126,12 @@ async def post_risk(body: RiskRequest) -> RiskResponse:
         if needs_kbdi_fetch:
             task_names.append("kbdi")
             tasks.append(fetch_kbdi_today(body.lat, body.lon))
+            # Lag-free days-since-rain from the Forecast endpoint, fanned out
+            # in parallel with KBDI. The Archive API (used for KBDI) trails
+            # real-time by ~6 days so any rain in the past week is invisible
+            # there; the Forecast endpoint exposes today's actuals.
+            task_names.append("days_since_rain")
+            tasks.append(fetch_days_since_rain_today(body.lat, body.lon))
         if needs_ndvi_fetch:
             task_names.append("ndvi_current")
             tasks.append(get_ndvi_current(body.lat, body.lon))
@@ -136,6 +152,10 @@ async def post_risk(body: RiskRequest) -> RiskResponse:
         kbdi_data = results.get("kbdi")
         if kbdi_data is not None:
             kbdi_value = kbdi_data["kbdi"]
+        # Days-since-rain comes from the SEPARATE Forecast-API fetcher (not
+        # the archive). Reports real wall-clock days from today, including
+        # the previous ~24h that the archive doesn't cover yet.
+        days_observed = results.get("days_since_rain")
         current = results.get("ndvi_current")
         clim = results.get("ndvi_clim")
         if current is not None and clim is not None:
@@ -144,11 +164,19 @@ async def post_risk(body: RiskRequest) -> RiskResponse:
         if county is not None:
             state_hint = county.state
 
+    # When KBDI fetch failed but we computed the days-since-rain from the
+    # same precip pull anyway, prefer that REAL value over whatever the
+    # client sent (Status hardcodes days_since_rain=7 as a neutral
+    # placeholder; the backend's own walk-back is strictly better).
+    days_for_compute = (
+        days_observed if kbdi_value is None and days_observed is not None
+        else body.days_since_rain
+    )
     result = compute_risk(
         temp_c=body.temperature,
         humidity_pct=body.humidity,
         wind_kph=body.wind_speed,
-        days_since_rain=body.days_since_rain,
+        days_since_rain=days_for_compute,
         season=body.season,
         kbdi=kbdi_value,
         ndvi_anomaly=ndvi_anom,
@@ -175,6 +203,7 @@ async def post_risk(body: RiskRequest) -> RiskResponse:
         regional_state=reg_state,
         regional_thresholds=reg_thresholds,
         kbdi=kbdi_value,
+        days_since_rain_observed=days_observed,
         ndvi_anomaly=ndvi_anom,
     )
 

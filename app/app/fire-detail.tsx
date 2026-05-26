@@ -24,6 +24,7 @@ import {
 } from '@/lib/hooks';
 import { openLocationInMaps } from '@/lib/maps';
 import { openExternalUrl } from '@/lib/openUrl';
+import { threatLevelFor } from '@/lib/threat';
 import type { LatLon, NamedIncident } from '@/lib/types';
 import { distanceValue, useUnits } from '@/lib/units';
 
@@ -82,6 +83,18 @@ export default function FireDetailScreen() {
       )
       .slice(0, 8);
   }, [nearby.data]);
+
+  // FIRMS-only fields. When opened from a named incident with no paired
+  // satellite pixel, these URL params are absent and the values would all
+  // be '—' — so hide each panel independently. A FIRMS pixel that *also*
+  // matches an incident keeps them since the params are still in the URL.
+  const hasBrightness = params.brightness != null;
+  const hasConfidence = params.confidence != null;
+  const hasFirmsDetection =
+    params.acq_date != null ||
+    params.acq_time != null ||
+    params.satellite != null ||
+    params.daynight != null;
 
   const openInMaps = () => openLocationInMaps(fireLoc);
 
@@ -173,21 +186,26 @@ export default function FireDetailScreen() {
                   label="Threat to You"
                   level={threatLevelFor(distFromMe, matched?.acres)}
                 />
-                <View className="flex-row gap-3">
-                  <StatCard
-                    label="Brightness"
-                    value={
-                      params.brightness
-                        ? `${Math.round(Number(params.brightness))}`
-                        : '—'
-                    }
-                    unit="K"
-                  />
-                  <StatCard
-                    label="Confidence"
-                    value={(params.confidence ?? '—').toUpperCase()}
-                  />
-                </View>
+                {/* Brightness + Confidence — FIRMS-only. Each gates
+                    independently; StatCard's built-in flex-1 means a single
+                    surviving card stretches to fill the row. */}
+                {hasBrightness || hasConfidence ? (
+                  <View className="flex-row gap-3">
+                    {hasBrightness ? (
+                      <StatCard
+                        label="Brightness"
+                        value={`${Math.round(Number(params.brightness))}`}
+                        unit="K"
+                      />
+                    ) : null}
+                    {hasConfidence ? (
+                      <StatCard
+                        label="Confidence"
+                        value={(params.confidence ?? '').toUpperCase()}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
 
               {/* Incident management cards — only when a named incident matches */}
@@ -369,18 +387,22 @@ export default function FireDetailScreen() {
             </View>
           ) : null}
 
-          {/* Detection metadata */}
-          <View className="mt-5">
-            <Eyebrow>Detection metadata</Eyebrow>
-            <Card className="mt-2">
-              <Row k="Detected" v={params.acq_date ?? '—'} />
-              <Row k="Acquisition time" v={params.acq_time ? `${params.acq_time} UTC` : '—'} />
-              <Row k="Satellite" v={params.satellite ?? '—'} />
-              <Row k="Day / night" v={params.daynight === 'D' ? 'Day' : params.daynight === 'N' ? 'Night' : '—'} />
-              <Row k="Latitude" v={fireLat.toFixed(4)} />
-              <Row k="Longitude" v={fireLon.toFixed(4)} />
-            </Card>
-          </View>
+          {/* Detection metadata — FIRMS-only. Hidden when there's no paired
+              satellite pixel; lat/lon are already visible in the header
+              copy ("X mi NE of your location"). */}
+          {hasFirmsDetection ? (
+            <View className="mt-5">
+              <Eyebrow>Detection metadata</Eyebrow>
+              <Card className="mt-2">
+                <Row k="Detected" v={params.acq_date ?? '—'} />
+                <Row k="Acquisition time" v={params.acq_time ? `${params.acq_time} UTC` : '—'} />
+                <Row k="Satellite" v={params.satellite ?? '—'} />
+                <Row k="Day / night" v={params.daynight === 'D' ? 'Day' : params.daynight === 'N' ? 'Night' : '—'} />
+                <Row k="Latitude" v={fireLat.toFixed(4)} />
+                <Row k="Longitude" v={fireLon.toFixed(4)} />
+              </Card>
+            </View>
+          ) : null}
 
           {/* CTAs */}
           <View className="mt-6 gap-3">
@@ -470,20 +492,3 @@ function formatDate(iso: string): string {
   }
 }
 
-/** Distance + size heuristic for "Threat to You" — answers
- *  "how scary is this fire to me", in contrast to RiskTile's "Risk Level"
- *  which is the fire weather (VPD/wind/drought) at the fire's location.
- *  Synchronous (no network) so it resolves instantly even while the
- *  fire-weather pill is still fetching. Identical breakpoints to the web's
- *  severityOf in components/status/ClosestFiresList.tsx. */
-function threatLevelFor(
-  distMi: number | null,
-  acres: number | null | undefined,
-): 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME' | undefined {
-  if (distMi == null) return undefined;
-  const a = acres ?? 0;
-  if (distMi < 6 || a > 1000) return 'EXTREME';
-  if (distMi < 12 || a > 300) return 'HIGH';
-  if (distMi < 25 || a > 50) return 'MODERATE';
-  return 'LOW';
-}

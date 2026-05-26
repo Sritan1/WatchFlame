@@ -63,7 +63,9 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
     radiusLg: 16,
     cardBorder: '0.5px solid rgba(255,255,255,0.09)',
     titleWeight: 700,
-    titleTracking: '-0.02em',
+    // -0.025em tightens display headings just enough to register as premium
+    // (mass-market sans uses -0.01..-0.02; editorial dashboards use -0.025+).
+    titleTracking: '-0.025em',
     chipUpper: true,
   },
   startup: {
@@ -133,3 +135,12 @@ export function hexToRgb(hex: string): string {
 
 /** Single shared easing for transitions/animations across the app. */
 export const EMBER_EASE = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
+
+/** Coerce a `low` level to `moderate` for AMBIENT chrome (page background,
+ *  hero band palette, card border tint, glows). The literal risk pill / label
+ *  should still pass the actual `level` so the user sees "LOW" in green —
+ *  this only floors the surrounding visual treatment so the page doesn't
+ *  read as washed-out / muted when the underlying risk is low. */
+export function floorLow(level: RiskLevel): RiskLevel {
+  return level === 'low' ? 'moderate' : level;
+}

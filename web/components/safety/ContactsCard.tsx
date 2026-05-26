@@ -34,6 +34,7 @@ export function ContactsCard() {
   const { ae } = useAesthetic();
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         background: ae.surface,
         border: ae.cardBorder,

@@ -65,6 +65,9 @@ web-map.jsx
 web-risk.jsx
 web-safety.jsx
 web-shell.jsx
+web-settings.jsx
+web-incident.jsx
+web-incident-map.jsx
 web-status.jsx
 background-waves.jsx
 styleUI.md

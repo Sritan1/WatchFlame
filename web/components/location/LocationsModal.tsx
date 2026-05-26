@@ -87,7 +87,38 @@ export function LocationsModal({
             />
           ))}
         </>
-      ) : null}
+      ) : (
+        <div
+          style={{
+            marginTop: 16,
+            padding: '14px 16px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: `0.5px dashed ${ae.line}`,
+            borderRadius: ae.radius,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <Icon name="pin" size={16} color={ae.textMute} strokeWidth={1.6} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: ae.fontDisplay, fontSize: 13.5, fontWeight: 600, color: ae.text }}>
+              No saved cities yet
+            </div>
+            <div
+              style={{
+                marginTop: 2,
+                fontFamily: ae.fontMono,
+                fontSize: 10.5,
+                color: ae.textMute,
+                letterSpacing: '0.04em',
+              }}
+            >
+              Search below to save Home, Work, or any city you want Status / Map / Safety to track.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ marginTop: 20 }}>
