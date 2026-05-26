@@ -33,6 +33,7 @@ export function InsightsRail({
       }}
     >
       <div
+        className="ember-card ember-card-hover"
         style={{
           position: 'relative',
           overflow: 'hidden',

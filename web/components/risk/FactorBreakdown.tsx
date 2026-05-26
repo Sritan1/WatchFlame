@@ -49,6 +49,7 @@ export function FactorBreakdown({
 
   return (
     <div
+      className="ember-card"
       style={{
         position: 'relative',
         overflow: 'hidden',
@@ -56,7 +57,6 @@ export function FactorBreakdown({
         border: ae.cardBorder,
         borderRadius: ae.radiusLg,
         padding: 26,
-        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
         display: 'flex',
         flexDirection: 'column',
       }}

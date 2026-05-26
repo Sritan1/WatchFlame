@@ -60,6 +60,10 @@ export interface RiskResponse {
   regional_state?: string | null;
   regional_thresholds?: RegionalThresholds | null;
   kbdi?: number | null;
+  /** Observed days-since-rain from the Open-Meteo Archive precip pull,
+   *  computed alongside KBDI. Null on manual / no-coords requests or when
+   *  the archive fetch failed. */
+  days_since_rain_observed?: number | null;
   ndvi_anomaly?: number | null;
 }
 

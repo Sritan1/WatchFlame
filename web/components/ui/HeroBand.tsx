@@ -24,6 +24,7 @@ export function HeroBand({
   const { ae } = useAesthetic();
   return (
     <div
+      className="ember-grain"
       style={{
         position: 'relative',
         overflow: 'hidden',

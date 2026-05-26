@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { CompassRose, cardinal8, cardinalOf } from '@/components/ui/CompassRose';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
 import { GridPattern } from '@/components/ui/GridPattern';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
 import { getRisk, type RiskLevel } from '@/lib/theme';
@@ -52,25 +53,43 @@ export function EvacuationCard({
   mode,
   onModeChange,
   nearestShelter,
+  fireLoading,
+  sheltersLoading,
 }: {
   origin: LatLon;
-  /** Bearing FROM user TO nearest fire (deg, 0=N). */
-  fireBearingDeg: number;
-  /** Distance to nearest fire in miles (for the "fire is X at Y mi" caption). */
-  fireDistanceMi: number;
+  /** Bearing FROM user TO nearest fire (deg, 0=N). Null while loading. */
+  fireBearingDeg: number | null;
+  /** Distance to nearest fire in miles (for the "fire is X at Y mi" caption). Null while loading. */
+  fireDistanceMi: number | null;
   riskLevel: RiskLevel;
   mode: EvacMode;
   onModeChange: (m: EvacMode) => void;
   nearestShelter: Shelter | null;
+  /** Fires/incidents query is in flight — show skeletons in 'away' mode. */
+  fireLoading?: boolean;
+  /** Shelters query is in flight — show skeletons in 'shelter' mode. */
+  sheltersLoading?: boolean;
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
   const r = getRisk(riskLevel, accent);
   const [shelterInfoOpen, setShelterInfoOpen] = useState(false);
 
-  // Opposite of fire bearing — where to run to
-  const escapeBearing = (fireBearingDeg + 180) % 360;
-  const fireCardinal = cardinal8(fireBearingDeg);
+  // Body (compass + headline + subtext + CTA) shows skeletons when the data
+  // for the current mode is still in flight. Chrome (eyebrow + toggle +
+  // caveat) stays interactive so the user can flip modes during the load.
+  // When `shelters` resolves with no nearby results, `nearestShelter` is
+  // null but we're NOT loading — the existing fallback (silently using the
+  // away-from-fire compass/heading in shelter mode) takes over.
+  const isBodyLoading =
+    mode === 'shelter'
+      ? sheltersLoading ?? false
+      : (fireLoading ?? false) || fireBearingDeg == null || fireDistanceMi == null;
+
+  // Opposite of fire bearing — where to run to. Default to 0 when fire data
+  // hasn't arrived; the skeleton hides this anyway.
+  const escapeBearing = fireBearingDeg != null ? (fireBearingDeg + 180) % 360 : 0;
+  const fireCardinal = fireBearingDeg != null ? cardinal8(fireBearingDeg) : '';
 
   const dest = useMemo(() => {
     if (mode === 'shelter' && nearestShelter) {
@@ -93,26 +112,22 @@ export function EvacuationCard({
 
   const subtext = mode === 'shelter' && nearestShelter
     ? `${nearestShelter.name} · ${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel}`
-    : `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`;
+    : fireDistanceMi != null
+      ? `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
+      : '';
 
   return (
     <div
+      className="ember-card ember-hero-card"
       style={{
-        position: 'relative',
-        overflow: 'hidden',
         background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
         border: `0.5px solid rgba(${r.glow}, 0.30)`,
         borderRadius: ae.radiusLg,
-        boxShadow: `0 24px 60px rgba(${r.glow}, 0.15), inset 0 1px 0 rgba(255,255,255,0.05)`,
+        boxShadow: `0 24px 60px rgba(${r.glow}, 0.15)`,
+        ['--card-accent' as string]: r.color,
+        ['--card-accent-soft' as string]: `rgba(${r.glow}, 0.18)`,
       }}
     >
-      <div
-        style={{
-          height: 3,
-          background: `linear-gradient(90deg, transparent, ${r.color}, transparent)`,
-          boxShadow: `0 0 14px ${r.color}`,
-        }}
-      />
       <GridPattern opacity={0.04} />
       <div
         aria-hidden="true"
@@ -201,41 +216,53 @@ export function EvacuationCard({
           />
         </div>
 
-        {/* Compass + headline */}
+        {/* Compass + headline (skeleton while the data for this mode loads) */}
         <div style={{ marginTop: 22, display: 'flex', gap: 18, alignItems: 'center' }}>
-          <CompassRose
-            bearingDeg={headingBearing}
-            cardinal={headingCardinal}
-            color={r.color}
-            glowRgb={r.glow}
-            size={130}
-          />
-          <div>
-            <div
-              style={{
-                fontFamily: ae.fontDisplay,
-                fontSize: 52,
-                fontWeight: ae.titleWeight,
-                letterSpacing: '-0.04em',
-                color: ae.text,
-                lineHeight: 0.95,
-              }}
-            >
-              Head {headingLabel}
-            </div>
-            <div
-              style={{
-                marginTop: 10,
-                fontFamily: ae.fontMono,
-                fontSize: 11.5,
-                color: ae.textDim,
-                letterSpacing: '0.04em',
-                lineHeight: 1.4,
-              }}
-            >
-              {subtext}
-            </div>
-          </div>
+          {isBodyLoading ? (
+            <>
+              <Skeleton width={130} height={130} rounded="full" />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Skeleton width={180} height={42} rounded="md" />
+                <Skeleton width={'80%'} height={11} rounded="sm" />
+              </div>
+            </>
+          ) : (
+            <>
+              <CompassRose
+                bearingDeg={headingBearing}
+                cardinal={headingCardinal}
+                color={r.color}
+                glowRgb={r.glow}
+                size={130}
+              />
+              <div>
+                <div
+                  style={{
+                    fontFamily: ae.fontDisplay,
+                    fontSize: 52,
+                    fontWeight: ae.titleWeight,
+                    letterSpacing: '-0.04em',
+                    color: ae.text,
+                    lineHeight: 0.95,
+                  }}
+                >
+                  Head {headingLabel}
+                </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontFamily: ae.fontMono,
+                    fontSize: 11.5,
+                    color: ae.textDim,
+                    letterSpacing: '0.04em',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {subtext}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Caveat */}
@@ -261,17 +288,21 @@ export function EvacuationCard({
           </p>
         </div>
 
-        {/* CTA */}
+        {/* CTA — skeleton while loading; disabled to prevent a misrouted click. */}
         <div style={{ marginTop: 18 }}>
-          <Button
-            variant="primary"
-            icon="external"
-            color={r.color}
-            full
-            onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
-          >
-            Get Directions
-          </Button>
+          {isBodyLoading ? (
+            <Skeleton width={'100%'} height={44} rounded="md" />
+          ) : (
+            <Button
+              variant="primary"
+              icon="external"
+              color={r.color}
+              full
+              onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
+            >
+              Get Directions
+            </Button>
+          )}
         </div>
       </div>
 

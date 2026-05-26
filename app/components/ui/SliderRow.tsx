@@ -1,4 +1,5 @@
 import Slider from '@react-native-community/slider';
+import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { tap } from '@/lib/haptics';
@@ -30,6 +31,10 @@ export function SliderRow({
   index,
   bigValue = false,
   resetKey,
+  displayValue,
+  displayDecimals,
+  displayMin,
+  displayMax,
 }: {
   label: string;
   value: number;
@@ -49,6 +54,18 @@ export function SliderRow({
    *  `value` as initial-only and ignores updates to it. User dragging
    *  shouldn't change this — only programmatic resets should. */
   resetKey?: string | number;
+  /** Optional override for the big-number readout. Used by callers that
+   *  scale the native slider's range (e.g. KBDI scaled 0–800 → 0–100 to
+   *  dodge an iOS-only range-resolution bug) but still want to display the
+   *  underlying unscaled value to the user. */
+  displayValue?: number;
+  /** Decimal places for the displayValue readout. Defaults to the precision
+   *  derived from `step`. Only honored when `displayValue` is supplied. */
+  displayDecimals?: number;
+  /** Optional min/max overrides for the under-track labels. Same purpose as
+   *  displayValue — only the native slider uses the actual min/max. */
+  displayMin?: number;
+  displayMax?: number;
 }) {
   const indexBadge =
     index != null ? (
@@ -88,6 +105,40 @@ export function SliderRow({
   // etc. The old `step < 1 ? 10 : 1` heuristic clamped everything to one
   // decimal, which made the NDVI slider read "0.0" for values up to 0.04.
   const decimals = step >= 1 ? 0 : Math.max(0, Math.ceil(-Math.log10(step)));
+
+  // ---- Native slider remount on programmatic value jumps -----------------
+  // `@react-native-community/slider` (5.0.1, iOS) treats `value` as
+  // initial-only and doesn't reposition the thumb when `value` updates via
+  // props after mount. Symptom: KBDI slider mounted with value=400 shows
+  // the thumb at the far left because the native UISlider initializes at
+  // its own minimumValue=0 and ignores the subsequent JS-set `value`.
+  //
+  // Fix: bump `slideKeyBump` whenever `value` changes by more than a few
+  // step units — that indicates a programmatic seed (Reset / location
+  // change / mode toggle) rather than a drag tick. The native Slider then
+  // remounts and reads the fresh `value` cleanly. Drag updates change
+  // `value` by ~`step` per tick which falls under the threshold, so
+  // dragging stays smooth (no flicker).
+  const [slideKeyBump, setSlideKeyBump] = useState(0);
+  const lastSeenValueRef = useRef<number | null>(null);
+  useEffect(() => {
+    const last = lastSeenValueRef.current;
+    if (last === null) {
+      // First mount with a real value — force a one-shot remount so the
+      // native control picks up the initial value reliably.
+      setSlideKeyBump((n) => n + 1);
+    } else {
+      // Heuristic: any jump > 10× the step value is almost certainly a
+      // programmatic seed, not a user drag tick. NDVI step=0.001 ⇒ jump
+      // > 0.01 remounts; KBDI step=1 ⇒ jump > 10 remounts; temperature
+      // step=1 ⇒ jump > 10 remounts.
+      const threshold = Math.max(step * 10, 1);
+      if (Math.abs(value - last) > threshold) {
+        setSlideKeyBump((n) => n + 1);
+      }
+    }
+    lastSeenValueRef.current = value;
+  }, [value, step]);
   return (
     <InputCard padding={16}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -114,19 +165,19 @@ export function SliderRow({
             letterSpacing: -0.5,
           }}
         >
-          {value.toFixed(decimals)}
+          {(displayValue ?? value).toFixed(displayDecimals ?? decimals)}
           {unit ? (
             <Text style={{ fontSize: 14, color: '#9ca3af', fontWeight: '600' }}> {unit}</Text>
           ) : null}
         </Text>
       ) : (
         <Text style={{ marginTop: 6, fontSize: 16, fontWeight: '800', color: '#f8fafc' }}>
-          {value.toFixed(decimals)}
+          {(displayValue ?? value).toFixed(displayDecimals ?? decimals)}
           {unit ? <Text style={{ color: '#9ca3af' }}> {unit}</Text> : null}
         </Text>
       )}
       <Slider
-        key={resetKey}
+        key={`${resetKey ?? 'rk'}-${slideKeyBump}`}
         style={{ marginTop: 4, height: 36 }}
         minimumValue={min}
         maximumValue={max}
@@ -142,10 +193,10 @@ export function SliderRow({
       />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 10, color: '#6b7280' }}>
-          {min}{unit}
+          {displayMin ?? min}{unit}
         </Text>
         <Text style={{ fontSize: 10, color: '#6b7280' }}>
-          {max}{unit}
+          {displayMax ?? max}{unit}
         </Text>
       </View>
     </InputCard>

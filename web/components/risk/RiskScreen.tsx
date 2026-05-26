@@ -20,6 +20,7 @@ import {
   regionName,
   type RegionCode,
 } from '@/components/risk/HeroScorePanel';
+import { DroughtPanel, type DroughtMode } from '@/components/risk/DroughtPanel';
 import { InputPanel } from '@/components/risk/InputPanel';
 import { InsightsRail } from '@/components/risk/InsightsRail';
 import { VegetationPanel, type VegMode } from '@/components/risk/VegetationPanel';
@@ -28,7 +29,7 @@ import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk, type RiskRequest, type Season } from '@/lib/api';
 import { useRiskForInputs, useRiskFromWeather, useWeather } from '@/lib/queries';
-import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
+import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { useUnits } from '@/lib/use-units';
 
@@ -42,11 +43,25 @@ const DEFAULTS = {
   temperature: 33,
   humidity: 38,
   wind: 15,
-  kbdi: 413,
+  // 400 is roughly midway through KBDI's "moderate" band (200-500); a neutral
+  // starting point when the user hasn't yet seeded from local drought data.
+  kbdi: 400,
+  // Default days-since-rain when the user toggles to the days mode without
+  // seeded data. 7 is the same default used by useRiskFromWeather as a
+  // neutral mid-band value for the exponential drying proxy.
+  daysSinceRain: 7,
   season: 'spring' as Season,
   ndvi: 0,
-  region: 'FL' as RegionCode,
-  vegMode: 'season' as VegMode,
+  // Default to Global (null) — matches mobile (app/(tabs)/risk.tsx defaults
+  // selectedState to null). applyLocal flips this to the user's actual state
+  // once /risk's regional_state lands, mirroring mobile's seed behavior.
+  region: null as RegionCode,
+  // Default to NDVI mode so both vegetation AND drought signals open on
+  // their satellite/measured-data tracks (NDVI + KBDI) for a consistent
+  // "real-data first" initial state. User can still toggle to the season
+  // proxy via the segmented control.
+  vegMode: 'ndvi' as VegMode,
+  droughtMode: 'kbdi' as DroughtMode,
 };
 
 const SEASON_LABEL: Record<Season, string> = {
@@ -72,25 +87,37 @@ export function RiskScreen() {
   const [humidity, setHumidityRaw] = useState(DEFAULTS.humidity);
   const [wind, setWindRaw] = useState(DEFAULTS.wind);
   const [kbdi, setKbdiRaw] = useState(DEFAULTS.kbdi);
+  const [daysSinceRain, setDaysSinceRainRaw] = useState(DEFAULTS.daysSinceRain);
   const [season, setSeasonRaw] = useState<Season>(DEFAULTS.season);
   const [ndvi, setNdviRaw] = useState(DEFAULTS.ndvi);
   const [region, setRegion] = useState<RegionCode>(DEFAULTS.region);
   const [vegMode, setVegMode] = useState<VegMode>(DEFAULTS.vegMode);
+  const [droughtMode, setDroughtMode] = useState<DroughtMode>(DEFAULTS.droughtMode);
 
   // "User has manually moved a slider" — once true, the auto-seed effect
   // stops overwriting their values when fresh local data arrives. Reset to
   // my area clears it so subsequent location changes auto-seed again.
   const userTouchedRef = useRef(false);
+  // Per-slider "user touched" flags for KBDI + NDVI specifically — used to
+  // hide the "Couldn't fetch" warning once the user supplies their own value.
+  // The warning reappears after Reset to my area (which clears these flags).
+  const [kbdiUserSet, setKbdiUserSet] = useState(false);
+  const [ndviUserSet, setNdviUserSet] = useState(false);
   const markTouched = () => {
     userTouchedRef.current = true;
-    setAwaitingFirstSeed(false);
   };
   const setTemperature = (v: number) => { markTouched(); setTemperatureRaw(v); };
   const setHumidity    = (v: number) => { markTouched(); setHumidityRaw(v); };
   const setWind        = (v: number) => { markTouched(); setWindRaw(v); };
-  const setKbdi        = (v: number) => { markTouched(); setKbdiRaw(v); };
+  const setKbdi        = (v: number) => { markTouched(); setKbdiUserSet(true); setKbdiRaw(v); };
+  const setDaysSinceRain = (v: number) => { markTouched(); setKbdiUserSet(true); setDaysSinceRainRaw(Math.round(v)); };
   const setSeason      = (v: Season) => { markTouched(); setSeasonRaw(v); };
-  const setNdvi        = (v: number) => { markTouched(); setNdviRaw(v); };
+  const setNdvi        = (v: number) => { markTouched(); setNdviUserSet(true); setNdviRaw(v); };
+  // Wrap the region picker so an explicit pick (e.g. user choosing "Global")
+  // marks the screen as user-touched. Without this, the auto-seed effect
+  // would silently re-set region back to the user's local state when /risk
+  // refetches — overriding their pick.
+  const pickRegion = (v: RegionCode) => { markTouched(); setRegion(v); };
 
   // Local readings — re-uses Status's cached queries (same coords) so this
   // is usually free. KBDI is the gate; NDVI is allowed to fail and falls back
@@ -102,41 +129,98 @@ export function RiskScreen() {
   const localHumidity = localWeather.data?.humidity ?? null;
   const localWind = localWeather.data?.wind_speed ?? null;
   const localKbdi = localRisk.data?.kbdi ?? null;
+  // Real backend-computed days-since-rain from the Open-Meteo precip pull
+  // (api/routes/risk.py:days_since_rain_observed). Replaces the previous
+  // KBDI/100 proxy — accurate when available, null when the archive fetch
+  // failed (in which case applyLocal falls back to the Status-style days=7).
+  const localDays = localRisk.data?.days_since_rain_observed ?? null;
   const localNdvi = localRisk.data?.ndvi_anomaly ?? null;
+  // Mirror mobile's gate (app/(tabs)/risk.tsx): require the /risk response to
+  // have resolved, but DON'T require KBDI to be populated. Backend can return
+  // a partial /risk (kbdi: null) when Open-Meteo's drought-history fetch fails
+  // or hits its quota. Requiring kbdi !== null here would otherwise leave the
+  // sliders stuck on hardcoded defaults and disable "Reset to my area" — the
+  // exact symptom Bronson FL hit on a day Open-Meteo was rate-limited.
+  // `applyLocal` already skips any field that's null, so partial seeding is
+  // safe.
   const localReady =
-    localTemp != null && localHumidity != null && localWind != null && localKbdi != null;
+    localTemp != null &&
+    localHumidity != null &&
+    localWind != null &&
+    localRisk.data !== undefined;
   const localFailed = localWeather.isError || localRisk.isError;
 
-  const applyLocal = useCallback(() => {
+  const applyLocal = useCallback((seedMode: 'auto' | 'reset' = 'auto') => {
     if (localTemp != null) setTemperatureRaw(Math.round(localTemp));
     if (localHumidity != null) setHumidityRaw(Math.round(localHumidity));
     if (localWind != null) setWindRaw(Math.round(localWind));
-    if (localKbdi != null) setKbdiRaw(Math.round(localKbdi));
+    // Drought + NDVI seeding strategy depends on WHY we're seeding:
+    //   - seedMode='auto' (location change / first load): full refresh.
+    //     If fetch failed, fall back to the neutral DEFAULTS so we don't
+    //     leak the PREVIOUS location's value across a location switch.
+    //   - seedMode='reset' (user clicked Reset to my area): preserve the
+    //     user's manual value when the fetch failed — they intentionally
+    //     set it knowing data was missing, so don't clobber it.
+    // The *UserSet flags are cleared unconditionally so the warning
+    // re-displays after a Reset on a still-failing upstream.
+    if (localKbdi != null) {
+      setKbdiRaw(Math.round(localKbdi));
+    } else if (seedMode === 'auto') {
+      setKbdiRaw(DEFAULTS.kbdi);
+    }
+    if (localDays != null) {
+      setDaysSinceRainRaw(Math.max(0, localDays));
+    } else if (seedMode === 'auto') {
+      setDaysSinceRainRaw(DEFAULTS.daysSinceRain);
+    }
     setSeasonRaw(currentSeason());
-    setNdviRaw(localNdvi != null ? Number(localNdvi.toFixed(3)) : 0);
-  }, [localTemp, localHumidity, localWind, localKbdi, localNdvi]);
+    if (localNdvi != null) {
+      setNdviRaw(Number(localNdvi.toFixed(3)));
+    } else if (seedMode === 'auto') {
+      setNdviRaw(DEFAULTS.ndvi);
+    }
+    // Auto-pick the calibration region from the backend's reverse-geocode.
+    // null = outside the fitted 17 states → Global. Matches mobile applyLocal
+    // (app/(tabs)/risk.tsx:142 `setSelectedState(localState)`).
+    setRegion(localRisk.data?.regional_state ?? null);
+    // Clear the per-slider "user supplied this value" flags so the
+    // KBDI / NDVI fetch-failed warnings reappear if those upstreams are
+    // still down. Matches mobile applyLocal behavior.
+    setKbdiUserSet(false);
+    setNdviUserSet(false);
+  }, [localTemp, localHumidity, localWind, localKbdi, localDays, localNdvi, localRisk.data?.regional_state]);
 
-  /** Reset button — same as applyLocal but also clears the user-touched flag
-   *  AND switches the calibration region to whatever state the backend's
-   *  Census reverse-geocode resolved for the user. `regional_state` is null
-   *  when the location is outside the 17 fitted states → Global.
+  // Upstream failure flags — `localRisk.data !== undefined` means the /risk
+  // call resolved; within that, kbdi/ndvi_anomaly being null means the
+  // specific upstream (Open-Meteo / CDSE Sentinel-2) failed for the user's
+  // coords. The warnings are gated on these + the user not having already
+  // supplied a value (matches mobile).
+  const localFetchComplete = localRisk.data !== undefined;
+  const localKbdiFailed = localFetchComplete && localKbdi == null;
+  const localNdviFailed = localFetchComplete && localNdvi == null;
+
+  /** Reset button — applyLocal already seeds every input (including region
+   *  from the backend's reverse-geocode), so this just calls it and clears
+   *  the user-touched flag so subsequent location changes auto-seed again.
    *  Matches mobile's "Reset to my area" behavior. */
   const resetToLocal = useCallback(() => {
-    applyLocal();
+    applyLocal('reset');
     userTouchedRef.current = false;
-    const stateFromBackend = localRisk.data?.regional_state ?? null;
-    setRegion(stateFromBackend);
-  }, [applyLocal, localRisk.data?.regional_state]);
+  }, [applyLocal]);
 
   // Auto-seed: on first load (and whenever the location's local readings
   // change), if the user hasn't manually edited anything, swap the placeholder
   // defaults for real local values. Tracks the seeded snapshot so location
   // changes always reseed, and content updates only reseed when untouched.
-  // `awaitingFirstSeed` drives the slider skeleton state — true until either
-  // auto-seed lands OR the user manually edits a slider.
+  //
+  // `appliedLocKey` (state, not ref — needs to drive re-render of the
+  // skeletons) tracks the locKey we've LAST successfully seeded for. When
+  // `appliedLocKey !== locKey`, the screen is in "about to be seeded" state:
+  // slider values are stale (the previous location's), so we render skeletons
+  // until the new seed lands. Mirrors mobile (app/(tabs)/risk.tsx:177).
   const seededLocKeyRef = useRef<string | null>(null);
   const seededContentRef = useRef<string | null>(null);
-  const [awaitingFirstSeed, setAwaitingFirstSeed] = useState(true);
+  const [appliedLocKey, setAppliedLocKey] = useState<string | null>(null);
   const locKey = `${loc.coords.lat.toFixed(3)},${loc.coords.lon.toFixed(3)}`;
   const contentKey = `${localTemp}|${localHumidity}|${localWind}|${localKbdi}|${localNdvi}`;
   useEffect(() => {
@@ -147,36 +231,43 @@ export function RiskScreen() {
     if (!locChanged && userTouchedRef.current) return;
     applyLocal();
     if (locChanged) userTouchedRef.current = false;
-    setAwaitingFirstSeed(false);
     seededLocKeyRef.current = locKey;
     seededContentRef.current = contentKey;
+    setAppliedLocKey(locKey);
   }, [localReady, locKey, contentKey, applyLocal]);
 
   // If local data outright failed, drop the skeletons — show the hardcoded
   // defaults so the user can still play with the calculator (and the
   // FetchErrorBanner above explains why).
   useEffect(() => {
-    if (localFailed) setAwaitingFirstSeed(false);
-  }, [localFailed]);
+    if (localFailed) setAppliedLocKey(locKey);
+  }, [localFailed, locKey]);
 
-  // Skeleton state for the sliders: only while we haven't auto-seeded yet
-  // AND a local fetch is actually in flight. Once user touches a slider OR
-  // local lands, the input goes back to its normal interactive state.
-  const inputsLoading = awaitingFirstSeed && (localWeather.isLoading || localRisk.isLoading);
+  // Slider skeleton gate. True on first mount (appliedLocKey is null) AND
+  // for the brief window after a saved-location switch (locKey changed but
+  // the auto-seed effect hasn't run for the new key yet). False once we've
+  // applied the seed for the current location, even if the user has since
+  // manually adjusted a slider — user-supplied values aren't a loading state.
+  const inputsLoading = appliedLocKey !== locKey;
 
   const req: RiskRequest = useMemo(
     () => ({
       temperature,
       humidity,
       wind_speed: wind,
-      days_since_rain: Math.round(kbdi / 100),
+      // days_since_rain is required by the backend schema (api/routes/risk.py)
+      // even when KBDI is supplied. When droughtMode === 'kbdi' we send the
+      // proxy as filler (the backend ignores it once kbdi is set). When
+      // 'days', we send the actual user-controlled days value and OMIT kbdi
+      // so the algorithm uses the 1 - exp(-days/15) drying proxy.
+      days_since_rain: droughtMode === 'days' ? daysSinceRain : Math.round(kbdi / 100),
       season,
-      kbdi,
+      ...(droughtMode === 'kbdi' ? { kbdi } : {}),
       ...(vegMode === 'ndvi' ? { ndvi_anomaly: ndvi } : {}),
       // null region = Global cutoffs (don't send `state` to backend)
       ...(region ? { state: region } : {}),
     }),
-    [temperature, humidity, wind, kbdi, season, ndvi, vegMode, region],
+    [temperature, humidity, wind, kbdi, daysSinceRain, droughtMode, season, ndvi, vegMode, region],
   );
 
   const risk = useRiskForInputs(req, 220);
@@ -209,7 +300,10 @@ export function RiskScreen() {
   }[dominant];
   const dominantPct = (contrib[dominant] / Math.max(0.001, score)) * 100;
 
-  const sr = getRisk(level, accent);
+  // `sr` drives the ambient accent across the inputs grid (slider track, glow
+  // ring, section eyebrow). Floor 'low' to 'moderate' so the whole page stays
+  // warm/amber instead of going green/muted when conditions are calm.
+  const sr = getRisk(floorLow(level), accent);
   const regionDisplay = regionName(region);
 
   return (
@@ -225,8 +319,11 @@ export function RiskScreen() {
 
         <div
           style={{
+            // Asymmetric editorial split — the score panel reads as the
+            // headline, the factor breakdown as a side caption. Pushing the
+            // ratio past 1.5 stops it feeling like a balanced 50/50 grid.
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)',
+            gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)',
             gap: 24,
           }}
         >
@@ -234,8 +331,9 @@ export function RiskScreen() {
             score={score}
             level={level}
             region={region}
-            onRegionChange={setRegion}
+            onRegionChange={pickRegion}
             thresholds={risk.data?.regional_thresholds ?? null}
+            isLoading={inputsLoading}
           />
           <FactorBreakdown
             vpd={factors.vpd}
@@ -338,18 +436,24 @@ export function RiskScreen() {
               onChange={(v) => setWind(units.speed === 'mph' ? v / 0.621371 : v)}
               isLoading={inputsLoading}
             />
-            <InputPanel
-              label="Drought (KBDI)"
-              value={kbdi}
-              unit=""
-              min={0}
-              max={800}
+            <DroughtPanel
+              mode={droughtMode}
+              onModeChange={setDroughtMode}
+              kbdi={kbdi}
+              onKbdiChange={setKbdi}
+              daysSinceRain={daysSinceRain}
+              onDaysChange={setDaysSinceRain}
               color={sr.color}
               glowRgb={sr.glow}
-              index={4}
-              caption="Keetch-Byram Drought Index, 0–800. Higher = drier soil + fuels."
-              onChange={setKbdi}
               isLoading={inputsLoading}
+              footer={
+                !inputsLoading && localKbdiFailed && !kbdiUserSet ? (
+                  <WarningInline
+                    bold="Couldn't fetch your area's drought signal."
+                    rest="Open-Meteo Archive didn't respond, so Reset to my area can't fill this with your real value. Slide it manually for a what-if."
+                  />
+                ) : null
+              }
             />
 
             <VegetationPanel
@@ -361,6 +465,15 @@ export function RiskScreen() {
               onNdviChange={setNdvi}
               color={sr.color}
               glowRgb={sr.glow}
+              isLoading={inputsLoading}
+              ndviFooter={
+                !inputsLoading && localNdviFailed && !ndviUserSet ? (
+                  <WarningInline
+                    bold="Couldn't fetch your area's NDVI."
+                    rest="Likely cloud cover over the last several Sentinel-2 passes, or outside coverage. Slide it manually for a what-if."
+                  />
+                ) : null
+              }
             />
           </div>
 
@@ -372,6 +485,44 @@ export function RiskScreen() {
         </div>
       </PageSection>
     </>
+  );
+}
+
+/** Amber callout shown when KBDI or NDVI failed to fetch from their upstream
+ *  source. Mirrors mobile's WarningInline in app/(tabs)/risk.tsx: small
+ *  triangle icon, bold lead-in + dim continuation, soft amber background. */
+function WarningInline({ bold, rest }: { bold: string; rest: string }) {
+  const AMBER = '#E8B339';
+  const AMBER_RGB = '232, 179, 57';
+  const { ae } = useAesthetic();
+  return (
+    <div
+      role="status"
+      style={{
+        marginTop: 10,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '8px 10px',
+        borderRadius: 10,
+        border: `0.5px solid rgba(${AMBER_RGB}, 0.30)`,
+        background: `rgba(${AMBER_RGB}, 0.05)`,
+      }}
+    >
+      <Icon name="warn" size={11} color={AMBER} strokeWidth={1.8} style={{ marginTop: 2, flexShrink: 0 }} />
+      <span
+        style={{
+          flex: 1,
+          fontFamily: ae.fontBody,
+          fontSize: 11,
+          lineHeight: 1.45,
+          color: AMBER,
+        }}
+      >
+        <span style={{ fontWeight: 700 }}>{bold} </span>
+        <span style={{ color: ae.textDim }}>{rest}</span>
+      </span>
+    </div>
   );
 }
 

@@ -31,7 +31,7 @@ import {
   useRiskFromWeather,
   useWeather,
 } from '@/lib/queries';
-import { getRisk, type RiskLevel } from '@/lib/theme';
+import { floorLow, getRisk, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { formatDistance, formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 
@@ -83,7 +83,15 @@ export function StatusScreen() {
     ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
     : null;
   const displayLevel: RiskLevel = effectiveLevel ?? 'moderate';
-  const r = getRisk(displayLevel, accent);
+  // Floor 'low' to 'moderate' for the page CHROME (background waves, hero
+  // orb palette, section eyebrow accent). The literal Risk pill below still
+  // receives the actual level so the user sees "LOW" in green when applicable
+  // — this only stops the surrounding visuals from going muted teal/grey.
+  const chromeLevel: RiskLevel = floorLow(displayLevel);
+  const r = getRisk(chromeLevel, accent);
+  // `pillTone` uses the true level so the ShimmerPill below labels it
+  // accurately ("LOW" stays green) while everything else inherits chromeLevel.
+  const pillTone = getRisk(displayLevel, accent);
   const isAlarming = displayLevel === 'high' || displayLevel === 'extreme';
 
   // Don't render hero text until fires + weather have resolved at least once —
@@ -130,7 +138,7 @@ export function StatusScreen() {
   return (
     <>
       {/* ─── HERO BAND ─────────────────────────────────────────────────── */}
-      <HeroBand risk={displayLevel} pulseSpeed={70}>
+      <HeroBand risk={chromeLevel} pulseSpeed={70}>
         <PageSection top={28} bottom={48}>
           <SectionEyebrow
             color={isAlarming ? r.color : ae.textDim}
@@ -161,13 +169,18 @@ export function StatusScreen() {
                 minHeight: 360,
               }}
             >
-              <HeroOrb risk={displayLevel} pulseSpeed={70} />
+              <HeroOrb
+                risk={chromeLevel}
+                score={risk.data?.risk_score ?? null}
+                thresholds={risk.data?.regional_thresholds ?? null}
+                pulseSpeed={70}
+              />
             </div>
 
             <div>
               <div className="ember-fade-up" style={{ marginBottom: 16 }}>
                 {effectiveLevel ? (
-                  <ShimmerPill risk={r} />
+                  <ShimmerPill risk={pillTone} />
                 ) : (
                   <Skeleton width={96} height={28} rounded="full" />
                 )}
@@ -278,6 +291,7 @@ export function StatusScreen() {
       {/* ─── 2×2 GRID: Conditions / Humidity / KBDI / NDVI ──────────────── */}
       <PageSection top={4} bottom={48}>
         <div
+          className="ember-grid-stagger"
           style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
@@ -339,6 +353,7 @@ function ConditionsCard({
   const { ae } = useAesthetic();
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         background: ae.surface,
         border: ae.cardBorder,
@@ -408,6 +423,7 @@ function HumidityCard({
   const { ae } = useAesthetic();
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         background: ae.surface,
         border: ae.cardBorder,

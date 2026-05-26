@@ -6,54 +6,39 @@ import type { DangerLevel } from '@/lib/types';
 import { PremiumCard } from './PremiumCard';
 import { Skeleton } from './Skeleton';
 
-type LevelConfig = {
+type LevelPalette = {
   color: string;
   rgb: string;
-  title: string;
-  subtitle: string;
   /** Opaque pre-blend of rgba(rgb, 0.18) over the card's slate surface
    *  (#10141B). Used as the premium variant's icon-tile background so the
    *  PremiumCard's stripe texture doesn't show through it. */
   tileBg: string;
 };
 
-const CONFIG: Record<DangerLevel, LevelConfig> = {
-  LOW: {
-    color: '#7ee787',
-    rgb: '126, 231, 135',
-    title: 'All Clear',
-    subtitle:
-      'No immediate fire risk for your area. Stay informed and check back regularly.',
-    tileBg: '#243A2E',
-  },
-  MODERATE: {
-    color: '#e8b339',
-    rgb: '232, 179, 57',
-    title: 'Stay Aware',
-    subtitle:
-      'Conditions favor fire growth. Review your plan and keep an eye on local alerts.',
-    tileBg: '#373120',
-  },
-  HIGH: {
-    color: '#fb923c',
-    rgb: '251, 146, 60',
-    title: 'Evacuation Warning',
-    subtitle:
-      'Prepare to evacuate. Monitor conditions and remain alert for official orders.',
-    tileBg: '#3A2B21',
-  },
-  EXTREME: {
-    color: '#ef4444',
-    rgb: '239, 68, 68',
-    title: 'EVACUATE IMMEDIATELY',
-    subtitle:
-      'Extreme fire conditions. Leave now via your nearest evacuation route. Call 911 if you cannot evacuate safely.',
-    tileBg: '#381D22',
-  },
+/** Palette for each tier. Title and subtitle are supplied by the parent's
+ *  `banner` signal so the combined (fire-weather + closest-fire-threat)
+ *  rules can live in one place upstream. The EXTREME palette stays in the
+ *  table for completeness but the SafetyScreen computeBannerSignal() will
+ *  never emit it (per spec — we never say "EVACUATE IMMEDIATELY"). */
+const PALETTE: Record<DangerLevel, LevelPalette> = {
+  LOW:      { color: '#7ee787', rgb: '126, 231, 135', tileBg: '#243A2E' },
+  MODERATE: { color: '#e8b339', rgb: '232, 179, 57',  tileBg: '#373120' },
+  HIGH:     { color: '#fb923c', rgb: '251, 146, 60',  tileBg: '#3A2B21' },
+  EXTREME:  { color: '#ef4444', rgb: '239, 68, 68',   tileBg: '#381D22' },
 };
 
+/** Resolved Safety Status banner content. Computed upstream in safety.tsx
+ *  so the matrix that combines weather + closest-fire threat lives in one
+ *  place. Mirrors web's BannerSignal. */
+export interface BannerSignal {
+  /** Drives palette + icon (LOW = green check, else amber/orange warn). */
+  level: DangerLevel;
+  title: string;
+  subtitle: string;
+}
+
 /**
- * Level-driven status card on the Safety screen. Two variants:
+ * Status card on the Safety screen. Two variants:
  *
  *   - **Compact** (default): small icon tile + bold title + body. Sits
  *     under the FEMA premium card so the FEMA one stays the hero.
@@ -68,11 +53,11 @@ const CONFIG: Record<DangerLevel, LevelConfig> = {
  * (that'd be actively misleading).
  */
 export function WarningBanner({
-  level,
+  banner,
   isLoading = false,
   premium = false,
 }: {
-  level: DangerLevel;
+  banner: BannerSignal;
   isLoading?: boolean;
   /** When true, render the full PremiumCard hero variant. Toggle on when
    *  no higher-priority card (FEMA) is occupying the hero slot. */
@@ -82,7 +67,8 @@ export function WarningBanner({
     return premium ? <PremiumLoadingSkeleton /> : <CompactLoadingSkeleton />;
   }
 
-  const c = CONFIG[level];
+  const c = { ...PALETTE[banner.level], title: banner.title, subtitle: banner.subtitle };
+  const level = banner.level;
 
   if (premium) {
     return (

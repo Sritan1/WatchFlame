@@ -4,6 +4,8 @@
 // invisible native <input type="range"> overlay for actual interaction (so
 // keyboard ←/→/Home/End all work out of the box).
 
+import type { ReactNode } from 'react';
+
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { IndexBadge } from '@/components/ui/IndexBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -22,6 +24,7 @@ export function InputPanel({
   index,
   onChange,
   isLoading = false,
+  footer,
 }: {
   label: string;
   value: number;
@@ -37,6 +40,9 @@ export function InputPanel({
   /** When true, render skeleton placeholders for the value + slider track
    *  (matches mobile SliderRow's isLoading state during auto-seed wait). */
   isLoading?: boolean;
+  /** Optional footer slot rendered inside the card below the caption — used
+   *  for "couldn't fetch" warnings tied to specific sliders (KBDI, NDVI). */
+  footer?: ReactNode;
 }) {
   const { ae } = useAesthetic();
   const pct = ((value - min) / (max - min)) * 100;
@@ -81,6 +87,7 @@ export function InputPanel({
 
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         position: 'relative',
         overflow: 'hidden',
@@ -88,7 +95,6 @@ export function InputPanel({
         border: ae.cardBorder,
         borderRadius: ae.radius,
         padding: 18,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -238,6 +244,7 @@ export function InputPanel({
           {caption}
         </p>
       ) : null}
+      {footer}
     </div>
   );
 }
