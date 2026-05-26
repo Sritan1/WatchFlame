@@ -63,20 +63,41 @@ const LEVEL_PALETTE: Record<DangerLevel, { color: string; rgb: string }> = {
 };
 
 type VegMode = 'season' | 'ndvi';
+type DroughtMode = 'kbdi' | 'days';
 
 export default function RiskScreen() {
   // Neutral defaults — overwritten by the seed effect once local data lands.
+  // KBDI 400 = midway through the "moderate" band (200-500); a safer neutral
+  // start than 200 when the user lands on a screen that hasn't auto-seeded
+  // yet. Matches web's DEFAULTS.kbdi.
   const [temperature, setTemperature] = useState(25);
   const [humidity, setHumidity] = useState(40);
   const [windSpeed, setWindSpeed] = useState(15);
-  const [kbdi, setKbdi] = useState(200);
+  const [kbdi, setKbdi] = useState(400);
+  // Days-since-rain — the alternative drought signal. Default 7 matches the
+  // hardcoded fallback that useRiskFromWeather sends when KBDI isn't available.
+  const [daysSinceRain, setDaysSinceRain] = useState(7);
   const [season, setSeason] = useState<Season>(currentSeason());
   // Vegetation mode: 'season' uses the calendar season multiplier (legacy
   // path); 'ndvi' uses a satellite NDVI anomaly value as the fuel-load
   // signal — same input Status uses when CDSE imagery is available.
   // Only ONE of {season, ndvi_anomaly} is sent in the API request.
-  const [vegMode, setVegMode] = useState<VegMode>('season');
+  // Defaults to 'ndvi' so both NDVI + KBDI (the measured/satellite tracks)
+  // open selected, matching the web behavior.
+  const [vegMode, setVegMode] = useState<VegMode>('ndvi');
   const [ndviAnomaly, setNdviAnomaly] = useState(0); // typical range −0.30..+0.30
+  // Drought mode: 'kbdi' is the canonical / measured signal; 'days' is the
+  // simpler proxy used when the user wants to drive risk by recent rain. Only
+  // ONE of {kbdi, days_since_rain (as the algorithm input)} actually matters
+  // to the backend at a time — kbdi takes precedence when supplied.
+  const [droughtMode, setDroughtMode] = useState<DroughtMode>('kbdi');
+  // Bumped every time the user toggles drought mode. Threaded into the inner
+  // SliderRow keys so the underlying @react-native-community/slider — which
+  // caches its thumb position at the native view layer even across JS
+  // unmount/remount — gets a clean re-instantiation on every toggle. Without
+  // this, switching kbdi→days→kbdi leaves the KBDI thumb stuck at a stale
+  // position even though `value` correctly reflects the user's last drag.
+  const [droughtToggleNonce, setDroughtToggleNonce] = useState(0);
   // Per-slider "user manually moved this" flags. Used to hide the
   // "fetch failed" warning once the user has supplied their own value; the
   // warning reappears after Reset to my area resets these to false. Tracking
@@ -105,6 +126,10 @@ export default function RiskScreen() {
   const localHumidity = localWeather.data?.humidity;
   const localWind = localWeather.data?.wind_speed;
   const localKbdi = localRisk.data?.kbdi ?? null;
+  // Real backend-computed days-since-rain from Open-Meteo's lag-free Forecast
+  // endpoint (api/services/openmeteo_history.fetch_days_since_rain_today).
+  // Null when /risk hasn't resolved or the upstream failed.
+  const localDays = localRisk.data?.days_since_rain_observed ?? null;
   const localNdvi = localRisk.data?.ndvi_anomaly ?? null;
   const localState = localRisk.data?.regional_state ?? null;
   // Seeding waits for BOTH weather AND risk so KBDI + NDVI seed from real
@@ -124,18 +149,39 @@ export default function RiskScreen() {
 
   const userTouchedRef = useRef(false);
 
-  const applyLocal = useCallback(() => {
+  const applyLocal = useCallback((seedMode: 'auto' | 'reset' = 'auto') => {
     if (localTemp != null) setTemperature(Math.round(localTemp));
     if (localHumidity != null) setHumidity(Math.round(localHumidity));
     if (localWind != null) setWindSpeed(Math.round(localWind));
-    if (localKbdi != null) setKbdi(Math.round(localKbdi));
+    // Drought + NDVI seeding strategy depends on WHY we're seeding:
+    //   - seedMode='auto' (location change / first load): full refresh.
+    //     If the upstream failed, fall back to a neutral default so we
+    //     don't leak the previous location's value across a switch.
+    //   - seedMode='reset' (user clicked Reset to my area): preserve the
+    //     user's manual value when the fetch failed — they intentionally
+    //     set it knowing data was missing, so don't clobber it.
+    // The *UserSet flags are cleared unconditionally so the warning
+    // re-displays after a Reset on a still-failing upstream.
+    if (localKbdi != null) {
+      setKbdi(Math.round(localKbdi));
+    } else if (seedMode === 'auto') {
+      setKbdi(400); // matches the neutral default declared above
+    }
+    if (localDays != null) {
+      setDaysSinceRain(Math.max(0, localDays));
+    } else if (seedMode === 'auto') {
+      setDaysSinceRain(7); // matches the neutral default declared above
+    }
     setSeason(currentSeason());
-    // Seed the NDVI slider — the user's local satellite value when available,
-    // neutral 0 otherwise. The mode toggle itself isn't touched; vegMode is
-    // a deliberate user preference, and Reset to my area is a value reset,
-    // not a mode reset.
-    if (localNdvi != null) setNdviAnomaly(Number(localNdvi.toFixed(3)));
-    else setNdviAnomaly(0);
+    // Seed the NDVI slider — the user's local satellite value when available.
+    // Auto-seed restores 0 when CDSE failed (preventing previous location's
+    // value from sticking); Reset preserves user value (they intentionally
+    // set it knowing the data was missing).
+    if (localNdvi != null) {
+      setNdviAnomaly(Number(localNdvi.toFixed(3)));
+    } else if (seedMode === 'auto') {
+      setNdviAnomaly(0);
+    }
     // Auto-select the user's calibration scope from their GPS state. Falls
     // back to Global when the user is outside the 17 fitted states — that's
     // a real signal ("this state isn't calibrated"), not a missing value.
@@ -147,7 +193,7 @@ export default function RiskScreen() {
     userTouchedRef.current = false;
     // Force each SliderRow's native slider to remount with the new value.
     setSeedNonce((n) => n + 1);
-  }, [localTemp, localHumidity, localWind, localKbdi, localNdvi, localState]);
+  }, [localTemp, localHumidity, localWind, localKbdi, localDays, localNdvi, localState]);
 
   // Seed all sliders + season from local conditions. Two re-seed triggers:
   //
@@ -168,7 +214,7 @@ export default function RiskScreen() {
   // so any change in any of them invalidates it.
   const contentKey =
     `${localTemp ?? ''}|${localHumidity ?? ''}|${localWind ?? ''}` +
-    `|${localKbdi ?? ''}|${localNdvi ?? ''}|${localState ?? ''}`;
+    `|${localKbdi ?? ''}|${localDays ?? ''}|${localNdvi ?? ''}|${localState ?? ''}`;
   const seededForKeyRef = useRef<string | null>(null);
   const lastSeededContentRef = useRef<string | null>(null);
   // Mirrors seededForKeyRef as state so the input UI can derive a loading
@@ -232,9 +278,12 @@ export default function RiskScreen() {
     temperature,
     humidity,
     wind_speed: windSpeed,
-    // days_since_rain is required by the schema but ignored when kbdi is set.
-    days_since_rain: 0,
-    kbdi,
+    // days_since_rain is required by the schema. When droughtMode === 'kbdi'
+    // we send a filler (the backend ignores it once kbdi is set). When
+    // 'days', we send the actual user-controlled value AND omit kbdi so the
+    // algorithm uses the 1 - exp(-days/15) drying proxy.
+    days_since_rain: droughtMode === 'days' ? daysSinceRain : 0,
+    ...(droughtMode === 'kbdi' ? { kbdi } : {}),
     // Season is required by the schema. The backend ignores it when
     // ndvi_anomaly is also sent (vegetation mode), so we always pass it.
     season,
@@ -539,7 +588,7 @@ export default function RiskScreen() {
               eyebrow="Inputs"
               action={
                 <Pressable
-                  onPress={applyLocal}
+                  onPress={() => applyLocal('reset')}
                   disabled={!localReady}
                   hitSlop={8}
                   accessibilityLabel="Reset inputs to current conditions for your area"
@@ -639,50 +688,225 @@ export default function RiskScreen() {
               index={3}
               bigValue
             />
-            <View>
-              <SliderRow
-                key={`kbdi-${seedNonce}`}
-                label="Drought (KBDI)"
-                value={kbdi}
-                min={0} max={800} step={10} unit=""
-                onChange={(v) => {
-                  setKbdiUserSet(true);
-                  touchAnd(setKbdi)(v);
-                }}
-                isLoading={inputsInTransition}
-                index={4}
-                bigValue
-              />
-              {!inputsInTransition ? (
-                <View style={{ marginTop: 6, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: 99,
-                      backgroundColor: kbdiBucket(kbdi).color,
-                    }}
-                  />
+            {/* Drought signal — KBDI ↔ Days since rain toggle. Mirrors the
+             *  Vegetation signal InputCard pattern below: full-card skeleton
+             *  during location transitions, then header + segmented control
+             *  + the active mode's slider. Warning is shared (both modes
+             *  depend on Open-Meteo Archive) and rendered once at the bottom. */}
+            {inputsInTransition ? (
+              <InputCard padding={16} style={{ marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Skeleton width={130} height={12} rounded="sm" />
+                  <Skeleton width={60} height={18} rounded="full" />
+                </View>
+                <View style={{ marginTop: 12 }}>
+                  <Skeleton width={'100%'} height={38} rounded="md" />
+                </View>
+                <View style={{ marginTop: 12 }}>
+                  <Skeleton width={'100%'} height={32} rounded="md" />
+                </View>
+              </InputCard>
+            ) : (
+            <InputCard padding={16} style={{ marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: '600',
+                    letterSpacing: 2,
+                    color: '#9ca3af',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Drought signal
+                </Text>
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    borderWidth: 0.5,
+                    borderColor: 'rgba(255,255,255,0.08)',
+                  }}
+                >
                   <Text
                     style={{
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: '600',
-                      letterSpacing: 2,
-                      color: kbdiBucket(kbdi).color,
+                      letterSpacing: 1.4,
+                      color: '#9ca3af',
                       textTransform: 'uppercase',
                     }}
                   >
-                    {kbdiBucket(kbdi).label} · 0–800 scale
+                    Pick one
                   </Text>
                 </View>
-              ) : null}
-              {!inputsInTransition && localKbdiFailed && !kbdiUserSet ? (
+              </View>
+
+              {/* KBDI ↔ Days since rain segmented control. Same RED accent as
+               *  the Vegetation segmented control below, so both signal-mode
+               *  toggles read as part of the same "pick which input to drive
+               *  the algorithm with" pattern. */}
+              <View style={{ marginTop: 12 }}>
+                <GlassSegmented
+                  value={droughtMode}
+                  onChange={(v: DroughtMode) => {
+                    setDroughtMode(v);
+                    // Force the about-to-mount slider's native view to
+                    // re-instantiate so its thumb position reflects the
+                    // current state value instead of a stale cached position.
+                    setDroughtToggleNonce((n) => n + 1);
+                  }}
+                  color={RED}
+                  rgb={RED_RGB}
+                  options={[
+                    { id: 'kbdi', label: 'KBDI' },
+                    { id: 'days', label: 'Days since rain' },
+                  ]}
+                />
+              </View>
+
+              {droughtMode === 'kbdi' ? (
+                <View style={{ marginTop: 12 }}>
+                  {/* SCALED KBDI SLIDER — full precision preserved.
+                   *  @react-native-community/slider v5.0.1 on iOS misbehaves
+                   *  with large absolute max values (max=800): the native
+                   *  UISlider's thumb sits at the minimum on initial mount
+                   *  regardless of `value`. The same library works perfectly
+                   *  for NDVI (max=0.5, step=0.001) on the same screen.
+                   *  Workaround: mirror NDVI's structure. We feed the native
+                   *  slider on a 0–1 scale with step=0.00125 → 801 ticks,
+                   *  one per KBDI integer. Convert in/out via *800/÷800. No
+                   *  precision loss; user still sees the real 0–800 KBDI
+                   *  number via displayValue / displayMin / displayMax. */}
+                  <SliderRow
+                    key={`kbdi-${seedNonce}-${droughtToggleNonce}`}
+                    label="Drought (KBDI)"
+                    value={kbdi / 800}
+                    min={0} max={1} step={0.00125} unit=""
+                    displayValue={kbdi}
+                    displayMin={0}
+                    displayMax={800}
+                    displayDecimals={0}
+                    onChange={(v) => {
+                      setKbdiUserSet(true);
+                      touchAnd(setKbdi)(Math.round(v * 800));
+                    }}
+                    bigValue
+                  />
+                  <View style={{ marginTop: 6, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: 99,
+                        backgroundColor: kbdiBucket(kbdi).color,
+                      }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: '600',
+                        letterSpacing: 2,
+                        color: kbdiBucket(kbdi).color,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {kbdiBucket(kbdi).label} · 0–800 scale
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ marginTop: 12 }}>
+                  <SliderRow
+                    key={`days-${seedNonce}-${droughtToggleNonce}`}
+                    label="Days since rain"
+                    value={daysSinceRain}
+                    min={0} max={30} step={1} unit=""
+                    onChange={(v) => {
+                      setKbdiUserSet(true);
+                      touchAnd(setDaysSinceRain)(Math.round(v));
+                    }}
+                    bigValue
+                  />
+                  <View style={{ marginTop: 8 }}>
+                    <HelperText>
+                      Days since the last day with ≥1 mm rain. Drives the
+                      algorithm&apos;s exponential drying proxy when KBDI
+                      isn&apos;t supplied.
+                    </HelperText>
+                  </View>
+                  {/* Coarse-signal callout — same amber styling as the
+                   *  Season-mode "Fallback signal" callout below, since both
+                   *  describe a "this is the simpler proxy" choice. */}
+                  <View
+                    style={{
+                      marginTop: 12,
+                      borderRadius: 12,
+                      borderWidth: 0.5,
+                      borderColor: `rgba(${AMBER_RGB}, 0.30)`,
+                      backgroundColor: `rgba(${AMBER_RGB}, 0.05)`,
+                      padding: 12,
+                      flexDirection: 'row',
+                      gap: 12,
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 9,
+                        backgroundColor: `rgba(${AMBER_RGB}, 0.14)`,
+                        borderWidth: 0.5,
+                        borderColor: `rgba(${AMBER_RGB}, 0.35)`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <FontAwesome name="info" size={13} color={AMBER} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '800',
+                          color: AMBER,
+                          letterSpacing: 0.3,
+                          lineHeight: 16,
+                        }}
+                      >
+                        Coarse signal
+                      </Text>
+                      <Text
+                        style={{
+                          marginTop: 3,
+                          fontSize: 11,
+                          color: '#9ca3af',
+                          lineHeight: 16,
+                        }}
+                      >
+                        Status uses real KBDI from Open-Meteo Archive when
+                        available. Days since rain is a simpler proxy used
+                        only when the archive is down.
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Warning — both modes share the same upstream (Open-Meteo
+               *  Archive for KBDI, Forecast for days). When either is null,
+               *  the user's local drought value can't be seeded. */}
+              {localKbdiFailed && !kbdiUserSet ? (
                 <WarningInline
-                  bold="Couldn't fetch your area's KBDI."
-                  rest="Open-Meteo Archive didn't respond, so Reset to my area can't fill this with your real drought value."
+                  bold="Couldn't fetch your area's drought signal."
+                  rest="Open-Meteo didn't respond, so Reset to my area can't fill this with your real value. Slide it manually for a what-if."
                 />
               ) : null}
-            </View>
+            </InputCard>
+            )}
 
             {/* Vegetation signal — full-card skeleton during transitions so
              *  it matches the sliders + state picker above instead of
@@ -751,8 +975,10 @@ export default function RiskScreen() {
                   color={RED}
                   rgb={RED_RGB}
                   options={[
-                    { id: 'season', label: 'Season' },
+                    // NDVI listed first so the default "measured satellite
+                    // data" option reads as primary; season is the fallback.
                     { id: 'ndvi',   label: 'Vegetation (NDVI)' },
+                    { id: 'season', label: 'Season' },
                   ]}
                 />
               </View>

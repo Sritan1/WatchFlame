@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 
 import { AestheticProvider } from '@/lib/aesthetic';
 import { QueryProvider } from '@/lib/query-provider';
@@ -8,22 +8,18 @@ import { UnitsProvider } from '@/lib/use-units';
 
 import './globals.css';
 
-const interBody = Inter({
-  variable: '--font-inter',
+// Geist (Vercel's typeface) handles both body and display — single-family
+// approach reads cleaner than Inter+Inter Tight + JetBrains Mono. The 300
+// weight enables a light-caption / heavy-data contrast pattern.
+const geistSans = Geist({
+  variable: '--font-geist-sans',
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['300', '400', '500', '600', '700', '800'],
   display: 'swap',
 });
 
-const interDisplay = Inter_Tight({
-  variable: '--font-inter-tight',
-  subsets: ['latin'],
-  weight: ['500', '600', '700', '800'],
-  display: 'swap',
-});
-
-const mono = JetBrains_Mono({
-  variable: '--font-jetbrains-mono',
+const geistMono = Geist_Mono({
+  variable: '--font-geist-mono',
   subsets: ['latin'],
   weight: ['400', '500', '600'],
   display: 'swap',
@@ -42,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${interBody.variable} ${interDisplay.variable} ${mono.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body>
         <QueryProvider>

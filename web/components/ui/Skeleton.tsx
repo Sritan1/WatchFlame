@@ -27,8 +27,9 @@ export function Skeleton({
         width,
         height,
         borderRadius: RADIUS[rounded],
-        background: '#26262a',
-        animation: 'skeleton-pulse 0.8s ease-in-out infinite alternate',
+        // background is animated by the `skeleton-pulse` keyframe between two
+        // shades for a more refined tonal pulse than a flat opacity fade.
+        animation: 'skeleton-pulse 1.2s ease-in-out infinite',
         ...style,
       }}
     />

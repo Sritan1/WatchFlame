@@ -19,22 +19,16 @@ export function FemaCard({ disaster }: { disaster: ActiveDisaster }) {
     <>
       <SectionEyebrow color={AMBER}>Federal Advisory</SectionEyebrow>
       <div
+        className="ember-card ember-hero-card"
         style={{
-          position: 'relative',
-          overflow: 'hidden',
           background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
           border: `0.5px solid rgba(${AMBER_RGB}, 0.28)`,
           borderRadius: ae.radius,
-          boxShadow: `0 20px 50px rgba(${AMBER_RGB}, 0.10), inset 0 1px 0 rgba(255,255,255,0.05)`,
+          boxShadow: `0 20px 50px rgba(${AMBER_RGB}, 0.10)`,
+          ['--card-accent' as string]: AMBER,
+          ['--card-accent-soft' as string]: `rgba(${AMBER_RGB}, 0.18)`,
         }}
       >
-        <div
-          style={{
-            height: 3,
-            background: `linear-gradient(90deg, transparent, ${AMBER}, transparent)`,
-            boxShadow: `0 0 14px ${AMBER}`,
-          }}
-        />
         <StripePattern color={AMBER} opacity={0.04} />
         <div
           aria-hidden="true"

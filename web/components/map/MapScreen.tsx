@@ -18,6 +18,7 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { useFiresAroundMe, useNamedIncidentsNear } from '@/lib/queries';
 import type { RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
+import { useUnits, type DistanceUnit } from '@/lib/use-units';
 
 // FIRMS satellite hits can number in the hundreds for a busy region. Mobile
 // caps at ~100 markers; we do the same to keep the leaflet layer light.
@@ -59,6 +60,7 @@ const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? '';
 export function MapScreen() {
   const { ae } = useAesthetic();
   const loc = useUserLocation();
+  const units = useUnits();
   const incidentsQ = useNamedIncidentsNear(loc.coords, INCIDENT_RADIUS_MI, INCIDENT_LIMIT);
   const firesQ = useFiresAroundMe(loc.coords, 250); // NASA FIRMS, last 24h
   const fires = useMemo(() => incidentsQ.data ?? [], [incidentsQ.data]);
@@ -74,6 +76,26 @@ export function MapScreen() {
 
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [filter, setFilter] = useState<FireFilter>('all');
+
+  // Map state for the floating scale bar. Defaults to MapImpl's initial
+  // (zoom 8 at the user's center) so the bar renders correctly even before
+  // the first `ember-map-state` event lands.
+  const [mapState, setMapState] = useState<{ lat: number; zoom: number }>({
+    lat: loc.coords.lat,
+    zoom: 8,
+  });
+  useEffect(() => {
+    const onState = (e: Event) => {
+      const detail = (e as CustomEvent<{ lat: number; zoom: number }>).detail;
+      setMapState(detail);
+    };
+    window.addEventListener('ember-map-state', onState);
+    return () => window.removeEventListener('ember-map-state', onState);
+  }, []);
+  const scale = useMemo(
+    () => computeScale(mapState.lat, mapState.zoom, units.distance),
+    [mapState, units.distance],
+  );
 
   // Intent handoff from Safety's "Show on Map" — when ?from=fema is present,
   // auto-select the closest named incident once data lands. Mirrors mobile's
@@ -112,7 +134,7 @@ export function MapScreen() {
       style={{
         position: 'relative',
         width: '100%',
-        height: 'calc(100vh - 64px)',
+        height: 'calc(100vh - 80px)',
         background: ae.bg,
         overflow: 'hidden',
         display: 'grid',
@@ -184,15 +206,51 @@ export function MapScreen() {
           >
             Scale
           </div>
-          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Bar with tick caps at both ends — width tracks the current zoom. */}
             <div
               style={{
-                width: 64,
-                height: 4,
-                borderRadius: 2,
-                background: `linear-gradient(90deg, ${ae.text} 50%, ${ae.line} 50%)`,
+                position: 'relative',
+                width: scale.widthPx,
+                height: 10,
+                display: 'flex',
+                alignItems: 'center',
               }}
-            />
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  left: 0,
+                  right: 0,
+                  height: 2,
+                  background: ae.text,
+                  borderRadius: 1,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: 2,
+                  height: 10,
+                  background: ae.text,
+                  borderRadius: 1,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 0,
+                  width: 2,
+                  height: 10,
+                  background: ae.text,
+                  borderRadius: 1,
+                }}
+              />
+            </div>
             <span
               style={{
                 fontFamily: ae.fontMono,
@@ -201,7 +259,7 @@ export function MapScreen() {
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              5 mi
+              {scale.label}
             </span>
           </div>
         </div>
@@ -222,6 +280,40 @@ export function MapScreen() {
       />
     </div>
   );
+}
+
+// Standard web-Mercator resolution at zoom 0 (meters per pixel at the equator).
+// Same constant `L.Control.Scale` uses internally.
+const MERCATOR_RES_Z0 = 156543.03392;
+const METERS_PER_MILE = 1609.344;
+
+/** Pick a "nice" round value for a scale bar — 1/2/5 × power-of-10. Aiming
+ *  for ~80px-wide bar on screen, then return the actual chosen tick and the
+ *  pixel width it'll occupy at the current zoom + latitude. */
+function computeScale(
+  lat: number,
+  zoom: number,
+  unit: DistanceUnit,
+): { label: string; widthPx: number } {
+  const metersPerPx =
+    (MERCATOR_RES_Z0 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+  const unitMeters = unit === 'mi' ? METERS_PER_MILE : 1000;
+  const targetPx = 80;
+  const targetUnits = (targetPx * metersPerPx) / unitMeters;
+
+  // 1/2/5 × 10^n ticks across a wide range so we work from neighborhood
+  // (~0.05 mi) to continent (~2500 mi) zoom levels.
+  const ticks = [
+    0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000,
+  ];
+  let chosen = ticks[0];
+  for (const t of ticks) {
+    if (t <= targetUnits) chosen = t;
+  }
+
+  const chosenMeters = chosen * unitMeters;
+  const widthPx = Math.max(20, Math.min(160, chosenMeters / metersPerPx));
+  return { label: `${chosen} ${unit}`, widthPx };
 }
 
 function ZoomButton({ dir }: { dir: 1 | -1 }) {

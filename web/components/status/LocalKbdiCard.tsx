@@ -39,6 +39,7 @@ export function LocalKbdiCard({
 
   return (
     <div
+      className="ember-card ember-card-hover"
       style={{
         background: ae.surface,
         border: ae.cardBorder,

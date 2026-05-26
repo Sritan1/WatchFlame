@@ -13,9 +13,8 @@ import { FemaBanner } from '@/components/safety/FemaBanner';
 import { cardinal8 } from '@/components/ui/CompassRose';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
-import { dangerToRisk, type LatLon } from '@/lib/api';
+import { dangerToRisk, type LatLon, type NamedIncident } from '@/lib/api';
 import {
   useActiveDisasters,
   useFiresAroundMe,
@@ -24,7 +23,7 @@ import {
   useRiskFromWeather,
   useWeather,
 } from '@/lib/queries';
-import { type RiskLevel } from '@/lib/theme';
+import { floorLow, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 
 function bearingTo(from: LatLon, to: LatLon): number {
@@ -62,6 +61,12 @@ export function SafetyScreen() {
   const riskLevel: RiskLevel = risk.data
     ? dangerToRisk(risk.data.danger_level)
     : 'moderate';
+  // Floor 'low' to 'moderate' for the *other* cards' chrome (Checklist,
+  // EvacuationCard) so the page doesn't read as washed-out / grey when
+  // conditions are calm. The AdvisoryRow banner uses raw `riskLevel` via the
+  // bannerSignal calc below so its copy is accurate ("All Clear" stays
+  // green, not amber).
+  const chromeLevel: RiskLevel = floorLow(riskLevel);
 
   // Closest fire — pick whichever source has a closer detection. Mobile uses
   // FIRMS for the proximity meter because satellite hits often appear before
@@ -98,20 +103,41 @@ export function SafetyScreen() {
       ? { lat: nearestSatHit.feature.properties.lat, lon: nearestSatHit.feature.properties.lon }
       : null;
 
-  // Severity for the closest detection. Use synthesized severity for named
-  // incidents (distance + acres) and fall back to MODERATE for satellite-only
-  // (FIRMS has no acres data — can't bucket reliably).
-  const nearestSeverity: RiskLevel | null = !closestDistanceMi
-    ? null
-    : closestIsIncident && nearestIncident
-      ? severityOf(nearestIncident)
-      : 'moderate';
+  // Severity for the closest detection. Always run `severityOf` so the bucket
+  // matches the Fire Detail "Threat to You" tile exactly. For named
+  // incidents we pass real acres; for FIRMS-only hits acres is null and
+  // severityOf treats it as 0, so distance alone drives the bucket (which
+  // is the correct read — a close satellite hit IS scary). Floors at
+  // distance-only bands: <6mi EXTREME, <12mi HIGH, <25mi MODERATE, else LOW.
+  const nearestSeverity: RiskLevel | null =
+    closestDistanceMi == null
+      ? null
+      : severityOf({
+          distance_mi: closestDistanceMi,
+          acres: closestIsIncident && nearestIncident ? nearestIncident.acres : null,
+        } as NamedIncident);
   const nearestBearing = closestCoords
     ? normalizeBearing(bearingTo(loc.coords, closestCoords))
     : 0;
 
   const activeDisaster = disasters.data?.active[0];
   const nearestShelter = shelters.data?.[0] ?? null;
+
+  // Combined Safety Status banner: factors in BOTH local fire-weather (from
+  // /risk) AND the closest fire's threat heuristic (distance + size). Rules:
+  //   - Both signals at EXTREME → "Evacuation Warning"
+  //   - Either signal at HIGH or EXTREME → "Stay Aware" (copy reflects which)
+  //   - Otherwise (both ≤ MODERATE) → "All Clear"
+  // We never escalate to a literal "Evacuate Immediately" — that's a
+  // 911-class call we shouldn't claim authority over.
+  const weatherSignal: RiskLevel | null = risk.data ? riskLevel : null;
+  const bannerSignal = computeBannerSignal(weatherSignal, nearestSeverity);
+
+  // Loading state: skeleton until ALL inputs we depend on are resolved
+  // enough to compute the banner. Uses isLoading (not isFetching) so
+  // stale-while-revalidate refetches don't flash a skeleton.
+  const bannerLoading =
+    weather.isLoading || risk.isLoading || incidents.isLoading || fires.isLoading;
 
   return (
     <PageSection top={36} bottom={56}>
@@ -167,9 +193,9 @@ export function SafetyScreen() {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <ChecklistCard riskLevel={riskLevel} />
+          <ChecklistCard riskLevel={chromeLevel} />
           <AdvisoryRow
-            riskLevel={riskLevel}
+            banner={bannerSignal}
             closestFire={
               closestDistanceMi != null
                 ? { distance_mi: closestDistanceMi, name: closestName ?? '—' }
@@ -177,23 +203,28 @@ export function SafetyScreen() {
             }
             closestBearingLabel={closestCoords ? cardinal8(nearestBearing) : ''}
             closestSeverity={nearestSeverity}
-            isLoading={incidents.isLoading || fires.isLoading}
+            isLoading={bannerLoading}
           />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {closestDistanceMi != null && closestCoords ? (
+          {/* Render the card whenever we have fire data OR are still loading
+              it. The card itself renders skeletons inline for whichever mode
+              is still waiting on its data, so the toggle stays interactive. */}
+          {(closestDistanceMi != null && closestCoords) ||
+          incidents.isLoading ||
+          fires.isLoading ? (
             <EvacuationCard
               origin={loc.coords}
-              fireBearingDeg={nearestBearing}
+              fireBearingDeg={closestCoords ? nearestBearing : null}
               fireDistanceMi={closestDistanceMi}
-              riskLevel={riskLevel}
+              riskLevel={chromeLevel}
               mode={evacMode}
               onModeChange={setEvacMode}
               nearestShelter={nearestShelter}
+              fireLoading={incidents.isLoading || fires.isLoading}
+              sheltersLoading={shelters.isLoading}
             />
-          ) : incidents.isLoading || fires.isLoading ? (
-            <EvacuationCardSkeleton />
           ) : null}
         </div>
       </div>
@@ -201,33 +232,82 @@ export function SafetyScreen() {
   );
 }
 
-function EvacuationCardSkeleton() {
-  return (
-    <div
-      style={{
-        background: 'linear-gradient(180deg, #161B24, #10141B)',
-        border: '0.5px solid rgba(255, 255, 255, 0.09)',
-        borderRadius: 16,
-        padding: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <Skeleton width={140} height={12} rounded="sm" />
-      <Skeleton width={'100%'} height={32} rounded="md" />
-      <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
-        <Skeleton width={130} height={130} rounded="full" />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <Skeleton width={120} height={32} rounded="md" />
-          <Skeleton width={'90%'} height={11} rounded="sm" />
-        </div>
-      </div>
-      <Skeleton width={'100%'} height={44} rounded="md" />
-    </div>
-  );
-}
-
 function normalizeBearing(b: number): number {
   return ((b % 360) + 360) % 360;
+}
+
+/** Build the Safety Status banner from the two independent signals.
+ *
+ *  - **weather**: raw fire-weather risk from /risk (low | moderate | high |
+ *    extreme). Driven by VPD × wind × drought × NDVI/season at the user's
+ *    location.
+ *  - **threat**: distance-and-size heuristic for the closest active fire
+ *    (low | moderate | high | extreme). Already computed upstream as
+ *    `nearestSeverity` from severityOf().
+ *
+ *  Decision matrix (per user spec — no "EVACUATE IMMEDIATELY" copy, since
+ *  that's a 911-class instruction we shouldn't claim authority over):
+ *
+ *  | weather | threat  | banner                                    |
+ *  | ------- | ------- | ----------------------------------------- |
+ *  | EXT     | EXT     | Evacuation Warning (orange)               |
+ *  | HIGH+   | HIGH+   | Stay Aware — combined copy (amber)        |
+ *  | HIGH+   | ≤ MOD   | Stay Aware — weather copy (amber)         |
+ *  | ≤ MOD   | HIGH+   | Stay Aware — threat copy (amber)          |
+ *  | ≤ MOD   | ≤ MOD   | All Clear (green)                         |
+ *
+ *  Returns `level` as the palette tier (low | moderate | high — never
+ *  'extreme' since the only EXT+EXT case maps to 'high' / orange).
+ */
+export type BannerSignal = {
+  level: RiskLevel;
+  title: string;
+  subtitle: string;
+};
+
+function computeBannerSignal(
+  weather: RiskLevel | null,
+  threat: RiskLevel | null,
+): BannerSignal {
+  const isElevated = (r: RiskLevel | null) => r === 'high' || r === 'extreme';
+  const weatherHot = isElevated(weather);
+  const threatHot = isElevated(threat);
+
+  if (weather === 'extreme' && threat === 'extreme') {
+    return {
+      level: 'high',
+      title: 'Evacuation Warning',
+      subtitle:
+        'Both local fire weather and a nearby active fire are at extreme levels. Prepare to evacuate and follow official guidance from local authorities.',
+    };
+  }
+  if (weatherHot && threatHot) {
+    return {
+      level: 'moderate',
+      title: 'Stay Aware',
+      subtitle:
+        'Fire weather is elevated and an active fire has been detected nearby. Review your evacuation plan and monitor conditions closely.',
+    };
+  }
+  if (weatherHot) {
+    return {
+      level: 'moderate',
+      title: 'Stay Aware',
+      subtitle:
+        'Conditions favor fire growth. Review your plan and keep an eye on local alerts.',
+    };
+  }
+  if (threatHot) {
+    return {
+      level: 'moderate',
+      title: 'Stay Aware',
+      subtitle:
+        'An active fire is nearby. Review your evacuation plan and stay alert for changes.',
+    };
+  }
+  return {
+    level: 'low',
+    title: 'All Clear',
+    subtitle: 'No immediate fire risk for your area. Stay informed and check back regularly.',
+  };
 }

@@ -17,7 +17,9 @@ export function Eyebrow({
         fontFamily: ae.fontMono,
         fontSize: 10.5,
         color: color ?? ae.textMute,
-        letterSpacing: '0.12em',
+        // Wider tracking reads as confidence. 0.12 → 0.16em on the central
+        // Eyebrow cascades to every screen that uses this component.
+        letterSpacing: '0.16em',
         textTransform: ae.chipUpper ? 'uppercase' : 'none',
         fontWeight: 500,
       }}
