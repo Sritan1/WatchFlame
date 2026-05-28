@@ -14,7 +14,7 @@
     "low": 0.3,
     "moderate": 0.6,
     "high": 0.8,
-    "extreme": 1.0
+    "extreme": 0.8
   },
   "states": {
     "CA": {

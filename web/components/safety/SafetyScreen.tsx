@@ -5,7 +5,6 @@
 
 import { useState } from 'react';
 
-import { severityOf } from '@/components/status/ClosestFiresList';
 import { AdvisoryRow } from '@/components/safety/AdvisoryRow';
 import { ChecklistCard } from '@/components/safety/ChecklistCard';
 import { EvacuationCard, type EvacMode } from '@/components/safety/EvacuationCard';
@@ -14,7 +13,12 @@ import { cardinal8 } from '@/components/ui/CompassRose';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
-import { dangerToRisk, type LatLon, type NamedIncident } from '@/lib/api';
+import { type LatLon } from '@/lib/api';
+import {
+  bucketOf,
+  normalizeWeather,
+  personalThreatBucket,
+} from '@/lib/composite-risk';
 import {
   useActiveDisasters,
   useFiresAroundMe,
@@ -58,9 +62,16 @@ export function SafetyScreen() {
   const shelters = useNearbyShelters(loc.coords);
   const [evacMode, setEvacMode] = useState<EvacMode>('away');
 
-  const riskLevel: RiskLevel = risk.data
-    ? dangerToRisk(risk.data.danger_level)
-    : 'moderate';
+  // Route the fire-weather signal through the same calibration pipeline as
+  // Status (normalizeWeather → bucketOf). Mathematically equivalent to the
+  // backend's bucket when thresholds are present, but using the shared
+  // composite-risk code path means any future tweak (e.g. EXT band tuning)
+  // propagates here automatically instead of drifting apart.
+  const weatherNormalized: number | null = risk.data
+    ? normalizeWeather(risk.data.risk_score, risk.data.regional_thresholds ?? null)
+    : null;
+  const riskLevel: RiskLevel =
+    weatherNormalized != null ? bucketOf(weatherNormalized) : 'moderate';
   // Floor 'low' to 'moderate' for the *other* cards' chrome (Checklist,
   // EvacuationCard) so the page doesn't read as washed-out / grey when
   // conditions are calm. The AdvisoryRow banner uses raw `riskLevel` via the
@@ -103,22 +114,42 @@ export function SafetyScreen() {
       ? { lat: nearestSatHit.feature.properties.lat, lon: nearestSatHit.feature.properties.lon }
       : null;
 
-  // Severity for the closest detection. Always run `severityOf` so the bucket
-  // matches the Fire Detail "Threat to You" tile exactly. For named
-  // incidents we pass real acres; for FIRMS-only hits acres is null and
-  // severityOf treats it as 0, so distance alone drives the bucket (which
-  // is the correct read — a close satellite hit IS scary). Floors at
-  // distance-only bands: <6mi EXTREME, <12mi HIGH, <25mi MODERATE, else LOW.
-  const nearestSeverity: RiskLevel | null =
-    closestDistanceMi == null
-      ? null
-      : severityOf({
-          distance_mi: closestDistanceMi,
-          acres: closestIsIncident && nearestIncident ? nearestIncident.acres : null,
-        } as NamedIncident);
   const nearestBearing = closestCoords
     ? normalizeBearing(bearingTo(loc.coords, closestCoords))
     : 0;
+
+  // Stale-FIRMS dampener — only applies when the winning fire is a FIRMS
+  // pixel (no named incident) and its acq_date is older than 24h. Matches
+  // the same 24h threshold the threat formula uses internally.
+  const closestIsStaleFirms = (() => {
+    if (closestIsIncident || !nearestSatHit) return false;
+    const acqDate = nearestSatHit.feature.properties.acq_date;
+    const acqTime = nearestSatHit.feature.properties.acq_time;
+    if (!acqDate) return false;
+    const time = (acqTime ?? '0000').padStart(4, '0');
+    const iso = `${acqDate}T${time.slice(0, 2)}:${time.slice(2)}:00Z`;
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return false;
+    return (Date.now() - ms) / (3600 * 1000) > 24;
+  })();
+
+  // Severity for the closest detection. Uses the SHARED personalThreatBucket
+  // so the value matches Status's Active Fire Threat and Fire Detail's
+  // "Threat to You" tile for the same fire. Same inputs: distance + size +
+  // wind alignment + containment dampener + stale-FIRMS dampener.
+  const nearestSeverity: RiskLevel | null =
+    closestDistanceMi == null
+      ? null
+      : personalThreatBucket({
+          distanceMi: closestDistanceMi,
+          acres: closestIsIncident && nearestIncident ? nearestIncident.acres : null,
+          containedPct:
+            closestIsIncident && nearestIncident ? nearestIncident.contained_pct : null,
+          isStaleFirms: closestIsStaleFirms,
+          windDeg: weather.data?.wind_deg ?? null,
+          windSpeedKph: weather.data?.wind_speed ?? null,
+          bearingToFireDeg: nearestBearing,
+        });
 
   const activeDisaster = disasters.data?.active[0];
   const nearestShelter = shelters.data?.[0] ?? null;

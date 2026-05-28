@@ -34,8 +34,16 @@ _DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "regional_thresholds
 _GLOBAL_FALLBACK = {
     "low": 0.3,
     "moderate": 0.6,
+    # `high` is the 90th-percentile slot in the calibration schema; kept for
+    # shape parity with calibrated states but NOT used as a bucket boundary
+    # (see `_bucket` below — HIGH→EXT cuts at `extreme`).
     "high": 0.8,
-    "extreme": 1.0,
+    # Aligned with the Risk Calculator's gauge UI (which always used 0.8).
+    # Was 1.0, which made the EXTREME bucket literally unreachable globally
+    # (V4 raw scores rarely cross 1.0). Calibrated states still use their
+    # own fitted 97th-percentile values — this only affects the fallback
+    # for uncalibrated locations.
+    "extreme": 0.8,
 }
 
 

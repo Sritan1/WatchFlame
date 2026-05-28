@@ -1,11 +1,15 @@
 'use client';
 
 // "Vegetation stress" — NDVI anomaly from Sentinel-2 satellite.
-// Ported from app/components/ui/LocalNdviCard.tsx. Sign convention:
-// negative = drier/sparser than normal (raises fire risk), positive = greener.
+// Premium chrome to match LocalKbdiCard: TiltCard + corner glow + GridPattern
+// + diverging-bar visualization with a centered zero tick.
 
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Eyebrow } from '@/components/ui/Eyebrow';
+import { GridPattern } from '@/components/ui/GridPattern';
+import { TiltCard } from '@/components/ui/TiltCard';
 import { useAesthetic } from '@/lib/aesthetic';
+import { RISK_LEVELS } from '@/lib/theme';
 
 interface Bucket {
   label: string;
@@ -31,162 +35,296 @@ export function LocalNdviCard({
   const { ae } = useAesthetic();
   const loaded = ndviAnomaly != null;
   const bucket = loaded ? ndviBucket(ndviAnomaly) : null;
-  // Map anomaly [-0.30, +0.30] → [0, 100] for the centered bar position.
-  const pct = loaded
-    ? Math.max(0, Math.min(100, 50 + (ndviAnomaly / 0.30) * 50))
-    : 50;
 
   return (
-    <div
-      className="ember-card ember-card-hover"
+    <TiltCard
+      max={2}
       style={{
-        background: ae.surface,
+        position: 'relative',
+        overflow: 'hidden',
+        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
         border: ae.cardBorder,
-        borderRadius: ae.radius,
-        padding: 22,
+        borderRadius: ae.radiusLg,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-        <Eyebrow>Vegetation stress</Eyebrow>
-        <span
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: -40,
+          right: -40,
+          width: 220,
+          height: 220,
+          borderRadius: '50%',
+          filter: 'blur(50px)',
+          pointerEvents: 'none',
+          background: `radial-gradient(circle, rgba(${
+            bucket?.rgb ?? RISK_LEVELS.moderate.glow
+          }, 0.10), transparent 70%)`,
+        }}
+      />
+      <GridPattern opacity={0.03} />
+      <div style={{ position: 'relative', padding: 24 }}>
+        <div
           style={{
-            fontFamily: ae.fontMono,
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.16em',
-            color: ae.textDim,
-            textTransform: 'uppercase',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
           }}
         >
-          NDVI · Sentinel-2
-        </span>
-      </div>
-
-      {loaded && bucket ? (
-        <>
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'baseline', gap: 10 }}>
-            <span
-              style={{
-                fontFamily: ae.fontDisplay,
-                fontSize: 32,
-                fontWeight: ae.titleWeight,
-                color: ae.text,
-                letterSpacing: '-0.02em',
-                fontVariantNumeric: 'tabular-nums',
-                lineHeight: 1,
-              }}
-            >
-              {ndviAnomaly >= 0 ? '+' : ''}
-              {ndviAnomaly.toFixed(3)}
-            </span>
-            <span style={{ fontFamily: ae.fontMono, fontSize: 11, color: ae.textDim }}>anomaly</span>
-            <span
-              style={{
-                marginLeft: 'auto',
-                fontFamily: ae.fontMono,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-                color: bucket.color,
-              }}
-            >
-              {bucket.label}
-            </span>
-          </div>
-
-          {/* Centered diverging bar: 0% = much drier, 50% = normal, 100% = much greener */}
-          <div
+          <Eyebrow>Vegetation Stress</Eyebrow>
+          <span
             style={{
-              marginTop: 12,
-              height: 6,
-              borderRadius: 99,
-              background:
-                'linear-gradient(90deg, rgba(239,68,68,0.25), rgba(251,191,36,0.15) 50%, rgba(126,231,135,0.25))',
-              position: 'relative',
+              fontFamily: ae.fontMono,
+              fontSize: 10,
+              color: ae.textMute,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
             }}
           >
+            NDVI · Sentinel-2
+          </span>
+        </div>
+
+        {loaded && bucket ? (
+          <>
             <div
               style={{
-                position: 'absolute',
-                left: '50%',
-                top: -2,
-                bottom: -2,
-                width: 0.5,
-                background: ae.lineStrong,
+                marginTop: 16,
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span
+                  style={{
+                    fontFamily: ae.fontDisplay,
+                    fontSize: 52,
+                    fontWeight: ae.titleWeight,
+                    letterSpacing: '-0.04em',
+                    color: ae.text,
+                    lineHeight: 0.9,
+                    fontVariantNumeric: 'tabular-nums',
+                    textShadow: `0 0 32px rgba(${bucket.rgb}, 0.32)`,
+                  }}
+                >
+                  {ndviAnomaly >= 0 ? '+' : ''}
+                  <AnimatedNumber value={ndviAnomaly} format={(n) => n.toFixed(3)} duration={900} />
+                </span>
+                <span
+                  style={{
+                    fontFamily: ae.fontMono,
+                    fontSize: 12,
+                    color: ae.textDim,
+                    letterSpacing: '0.10em',
+                  }}
+                >
+                  anomaly
+                </span>
+              </div>
+              <LevelPill ae={ae} color={bucket.color} glow={bucket.rgb} label={bucket.label} />
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <NdviGauge ae={ae} value={ndviAnomaly} bucketColor={bucket.color} />
+            </div>
+
+            <p
+              style={{
+                margin: '20px 0 0',
+                paddingTop: 16,
+                borderTop: `0.5px solid ${ae.line}`,
+                fontFamily: ae.fontBody,
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: ae.textDim,
+              }}
+            >
+              Current NDVI minus the same-month climatology (last 3 years) in a 1 km buffer.
+              Negative = drier than normal, which raises fire risk.
+            </p>
+          </>
+        ) : isLoading ? (
+          <>
+            <div
+              style={{
+                marginTop: 16,
+                height: 48,
+                width: 180,
+                borderRadius: 8,
+                background: 'rgba(255, 255, 255, 0.04)',
+                animation: 'ember-flicker 1.6s ease-in-out infinite',
               }}
             />
             <div
               style={{
-                position: 'absolute',
-                top: -4,
-                bottom: -4,
-                left: `calc(${pct}% - 7px)`,
-                width: 14,
-                height: 14,
+                marginTop: 20,
+                height: 10,
+                width: '100%',
                 borderRadius: 99,
-                background: bucket.color,
-                border: '2px solid #fff',
-                boxShadow: `0 0 10px ${bucket.color}`,
-                transition: 'left 0.6s cubic-bezier(0.3, 1, 0.4, 1)',
+                background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
-          </div>
+          </>
+        ) : (
+          <>
+            <p
+              style={{
+                margin: '14px 0 0',
+                fontFamily: ae.fontBody,
+                fontSize: 14,
+                color: ae.text,
+              }}
+            >
+              Satellite imagery unavailable.
+            </p>
+            <p
+              style={{
+                margin: '6px 0 0',
+                fontFamily: ae.fontBody,
+                fontSize: 12,
+                color: ae.textMute,
+                lineHeight: 1.5,
+              }}
+            >
+              Heavy cloud cover, outside Sentinel-2 coverage, or upstream throttling. The score
+              falls back to a calendar-season multiplier when this happens.
+            </p>
+          </>
+        )}
+      </div>
+    </TiltCard>
+  );
+}
 
-          <p
-            style={{
-              margin: '14px 0 0',
-              fontFamily: ae.fontBody,
-              fontSize: 12,
-              color: ae.textMute,
-              lineHeight: 1.5,
-            }}
-          >
-            Current NDVI minus the same-month climatology (last 3 years) in a 1 km buffer.
-            Negative = drier than normal, which raises fire risk.
-          </p>
-        </>
-      ) : isLoading ? (
-        <>
+/** Diverging NDVI gauge — red ← center → green with a zero tick. Marker
+ *  position scales the [-0.30, +0.30] anomaly to [0, 100]%. */
+function NdviGauge({
+  ae,
+  value,
+  bucketColor,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  value: number;
+  bucketColor: string;
+}) {
+  const min = -0.3;
+  const max = 0.3;
+  const pct = Math.min(1, Math.max(0, (value - min) / (max - min)));
+  const red = '#ef4444';
+  const amber = RISK_LEVELS.moderate.color;
+  const green = RISK_LEVELS.low.color;
+  return (
+    <div>
+      <div style={{ position: 'relative' }}>
+        <div
+          style={{
+            height: 10,
+            borderRadius: 99,
+            background: `linear-gradient(90deg, ${red} 0%, ${amber} 38%, ${amber} 62%, ${green} 100%)`,
+            border: '0.5px solid rgba(255,255,255,0.10)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10)',
+            position: 'relative',
+          }}
+        >
+          {/* Zero tick */}
           <div
             style={{
-              marginTop: 12,
-              height: 32,
-              width: 160,
-              borderRadius: 6,
-              background: 'rgba(255, 255, 255, 0.04)',
-              animation: 'ember-flicker 1.6s ease-in-out infinite',
+              position: 'absolute',
+              top: -3,
+              left: '50%',
+              width: 1.5,
+              height: 16,
+              marginLeft: -0.75,
+              background: 'rgba(255,255,255,0.5)',
             }}
           />
-          <div
-            style={{
-              marginTop: 12,
-              height: 6,
-              width: '100%',
-              borderRadius: 99,
-              background: 'rgba(255, 255, 255, 0.04)',
-            }}
-          />
-        </>
-      ) : (
-        <>
-          <p style={{ margin: '12px 0 0', fontFamily: ae.fontBody, fontSize: 14, color: ae.text }}>
-            Satellite imagery unavailable.
-          </p>
-          <p
-            style={{
-              margin: '6px 0 0',
-              fontFamily: ae.fontBody,
-              fontSize: 12,
-              color: ae.textMute,
-              lineHeight: 1.5,
-            }}
-          >
-            Heavy cloud cover, outside Sentinel-2 coverage, or upstream throttling. The
-            score falls back to a calendar-season multiplier when this happens.
-          </p>
-        </>
-      )}
+        </div>
+        {/* Marker */}
+        <div
+          style={{
+            position: 'absolute',
+            top: -3,
+            left: `${pct * 100}%`,
+            transform: 'translateX(-50%)',
+            width: 16,
+            height: 16,
+            borderRadius: 99,
+            background: bucketColor,
+            border: '2px solid #fff',
+            boxShadow: `0 0 10px ${bucketColor}`,
+            transition: 'left 0.7s cubic-bezier(0.3, 1, 0.4, 1)',
+          }}
+        />
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontFamily: ae.fontMono,
+          fontSize: 9.5,
+          color: ae.textMute,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+        }}
+      >
+        <span style={{ color: red }}>Stressed</span>
+        <span style={{ color: amber, fontWeight: value > -0.03 && value < 0.03 ? 700 : 500 }}>
+          About Normal
+        </span>
+        <span style={{ color: green }}>Healthy</span>
+      </div>
     </div>
+  );
+}
+
+function LevelPill({
+  ae,
+  color,
+  glow,
+  label,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  color: string;
+  glow: string;
+  label: string;
+}) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 10px 5px 9px',
+        borderRadius: 99,
+        background: `linear-gradient(180deg, rgba(${glow}, 0.18), rgba(${glow}, 0.06))`,
+        border: `0.5px solid rgba(${glow}, 0.32)`,
+        fontFamily: ae.fontMono,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.16em',
+        color,
+        textTransform: 'uppercase',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 99,
+          background: color,
+          boxShadow: `0 0 6px ${color}`,
+        }}
+      />
+      {label}
+    </span>
   );
 }
