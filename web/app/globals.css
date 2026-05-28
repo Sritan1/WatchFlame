@@ -339,6 +339,81 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .inc-open-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
 .inc-open-btn:active { transform: translateY(0) scale(0.992); }
 
+/* ───── Map → Incident Rail ─────────────────────────────────────────
+ * Premium rail card hover states + cursor-following highlight + live pulse.
+ * Selector tree is namespaced to .inc-card / .inc-live-dot / .inc-rail-*
+ * so it doesn't conflict with the Fire Detail .inc-* classes above. */
+@keyframes inc-live-pulse {
+  0%, 100% { opacity: 1;    box-shadow: 0 0 8px #3FB68B; }
+  50%      { opacity: 0.55; box-shadow: 0 0 4px #3FB68B; }
+}
+.inc-live-dot { animation: inc-live-pulse 2.2s ease-in-out infinite; }
+
+@keyframes inc-card-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* Custom slim scrollbar for the rail's fire list. */
+.inc-rail-scroll::-webkit-scrollbar { width: 6px; }
+.inc-rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.inc-rail-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 99px;
+}
+.inc-rail-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* Incident card hover lift + bar-glow + chevron nudge. */
+.inc-card { will-change: transform; }
+.inc-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 0.5px rgba(255, 255, 255, 0.06) !important;
+}
+.inc-card:hover .inc-card-bar {
+  opacity: 1 !important;
+  box-shadow: 0 0 12px rgba(var(--ic-glow), 0.7) !important;
+}
+.inc-card:hover .inc-card-chev {
+  transform: translateX(2px);
+  color: var(--ic-color) !important;
+}
+.inc-card:active {
+  transform: translateY(0) scale(0.995);
+  transition-duration: 0.08s;
+}
+/* Selected variant gets a deeper accent-tinted shadow on hover. */
+.inc-card.inc-card-sel:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--ic-glow), 0.55) !important;
+  box-shadow:
+    0 0 0 0.5px rgba(var(--ic-glow), 0.25),
+    0 18px 38px rgba(var(--ic-glow), 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Cursor-following radial highlight inside each card. Two CSS vars
+ * --mx / --my are written by the card's onMouseMove handler. */
+.inc-card-shine {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle 160px at var(--mx, 50%) var(--my, 0%),
+              rgba(255, 255, 255, 0.06), transparent 60%);
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  border-radius: inherit;
+}
+.inc-card:hover .inc-card-shine { opacity: 1; }
+
+/* CTA lift in the detail footer. */
+.inc-rail-cta:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.inc-rail-cta:active { transform: translateY(0) scale(0.992); }
+
 /* ───── Leaflet map markers (rendered via L.divIcon HTML) ───── */
 .fire-marker-wrapper, .user-marker-wrapper { background: transparent !important; border: none !important; }
 

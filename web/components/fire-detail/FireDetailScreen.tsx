@@ -19,12 +19,12 @@ import { useSearchParams } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 
 import { Icon } from '@/components/Icon';
-import { severityOf } from '@/components/status/ClosestFiresList';
 import { PageSection } from '@/components/ui/PageSection';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk } from '@/lib/api';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
+import { personalThreatBucket } from '@/lib/composite-risk';
 import {
   useFiresNear,
   useNamedIncidentsNear,
@@ -135,6 +135,11 @@ export function FireDetailScreen() {
 
   const me = useUserLocation();
   const weather = useWeather(fireLoc);
+  // User-location weather — used to align the "Threat to You" formula's
+  // wind bump from the USER's perspective (same source Status uses for the
+  // composite). TanStack dedupes on the query key, so this is free when
+  // Status already loaded the same coords.
+  const userWeather = useWeather(me.coords);
   const risk = useRiskFromWeather(weather.data, fireLoc);
   const nearby = useFiresNear(fireLoc, 8, 7);
   const incidents = useNamedIncidentsNear(fireLoc, 10, 5);
@@ -146,9 +151,14 @@ export function FireDetailScreen() {
     () => (me.coords && fireLoc ? distanceMiles(me.coords, fireLoc) : null),
     [me.coords, fireLoc],
   );
-  const bearingFromMe = useMemo(
-    () => (me.coords && fireLoc ? compassBearing(bearingDeg(me.coords, fireLoc)) : null),
+  // Bearing in raw degrees — feeds `personalThreatBucket` for wind alignment.
+  const bearingDegFromMe = useMemo(
+    () => (me.coords && fireLoc ? bearingDeg(me.coords, fireLoc) : null),
     [me.coords, fireLoc],
+  );
+  const bearingFromMe = useMemo(
+    () => (bearingDegFromMe != null ? compassBearing(bearingDegFromMe) : null),
+    [bearingDegFromMe],
   );
 
   const detectionId = useMemo(() => {
@@ -214,15 +224,36 @@ export function FireDetailScreen() {
     : null;
   const accentTone = riskLevel ? getRisk(riskLevel, accent) : null;
 
-  // "Threat to You" — synchronous distance + acres heuristic. Resolves
-  // instantly while fire-weather is still fetching.
+  // "Threat to You" — uses the same per-fire helper as Status's Active Fire
+  // Threat axis so a fire reads the same on both screens. Same modifiers:
+  // distance + size + wind alignment (user-side wind) + time decay for
+  // stale FIRMS + containment dampener. Synchronous; wind/age modifiers
+  // gracefully degrade when their inputs aren't yet loaded (null wind →
+  // skip bump). No new loading state introduced.
+  const isStaleFirms = useMemo(() => {
+    // Only FIRMS-only flows (no matched incident) participate in the
+    // stale-pixel dampener. Match the same 24h threshold the threat
+    // formula uses (STALE_FIRMS_HOURS in composite-risk.ts).
+    if (matched || !acqDate) return false;
+    const time = (acqTime ?? '0000').padStart(4, '0');
+    const iso = `${acqDate}T${time.slice(0, 2)}:${time.slice(2)}:00Z`;
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return false;
+    return (Date.now() - ms) / (3600 * 1000) > 24;
+  }, [matched, acqDate, acqTime]);
+
   const threatLevel: RiskLevel | null =
-    distFromMe == null
+    distFromMe == null || bearingDegFromMe == null
       ? null
-      : severityOf({
-          distance_mi: distFromMe,
+      : personalThreatBucket({
+          distanceMi: distFromMe,
           acres: matched?.acres ?? null,
-        } as NamedIncident);
+          containedPct: matched?.contained_pct ?? null,
+          isStaleFirms,
+          windDeg: userWeather.data?.wind_deg ?? null,
+          windSpeedKph: userWeather.data?.wind_speed ?? null,
+          bearingToFireDeg: bearingDegFromMe,
+        });
   const threatTone = threatLevel ? getRisk(threatLevel, accent) : null;
 
   const openInMaps = `https://www.google.com/maps?q=${fireLat},${fireLon}`;
