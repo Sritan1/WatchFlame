@@ -12,10 +12,17 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
   return (
     <Modal open={open} onClose={onClose} eyebrow="Methodology" title="How is the risk score calculated?" maxWidth={620}>
       <p style={textBody(ae)}>
-        The risk score is a weighted, rule-based fire-weather index — no machine learning, no
-        opaque models. Three meteorological factors combine into a base score, which is then
-        scaled by a vegetation/season multiplier. The whole calculation is reproducible from the
-        same public data sources used by the National Weather Service.
+        The risk score is the <strong style={{ color: ae.text }}>fire-weather</strong> half of
+        the picture — a rule-based, weighted index of the local environment. No machine learning.
+        Three meteorological factors combine multiplicatively, then a vegetation signal scales
+        the result. Reproducible from the same public data the National Weather Service uses.
+      </p>
+      <p style={{ ...textBody(ae), marginTop: 10 }}>
+        On the <strong style={{ color: ae.text }}>Status</strong> page this score is one of two
+        inputs to your <strong style={{ color: ae.text }}>Personal Threat composite</strong> —
+        the other being proximity, size, wind alignment, and containment of any active fires
+        near you. The Risk Calculator isolates this fire-weather half so you can see exactly
+        how the environment is contributing.
       </p>
 
       <Section title="The three base factors" ae={ae}>
@@ -39,24 +46,27 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         />
       </Section>
 
-      <Section title="The season multiplier" ae={ae}>
+      <Section title="The vegetation multiplier" ae={ae}>
         <p style={textBody(ae)}>
-          The weighted sum is multiplied by a coarse season factor:{' '}
-          <Mono ae={ae}>winter 0.40</Mono>, <Mono ae={ae}>spring 0.80</Mono>,{' '}
-          <Mono ae={ae}>summer 1.00</Mono>, <Mono ae={ae}>fall 0.90</Mono>. When satellite NDVI
-          imagery is available, the app substitutes an NDVI-anomaly factor instead — a more
-          direct measure of how stressed the live vegetation is right now.
+          When Sentinel-2 satellite imagery is available, the weighted score is scaled by an{' '}
+          <strong style={{ color: ae.text }}>NDVI anomaly</strong> — how stressed the live
+          vegetation is right now compared to the 3-year average for this month. Drier than
+          normal pushes the multiplier above 1.0; greener than normal pulls it below. If a
+          cloud-blocked pass leaves NDVI unavailable, the app falls back to a coarse season
+          factor (<Mono ae={ae}>winter 0.40</Mono>, <Mono ae={ae}>spring 0.80</Mono>,{' '}
+          <Mono ae={ae}>summer 1.00</Mono>, <Mono ae={ae}>fall 0.90</Mono>).
         </p>
       </Section>
 
       <Section title="Score → level bucket" ae={ae}>
         <p style={textBody(ae)}>
-          The continuous score (typically 0.00–0.70) buckets into four bands. With{' '}
-          <strong style={{ color: ae.text }}>global</strong> defaults: LOW &lt;0.27, MOD &lt;0.33,
-          HIGH &lt;0.42, EXT ≥0.42. When you pick a state with calibrated thresholds, those bands
-          shift to that state&apos;s historical 50th/75th/90th-percentile fire-day scores —
-          a 0.40 might be HIGH in CA but EXTREME in MA, reflecting that the same conditions are
-          more dangerous in some places than others.
+          The continuous score (typically 0.00–1.00) buckets into four bands. With{' '}
+          <strong style={{ color: ae.text }}>global</strong> defaults: LOW &lt;0.3, MOD &lt;0.6,
+          HIGH &lt;0.8, EXT ≥0.8. In one of the{' '}
+          <strong style={{ color: ae.text }}>17 fitted states</strong>, those bands shift to
+          that state&apos;s historical 50th / 75th / 97th-percentile fire-day scores — a 0.40
+          might be HIGH in CA but EXTREME in MA, reflecting that the same conditions are more
+          dangerous in some places than others.
         </p>
       </Section>
 

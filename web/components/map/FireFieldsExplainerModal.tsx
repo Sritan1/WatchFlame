@@ -66,6 +66,17 @@ export function FireFieldsExplainerModal({
           from local authorities carry weight.
         </p>
       </Section>
+
+      <Section ae={ae} title="How this connects to your Personal Threat">
+        <p style={textBody(ae)}>
+          The Status page&apos;s <strong style={{ color: ae.text }}>Personal Threat
+          composite</strong> picks the single fire near you driving the most risk — distance,
+          size, wind alignment, and containment all factored in — and names it in the Threat
+          Source card. Markers within ~50 mi are eligible; beyond that, contribution decays to
+          near zero. A FIRMS pixel that sits within 3 mi of a named incident is treated as the
+          same event.
+        </p>
+      </Section>
     </Modal>
   );
 }
