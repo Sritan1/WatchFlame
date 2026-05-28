@@ -267,7 +267,11 @@ def _build_output_doc(merged_states: dict[str, dict]) -> dict:
         "drought_input": "kbdi",
         "vegetation_input": "ndvi-anomaly-baseline-neutral",
         "percentiles": PERCENTILES,
-        "global": {"low": 0.3, "moderate": 0.6, "high": 0.8, "extreme": 1.0},
+        # `extreme: 0.8` (was 1.0) aligns with the Risk Calculator gauge UI
+        # and makes the EXTREME bucket actually reachable for uncalibrated
+        # locations. Calibrated states still use their fitted 97th-percentile
+        # cutoffs — this only governs the fallback path.
+        "global": {"low": 0.3, "moderate": 0.6, "high": 0.8, "extreme": 0.8},
         "states": merged_states,
     }
 

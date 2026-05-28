@@ -66,7 +66,7 @@ export function StatePickerModal({
 
       <Row
         label="Global (no calibration)"
-        sub="Default 0–1 thresholds: LOW <0.27, MOD <0.33, HIGH <0.42, EXT ≥0.42"
+        sub="Default 0–1 thresholds: LOW <0.3, MOD <0.6, HIGH <0.8, EXT ≥0.8"
         selected={value === null}
         onPress={() => select(null)}
         ae={ae}
