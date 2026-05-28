@@ -13,17 +13,18 @@ export function CalibrationModal({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Modal open={open} onClose={onClose} eyebrow="Regional Risk Index" title="Why your level depends on your state" maxWidth={560}>
       <p style={textBody(ae)}>
-        The risk <strong style={{ color: ae.text }}>score</strong> is the same calculation
-        everywhere — temperature, humidity, wind, drought, and season combined. What changes
-        between states is the <strong style={{ color: ae.text }}>thresholds</strong> that bucket
-        the score into LOW / MOD / HIGH / EXTREME.
+        The fire-weather <strong style={{ color: ae.text }}>score</strong> is the same V4
+        calculation everywhere — VPD, wind, drought (KBDI), and a vegetation signal (NDVI when
+        the satellite has a recent pass). What changes between states is the{' '}
+        <strong style={{ color: ae.text }}>thresholds</strong> that bucket the score into LOW /
+        MOD / HIGH / EXTREME.
       </p>
 
       <Section ae={ae} title="What calibration does">
         <p style={textBody(ae)}>
           Each fitted state has its own historical fire-day score distribution. The thresholds
           are pegged to the <Mono ae={ae}>50th</Mono>, <Mono ae={ae}>75th</Mono>, and{' '}
-          <Mono ae={ae}>90th</Mono> percentiles of those scores. A 0.40 in California (where
+          <Mono ae={ae}>97th</Mono> percentiles of those scores. A 0.40 in California (where
           conditions get more extreme more often) might bucket as HIGH, while the same 0.40 in
           Massachusetts (where it&apos;s a rare-day score) buckets as EXTREME.
         </p>
@@ -41,17 +42,19 @@ export function CalibrationModal({ open, onClose }: { open: boolean; onClose: ()
             FPA Fire Occurrence Database (FPA-FOD)
           </a>{' '}
           — a USDA dataset combining state, federal, and tribal fire reports across 1.88M
-          incidents. Days with significant fire activity are scored against the same V2
+          incidents. Days with significant fire activity are scored against the same V4
           algorithm; the resulting distribution gives us each state&apos;s calibration cutoffs.
         </p>
       </Section>
 
-      <Section ae={ae} title="Why we don&apos;t just use one set of thresholds">
+      <Section ae={ae} title="How this feeds your composite">
         <p style={textBody(ae)}>
-          A flat global threshold would consistently understate risk in fire-prone states (CA, AZ,
-          NV) and overstate it in wetter ones (FL, GA). Calibration makes the level reflect{' '}
-          <strong style={{ color: ae.text }}>local danger</strong>, not absolute climate.
-          The number itself stays comparable across states for analytical use.
+          The calibration-aware fire-weather bucket is the <Mono ae={ae}>w</Mono> half of the{' '}
+          <strong style={{ color: ae.text }}>Personal Threat composite</strong> on this page.
+          The other half (<Mono ae={ae}>t</Mono>) measures any active fires near you. Pegging
+          <Mono ae={ae}> w</Mono> to your state&apos;s history means the composite reflects{' '}
+          <strong style={{ color: ae.text }}>local danger</strong>, not absolute climate —
+          critical for the same composite score to mean the same thing in CA as in FL.
         </p>
       </Section>
     </Modal>

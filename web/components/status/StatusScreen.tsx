@@ -9,12 +9,15 @@
 
 import { useState } from 'react';
 
-import { Icon } from '@/components/Icon';
+import { Icon, type IconName } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
 import { LocalKbdiCard } from '@/components/status/LocalKbdiCard';
 import { LocalNdviCard } from '@/components/status/LocalNdviCard';
+import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Button } from '@/components/ui/Button';
 import { Eyebrow } from '@/components/ui/Eyebrow';
+import { GridPattern } from '@/components/ui/GridPattern';
 import { HeroBand } from '@/components/ui/HeroBand';
 import { HeroOrb } from '@/components/ui/HeroOrb';
 import { PageSection } from '@/components/ui/PageSection';
@@ -22,51 +25,48 @@ import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { ShimmerPill } from '@/components/ui/ShimmerPill';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Stagger } from '@/components/ui/Stagger';
+import { TiltCard } from '@/components/ui/TiltCard';
 import { WindDial } from '@/components/ui/WindDial';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk } from '@/lib/api';
+import {
+  aggregateThreat,
+  bucketOf,
+  composite,
+  compositeSubtitle,
+  findThreatDriver,
+  normalizeWeather,
+  type ThreatDriver,
+} from '@/lib/composite-risk';
 import {
   useFiresAroundMe,
   useNamedIncidentsNear,
   useRiskFromWeather,
   useWeather,
 } from '@/lib/queries';
-import { floorLow, getRisk, type RiskLevel } from '@/lib/theme';
+import { floorLow, getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { formatDistance, formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 
-const NEARBY_DISTANCE_MI = 20;
-const EVAC_DISTANCE_MI = 10;
+// THREAT_RADIUS_MI from composite-risk is 50; we render it here as a label
+// for the breakdown card caption. Kept as a constant in miles since that's
+// the unit composite-risk uses internally — the call site converts to the
+// user's preferred unit via formatDistance.
+const THREAT_RADIUS_MI = 50;
 
+// Composite-bucket-driven hero copy. The bucket is computed from the full
+// composite (fire weather + active-fire threat) — see `compositeSubtitle`
+// for the context-aware subtitle that explains which signal is driving it.
 const HEADLINE: Record<RiskLevel, [string, string]> = {
-  low:      ['No Nearby',     'Fires'],
-  moderate: ['Smoke',         'Advisory'],
-  high:     ['Elevated',      'Fire Risk'],
-  extreme:  ['Extreme Fire',  'Weather'],
-};
-const SUBHEAD: Record<RiskLevel, string> = {
-  low:      'Conditions are calm. No active fires within 250 mi.',
-  moderate: 'Air quality reduced. Stay informed for changes.',
-  high:     'Elevated fire weather in your area. No active fires nearby.',
-  extreme:  'Extreme fire weather. Avoid outdoor ignition sources.',
+  low:      ['All',         'Clear'],
+  moderate: ['Stay',        'Aware'],
+  high:     ['Heightened',  'Risk'],
+  extreme:  ['Critical',    'Conditions'],
 };
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const dirLabel = (deg: number | null | undefined) =>
   deg == null ? '—' : DIRS[Math.round(deg / 45) % 8];
-
-function bearingBetween(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
-  const dLon = (to.lon - from.lon) * (Math.PI / 180);
-  const lat1 = from.lat * (Math.PI / 180);
-  const lat2 = to.lat * (Math.PI / 180);
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  // Normalize to 0..360 — atan2 returns -180..180, and `dirLabel` indexes a
-  // length-8 array with `Math.round(deg/45) % 8`. In JS, `% 8` preserves the
-  // sign of the dividend, so a negative bearing would index DIRS[-2] (=
-  // undefined) and the narrative would read "X mi undefined of you".
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
 
 export function StatusScreen() {
   const { ae, accent } = useAesthetic();
@@ -78,62 +78,95 @@ export function StatusScreen() {
   const units = useUnits();
   const [calibOpen, setCalibOpen] = useState(false);
 
-  // Effective level — prefer the regional bucket when the user is in a fitted state.
-  const effectiveLevel: RiskLevel | null = risk.data
-    ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
+  // ── Composite score ─────────────────────────────────────────────────────
+  // Two independent inputs:
+  //   w = calibration-aware fire-weather score (regional percentile-aligned)
+  //   t = aggregate active-fire threat across nearby NIFC/Cal Fire incidents
+  //       + FIRMS satellite hits within 50 mi (distance, size, wind, time)
+  // Composite = 0.45 × w + 0.55 × t. Bucket = quartile of the composite.
+  //
+  // Calibration matters: a Bronson FL day at the 95th percentile FOR FL has
+  // w ≈ 0.92 even though raw/score_max is only ~0.42, because the regional
+  // thresholds remap each tier into a quarter of [0, 1].
+  const weatherSignal: number | null = risk.data
+    ? normalizeWeather(risk.data.risk_score, risk.data.regional_thresholds ?? null)
     : null;
-  const displayLevel: RiskLevel = effectiveLevel ?? 'moderate';
+  const threatSignal: number =
+    incidents.data != null && fires.data != null
+      ? aggregateThreat({
+          userLoc: loc.coords,
+          namedIncidents: incidents.data,
+          firmsHits: fires.data.features,
+          windDeg: weather.data?.wind_deg ?? null,
+          windSpeedKph: weather.data?.wind_speed ?? null,
+        })
+      : 0;
+  // The single fire driving the threat score — for the Threat Source card.
+  // Applies the FIRMS→named-incident tiebreak inside findThreatDriver so a
+  // satellite pixel sitting on top of a real Cal Fire incident surfaces the
+  // named incident instead.
+  const threatDriver: ThreatDriver | null =
+    incidents.data != null && fires.data != null
+      ? findThreatDriver({
+          userLoc: loc.coords,
+          namedIncidents: incidents.data,
+          firmsHits: fires.data.features,
+          windDeg: weather.data?.wind_deg ?? null,
+          windSpeedKph: weather.data?.wind_speed ?? null,
+        })
+      : null;
+  // True when there's at least one fire close enough to contribute. We use
+  // this to differentiate "no fires in range" (subtitle should say so) from
+  // "fires exist but they're LOW threat" in `compositeSubtitle`.
+  const anyFireInRange: boolean =
+    (incidents.data?.length ?? 0) > 0 || (fires.data?.features.length ?? 0) > 0;
+
+  // While any input is loading, treat composite as null and skeleton the
+  // hero rather than show stale or partial values.
+  const compositeReady =
+    weather.data !== undefined &&
+    risk.data !== undefined &&
+    fires.data !== undefined &&
+    incidents.data !== undefined;
+  const compositeScore: number | null = compositeReady && weatherSignal != null
+    ? composite(weatherSignal, threatSignal)
+    : null;
+  const compositeBucket: RiskLevel = compositeScore != null
+    ? bucketOf(compositeScore)
+    : 'moderate'; // placeholder while loading (skeleton hides it anyway)
+
   // Floor 'low' to 'moderate' for the page CHROME (background waves, hero
   // orb palette, section eyebrow accent). The literal Risk pill below still
-  // receives the actual level so the user sees "LOW" in green when applicable
+  // receives the actual bucket so the user sees "LOW" in green when applicable
   // — this only stops the surrounding visuals from going muted teal/grey.
-  const chromeLevel: RiskLevel = floorLow(displayLevel);
+  const chromeLevel: RiskLevel = floorLow(compositeBucket);
   const r = getRisk(chromeLevel, accent);
-  // `pillTone` uses the true level so the ShimmerPill below labels it
-  // accurately ("LOW" stays green) while everything else inherits chromeLevel.
-  const pillTone = getRisk(displayLevel, accent);
-  const isAlarming = displayLevel === 'high' || displayLevel === 'extreme';
+  // pillTone uses the true composite bucket so "LOW" stays green.
+  const pillTone = getRisk(compositeBucket, accent);
+  const isAlarming = compositeBucket === 'high' || compositeBucket === 'extreme';
 
-  // Don't render hero text until fires + weather have resolved at least once —
-  // prevents the "No Nearby Fires" / "Smoke Advisory" flash while data is in
-  // flight. Mirrors mobile's `heroReady` gate.
-  const heroReady = !fires.isLoading && fires.data !== undefined && !weather.isLoading;
+  // Component buckets — for the subtitle copy + the breakdown row below the
+  // hero. We use these (NOT the composite bucket) so the user can see exactly
+  // which axis is driving the composite.
+  //
+  // For weather, prefer the backend's authoritative `regional_level` (or the
+  // global `danger_level` fallback) so the bucket pill on the Status
+  // breakdown card matches the Risk Calculator's pill for the same raw V4
+  // score. My own `bucketOf(weatherSignal)` is mathematically equivalent
+  // when thresholds are present, but using the backend value directly is
+  // simpler and avoids any drift if the two band schemes ever diverge.
+  const weatherBucket: RiskLevel | null = risk.data
+    ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
+    : null;
+  const threatBucket: RiskLevel | null = anyFireInRange ? bucketOf(threatSignal) : null;
 
-  // Nearest fire — used for the "Fire Detected Nearby" / "Evacuate" gating.
-  // Prefer named incidents (richer metadata); fall back to FIRMS satellite hits.
-  const nearestIncident = incidents.data?.[0];
-  const nearestSatHit = fires.data?.features[0];
-  const nearestCoords = nearestIncident
-    ? { lat: nearestIncident.lat, lon: nearestIncident.lon }
-    : nearestSatHit
-      ? { lat: nearestSatHit.properties.lat, lon: nearestSatHit.properties.lon }
-      : null;
-  const nearestDistanceMi = nearestIncident?.distance_mi ?? null;
-  const nearestName = nearestIncident?.name ?? null;
-  const hasNearby = nearestDistanceMi != null && nearestDistanceMi < NEARBY_DISTANCE_MI;
-  const hasImmediate = hasNearby && nearestDistanceMi! < EVAC_DISTANCE_MI && effectiveLevel === 'extreme';
-
-  // Headline gating identical to mobile: close fire + extreme weather → Evacuate;
-  // any nearby fire → Fire Detected Nearby; otherwise level-driven copy.
-  const headlineLines: [string, string] = hasImmediate
-    ? ['Evacuate', 'Immediately']
-    : hasNearby
-      ? ['Fire Detected', 'Nearby']
-      : effectiveLevel
-        ? HEADLINE[effectiveLevel]
-        : ['Loading', '…'];
-
-  const subtitle: string = (() => {
-    if (nearestDistanceMi != null && (hasImmediate || hasNearby) && nearestCoords) {
-      const dir = dirLabel(bearingBetween(loc.coords, nearestCoords));
-      const distStr = formatDistance(nearestDistanceMi, units.distance, 1);
-      if (hasImmediate)
-        return `Active fire ${distStr} ${dir} of you with extreme fire weather. Leave now if you can.`;
-      return `Active fire ${distStr} ${dir} of you${nearestName ? ` (${nearestName})` : ''}. Stay informed.`;
-    }
-    if (!effectiveLevel) return 'Reading conditions for your area…';
-    return SUBHEAD[effectiveLevel];
-  })();
+  const heroReady = compositeReady;
+  const headlineLines: [string, string] = compositeReady
+    ? HEADLINE[compositeBucket]
+    : ['Loading', '…'];
+  const subtitle: string = compositeReady && weatherBucket != null
+    ? compositeSubtitle({ weatherBucket, threatBucket })
+    : 'Reading conditions for your area…';
 
   return (
     <>
@@ -169,17 +202,21 @@ export function StatusScreen() {
                 minHeight: 360,
               }}
             >
+              {/* Orb arc reflects the COMPOSITE score (0-1), not raw V4.
+                  Passing thresholds={null} bypasses HeroOrb's internal
+                  scoreToFraction re-mapping so the composite is used
+                  directly as the arc fraction. */}
               <HeroOrb
                 risk={chromeLevel}
-                score={risk.data?.risk_score ?? null}
-                thresholds={risk.data?.regional_thresholds ?? null}
+                score={compositeScore}
+                thresholds={null}
                 pulseSpeed={70}
               />
             </div>
 
             <div>
               <div className="ember-fade-up" style={{ marginBottom: 16 }}>
-                {effectiveLevel ? (
+                {compositeReady ? (
                   <ShimmerPill risk={pillTone} />
                 ) : (
                   <Skeleton width={96} height={28} rounded="full" />
@@ -288,33 +325,144 @@ export function StatusScreen() {
         </PageSection>
       </HeroBand>
 
-      {/* ─── 2×2 GRID: Conditions / Humidity / KBDI / NDVI ──────────────── */}
-      <PageSection top={4} bottom={48}>
+      {/* ─── Composite breakdown: the two halves that drive the score ─── */}
+      <PageSection top={4} bottom={16}>
+        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+          <SectionEyebrow
+            color={isAlarming ? r.color : undefined}
+            right="Computed continuously · weights documented in Risk Forecast"
+          >
+            Score Breakdown
+          </SectionEyebrow>
+        </div>
         <div
-          className="ember-grid-stagger"
+          className="ember-fade-up"
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
             gap: 16,
+            animationDelay: '60ms',
           }}
         >
-          {/* Conditions: Wind + Temperature side-by-side, matches mobile Card */}
+          <ComponentScoreCard
+            label="Fire Weather"
+            icon="flame"
+            // Show the raw V4 risk_score (matches what the Risk Calculator
+            // displays for the same inputs) — NOT my normalized percentile.
+            score={risk.data?.risk_score ?? null}
+            bucket={weatherBucket}
+            isLoading={!compositeReady}
+            // Pass the regional thresholds so the gauge zones agree with
+            // whichever bucket the backend assigned. Falls back to the
+            // global defaults the backend uses for uncalibrated locations.
+            zoneBoundaries={
+              risk.data?.regional_thresholds
+                ? {
+                    low: risk.data.regional_thresholds.low,
+                    moderate: risk.data.regional_thresholds.moderate,
+                    extreme: risk.data.regional_thresholds.extreme,
+                  }
+                : { low: 0.3, moderate: 0.6, extreme: 0.8 }
+            }
+            scoreMax={risk.data?.regional_thresholds?.score_max ?? 1.0}
+            caption={
+              risk.data?.regional_state
+                ? `Calibrated for ${risk.data.regional_state} — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.`
+                : 'Global thresholds — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.'
+            }
+            emptyText="—"
+          />
+          <ComponentScoreCard
+            label="Active Fire Threat"
+            icon="pin"
+            score={anyFireInRange ? threatSignal : null}
+            bucket={threatBucket}
+            isLoading={!compositeReady}
+            // Threat axis uses my fixed composite-side band edges since
+            // there's no backend-equivalent bucketing for fire proximity.
+            zoneBoundaries={{ low: 0.25, moderate: 0.5, extreme: 0.75 }}
+            scoreMax={1.0}
+            caption={
+              anyFireInRange
+                ? `Worst-case among fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)} — accounts for size, containment, distance, and wind alignment.`
+                : 'No active fires within range — score is zero until a fire is detected near you.'
+            }
+            emptyText="None"
+          />
+        </div>
+      </PageSection>
+
+      {/* ─── Threat Source: names the single fire driving the threat ──── */}
+      <PageSection top={4} bottom={16}>
+        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+          <SectionEyebrow
+            color={isAlarming ? r.color : undefined}
+            right={
+              threatDriver?.kind === 'incident'
+                ? `${threatDriver.incident.source === 'calfire' ? 'CAL FIRE' : 'NIFC WFIGS'} · within 50 mi`
+                : threatDriver?.kind === 'firms'
+                  ? 'NASA FIRMS · within 50 mi'
+                  : 'No active fires within 50 mi'
+            }
+          >
+            Threat Source
+          </SectionEyebrow>
+        </div>
+        <div className="ember-fade-up" style={{ animationDelay: '120ms' }}>
+          <ThreatSourceCard driver={threatDriver} isLoading={!compositeReady} />
+        </div>
+      </PageSection>
+
+      {/* ─── Current Conditions: Wind + Temperature + Humidity ────────── */}
+      <PageSection top={4} bottom={16}>
+        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+          <SectionEyebrow right="Open-Meteo · OWM · refreshed every 15 min">
+            Current Conditions
+          </SectionEyebrow>
+        </div>
+        <div
+          className="ember-fade-up"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)',
+            gap: 16,
+            animationDelay: '180ms',
+          }}
+        >
           <ConditionsCard
             wind={weather.data?.wind_speed ?? null}
             windDeg={weather.data?.wind_deg ?? null}
             temperatureC={weather.data?.temperature ?? null}
             tempUnit={units.temp}
             speedUnit={units.speed}
+            locationName={weather.data?.location.name ?? loc.label}
+            accentColor={r.color}
             isLoading={weather.isLoading}
           />
-
-          {/* Humidity — own card */}
           <HumidityCard
             humidity={weather.data?.humidity ?? null}
             conditions={weather.data?.conditions ?? null}
             isLoading={weather.isLoading}
           />
+        </div>
+      </PageSection>
 
+      {/* ─── Area & Vegetation: KBDI + NDVI ─────────────────────────────── */}
+      <PageSection top={4} bottom={48}>
+        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+          <SectionEyebrow right="Tracked over the local fire season">
+            Area &amp; Vegetation
+          </SectionEyebrow>
+        </div>
+        <div
+          className="ember-fade-up"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+            gap: 16,
+            animationDelay: '240ms',
+          }}
+        >
           <LocalKbdiCard
             kbdi={risk.data?.kbdi ?? null}
             regionalLevel={risk.data?.regional_level ?? null}
@@ -341,6 +489,8 @@ function ConditionsCard({
   temperatureC,
   tempUnit,
   speedUnit,
+  locationName,
+  accentColor,
   isLoading,
 }: {
   wind: number | null;
@@ -348,66 +498,198 @@ function ConditionsCard({
   temperatureC: number | null;
   tempUnit: 'C' | 'F';
   speedUnit: 'mph' | 'kph';
+  locationName: string;
+  accentColor: string;
   isLoading: boolean;
 }) {
   const { ae } = useAesthetic();
   return (
-    <div
-      className="ember-card ember-card-hover"
+    <TiltCard
+      max={2}
       style={{
-        background: ae.surface,
+        position: 'relative',
+        overflow: 'hidden',
+        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
         border: ae.cardBorder,
-        borderRadius: ae.radius,
-        padding: 22,
+        borderRadius: ae.radiusLg,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
-      <Eyebrow>Current conditions</Eyebrow>
-      <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Tile label="Wind">
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              {wind != null ? (
-                <>
-                  <BigNumber>{formatSpeed(wind, speedUnit, 0)}</BigNumber>
-                  {windDeg != null ? <Caption>From {dirLabel(windDeg)}</Caption> : null}
-                </>
-              ) : isLoading ? (
-                <>
-                  <Skeleton width={68} height={22} rounded="sm" />
-                  <div style={{ marginTop: 6 }}>
-                    <Skeleton width={56} height={11} rounded="sm" />
-                  </div>
-                </>
-              ) : (
-                <BigNumber>—</BigNumber>
-              )}
-            </div>
-            <WindDial angle={(windDeg ?? 0) + 180} color="#fb923c" size={40} />
-          </div>
-        </Tile>
-        <Tile label="Temperature">
-          {temperatureC != null ? (
-            <>
-              <BigNumber>{formatTemp(temperatureC, tempUnit, 0)}</BigNumber>
-              <Caption>
-                {tempUnit === 'F'
-                  ? `${temperatureC.toFixed(1)}°C`
-                  : `${((temperatureC * 9) / 5 + 32).toFixed(0)}°F`}
-              </Caption>
-            </>
-          ) : isLoading ? (
-            <>
-              <Skeleton width={68} height={22} rounded="sm" />
-              <div style={{ marginTop: 6 }}>
-                <Skeleton width={50} height={11} rounded="sm" />
-              </div>
-            </>
-          ) : (
-            <BigNumber>—</BigNumber>
-          )}
-        </Tile>
+      <GridPattern opacity={0.025} />
+      <div style={{ position: 'relative', padding: 22 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+            gap: 12,
+          }}
+        >
+          <Eyebrow>Wind &amp; Temperature</Eyebrow>
+          <span
+            style={{
+              fontFamily: ae.fontMono,
+              fontSize: 10,
+              color: ae.textMute,
+              letterSpacing: '0.10em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '60%',
+            }}
+          >
+            NWS · {locationName}
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 12,
+          }}
+        >
+          {/* Wind */}
+          <CondTile
+            label="Wind"
+            decoration={<WindDial angle={(windDeg ?? 0) + 180} color={accentColor} size={56} />}
+          >
+            {wind != null ? (
+              <>
+                <BigNumber>{formatSpeed(wind, speedUnit, 0)}</BigNumber>
+                {windDeg != null ? <CondCaption>From {dirLabel(windDeg)}</CondCaption> : null}
+              </>
+            ) : isLoading ? (
+              <>
+                <Skeleton width={120} height={32} rounded="md" />
+                <div style={{ marginTop: 8 }}>
+                  <Skeleton width={64} height={12} rounded="sm" />
+                </div>
+              </>
+            ) : (
+              <BigNumber>—</BigNumber>
+            )}
+          </CondTile>
+
+          {/* Temperature */}
+          <CondTile
+            label="Temperature"
+            decoration={
+              <Thermometer
+                ae={ae}
+                accentColor={accentColor}
+                temperatureC={temperatureC ?? 0}
+                visible={temperatureC != null}
+              />
+            }
+          >
+            {temperatureC != null ? (
+              <>
+                <BigNumber>{formatTemp(temperatureC, tempUnit, 0)}</BigNumber>
+                <CondCaption>
+                  {tempUnit === 'F'
+                    ? `${temperatureC.toFixed(1)}°C`
+                    : `${((temperatureC * 9) / 5 + 32).toFixed(0)}°F`}
+                </CondCaption>
+              </>
+            ) : isLoading ? (
+              <>
+                <Skeleton width={120} height={32} rounded="md" />
+                <div style={{ marginTop: 8 }}>
+                  <Skeleton width={56} height={12} rounded="sm" />
+                </div>
+              </>
+            ) : (
+              <BigNumber>—</BigNumber>
+            )}
+          </CondTile>
+        </div>
       </div>
+    </TiltCard>
+  );
+}
+
+function CondTile({
+  label,
+  decoration,
+  children,
+}: {
+  label: string;
+  decoration?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { ae } = useAesthetic();
+  return (
+    <div
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        background:
+          'linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.005))',
+        border: ae.cardBorder,
+        borderRadius: ae.radius,
+        padding: '18px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 14,
+        minHeight: 124,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.035)',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Eyebrow>{label}</Eyebrow>
+        <div style={{ marginTop: 12 }}>{children}</div>
+      </div>
+      {decoration ? <div style={{ flexShrink: 0 }}>{decoration}</div> : null}
     </div>
+  );
+}
+
+function Thermometer({
+  ae,
+  accentColor,
+  temperatureC,
+  visible,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  accentColor: string;
+  temperatureC: number;
+  visible: boolean;
+}) {
+  if (!visible) return null;
+  const tFrac = Math.max(0, Math.min(1, temperatureC / 50));
+  return (
+    <svg width="48" height="72" viewBox="0 0 56 78" aria-hidden>
+      <defs>
+        <linearGradient id="thermo-fill" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stopColor={accentColor} stopOpacity="0.85" />
+          <stop offset="100%" stopColor={accentColor} stopOpacity="0.20" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="22"
+        y="6"
+        width="12"
+        height="48"
+        rx="6"
+        fill="none"
+        stroke={ae.lineStrong}
+        strokeWidth="0.8"
+      />
+      <rect
+        x="24"
+        y={6 + 48 * (1 - tFrac)}
+        width="8"
+        height={48 * tFrac}
+        rx="4"
+        fill="url(#thermo-fill)"
+        style={{ filter: `drop-shadow(0 0 4px ${accentColor})` }}
+      />
+      <circle cx="28" cy="62" r="11" fill={accentColor} style={{ filter: `drop-shadow(0 0 6px ${accentColor})` }} />
+      <circle cx="28" cy="62" r="7" fill="rgba(0,0,0,0.30)" />
+    </svg>
   );
 }
 
@@ -421,96 +703,494 @@ function HumidityCard({
   isLoading: boolean;
 }) {
   const { ae } = useAesthetic();
-  return (
-    <div
-      className="ember-card ember-card-hover"
-      style={{
-        background: ae.surface,
-        border: ae.cardBorder,
-        borderRadius: ae.radius,
-        padding: 22,
-      }}
-    >
-      <Eyebrow>Humidity</Eyebrow>
-      <div style={{ marginTop: 14 }}>
-        {humidity != null ? (
-          <span
-            style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 36,
-              fontWeight: ae.titleWeight,
-              color: ae.text,
-              letterSpacing: '-0.025em',
-              fontVariantNumeric: 'tabular-nums',
-              lineHeight: 1,
-            }}
-          >
-            {Math.round(humidity)}%
-          </span>
-        ) : isLoading ? (
-          <Skeleton width={120} height={40} rounded="md" />
-        ) : (
-          <span
-            style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 36,
-              fontWeight: ae.titleWeight,
-              color: ae.textDim,
-              letterSpacing: '-0.025em',
-            }}
-          >
-            —
-          </span>
-        )}
-      </div>
-      {conditions ? (
-        <div
-          style={{
-            marginTop: 14,
-            padding: '10px 12px',
-            borderRadius: 10,
-            background: 'rgba(126, 231, 135, 0.06)',
-            border: '0.5px solid rgba(126, 231, 135, 0.22)',
-          }}
-        >
-          <p style={{ margin: 0, fontFamily: ae.fontBody, fontSize: 13, color: '#7ee787' }}>
-            Conditions: {conditions}.
-          </p>
-        </div>
-      ) : isLoading ? (
-        <div style={{ marginTop: 14 }}>
-          <Skeleton width={'100%'} height={40} rounded="md" />
-        </div>
-      ) : null}
-    </div>
-  );
-}
+  const blue = '#4FA8FF';
+  const blueGlow = '79, 168, 255';
 
-function Tile({ label, children }: { label: string; children: React.ReactNode }) {
-  const { ae } = useAesthetic();
   return (
-    <div
+    <TiltCard
+      max={3}
       style={{
-        padding: '14px 14px',
-        borderRadius: 10,
-        background: 'rgba(255, 255, 255, 0.025)',
-        border: `0.5px solid ${ae.line}`,
+        position: 'relative',
+        overflow: 'hidden',
+        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
+        border: ae.cardBorder,
+        borderRadius: ae.radiusLg,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
       <div
+        aria-hidden
         style={{
-          fontFamily: ae.fontMono,
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: '0.16em',
-          color: ae.textMute,
-          textTransform: 'uppercase',
+          position: 'absolute',
+          top: -40,
+          right: -40,
+          width: 220,
+          height: 220,
+          borderRadius: '50%',
+          filter: 'blur(50px)',
+          pointerEvents: 'none',
+          background: `radial-gradient(circle, rgba(${blueGlow}, 0.12), transparent 70%)`,
+        }}
+      />
+      <GridPattern opacity={0.025} />
+      <div
+        style={{
+          position: 'relative',
+          padding: 22,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        {label}
+        <Eyebrow>Humidity</Eyebrow>
+        <div
+          style={{
+            marginTop: 12,
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          {humidity != null ? (
+            <div
+              style={{
+                fontFamily: ae.fontDisplay,
+                fontSize: 56,
+                fontWeight: ae.titleWeight,
+                letterSpacing: '-0.04em',
+                color: ae.text,
+                lineHeight: 0.9,
+                fontVariantNumeric: 'tabular-nums',
+                textShadow: `0 0 32px rgba(${blueGlow}, 0.25)`,
+              }}
+            >
+              <AnimatedNumber value={humidity} format={(n) => `${Math.round(n)}`} duration={1000} />
+              <span
+                style={{
+                  fontSize: 24,
+                  color: ae.textDim,
+                  fontWeight: 500,
+                }}
+              >
+                %
+              </span>
+            </div>
+          ) : isLoading ? (
+            <Skeleton width={140} height={56} rounded="md" />
+          ) : (
+            <span
+              style={{
+                fontFamily: ae.fontDisplay,
+                fontSize: 44,
+                fontWeight: ae.titleWeight,
+                color: ae.textDim,
+                letterSpacing: '-0.03em',
+              }}
+            >
+              —
+            </span>
+          )}
+          {humidity != null ? (
+            <div style={{ flexShrink: 0, marginLeft: 'auto' }}>
+              <HumidityDial ae={ae} value={humidity} color={blue} glow={blueGlow} size={96} />
+            </div>
+          ) : null}
+        </div>
+        {conditions ? (
+          <div
+            style={{
+              marginTop: 14,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 12px',
+              borderRadius: 12,
+              background: `linear-gradient(180deg, rgba(${RISK_LEVELS.low.glow}, 0.10), rgba(${RISK_LEVELS.low.glow}, 0.02))`,
+              border: `0.5px solid rgba(${RISK_LEVELS.low.glow}, 0.28)`,
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 99,
+                background: RISK_LEVELS.low.color,
+                boxShadow: `0 0 8px ${RISK_LEVELS.low.color}`,
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                fontFamily: ae.fontBody,
+                fontSize: 13,
+                color: RISK_LEVELS.low.color,
+                fontWeight: 500,
+              }}
+            >
+              Conditions:{' '}
+              <span style={{ color: ae.text, fontWeight: 600 }}>{conditions}</span>.
+            </span>
+          </div>
+        ) : isLoading ? (
+          <div style={{ marginTop: 14 }}>
+            <Skeleton width="100%" height={40} rounded="md" />
+          </div>
+        ) : null}
       </div>
-      <div style={{ marginTop: 8 }}>{children}</div>
-    </div>
+    </TiltCard>
+  );
+}
+
+/** Radial humidity dial — ticked ring + arc fill + droplet glyph in center. */
+function HumidityDial({
+  ae,
+  value,
+  color,
+  glow,
+  size = 96,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  value: number;
+  color: string;
+  glow: string;
+  size?: number;
+}) {
+  const c = size / 2;
+  const r = c - 8;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * (value / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+      <defs>
+        <radialGradient id={`hd-halo-${size}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.20" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx={c} cy={c} r={c - 2} fill={`url(#hd-halo-${size})`} />
+      <circle cx={c} cy={c} r={r} fill="none" stroke={ae.line} strokeWidth="3" />
+      <circle
+        cx={c}
+        cy={c}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${circ}`}
+        transform={`rotate(-90 ${c} ${c})`}
+        style={{
+          filter: `drop-shadow(0 0 6px ${color})`,
+          transition: 'stroke-dasharray 1.1s cubic-bezier(0.2, 0.7, 0.3, 1)',
+        }}
+      />
+      {/* Tick marks */}
+      {Array.from({ length: 24 }).map((_, i) => {
+        const a = (i * 15 * Math.PI) / 180;
+        const r1 = r - 5;
+        const r2 = r - (i % 6 === 0 ? 9 : 7);
+        return (
+          <line
+            // eslint-disable-next-line react/no-array-index-key
+            key={i}
+            x1={c + Math.cos(a) * r1}
+            y1={c + Math.sin(a) * r1}
+            x2={c + Math.cos(a) * r2}
+            y2={c + Math.sin(a) * r2}
+            stroke={i % 6 === 0 ? ae.lineStrong : ae.line}
+            strokeWidth="0.5"
+          />
+        );
+      })}
+      {/* Droplet glyph */}
+      <path
+        d={`M ${c} ${c - 10} C ${c + 7} ${c}, ${c + 6} ${c + 9}, ${c} ${c + 9} C ${c - 6} ${c + 9}, ${c - 7} ${c}, ${c} ${c - 10} Z`}
+        fill={`rgba(${glow}, 0.18)`}
+        stroke={color}
+        strokeWidth="1"
+      />
+    </svg>
+  );
+}
+
+/** Premium breakdown card for the Score Breakdown row. Shows the score
+ *  (raw V4 for Fire Weather, computed 0-1 for Active Fire Threat), a level
+ *  pill, a segmented 4-zone gauge with a marker, and a contextual caption.
+ *  Loading and "no data" states preserved from the previous version. */
+function ComponentScoreCard({
+  label,
+  score,
+  bucket,
+  isLoading,
+  caption,
+  emptyText,
+  icon,
+  /** Zone boundaries on the gauge: where LOW→MOD, MOD→HIGH, HIGH→EXT land.
+   *  Defaults to 0.25/0.5/0.75 (my composite-side bands); Fire Weather
+   *  passes regional thresholds so the gauge agrees with the backend bucket. */
+  zoneBoundaries,
+  /** Max value on the gauge (usually 1.0; pass score_max for regional cap). */
+  scoreMax = 1.0,
+}: {
+  label: string;
+  score: number | null;
+  bucket: RiskLevel | null;
+  isLoading: boolean;
+  caption: string | null;
+  emptyText: string;
+  icon: IconName;
+  zoneBoundaries?: { low: number; moderate: number; extreme: number };
+  scoreMax?: number;
+}) {
+  const { ae, accent } = useAesthetic();
+  const tone = bucket ? getRisk(bucket, accent) : null;
+  const palette = tone ?? { color: 'rgba(255,255,255,0.35)', glow: '255,255,255', label: '—' };
+
+  // Default zones use the composite-side bands; callers can override.
+  const z = zoneBoundaries ?? { low: 0.25, moderate: 0.5, extreme: 0.75 };
+  const zones = [
+    { until: z.low / scoreMax,           color: RISK_LEVELS.low.color,                lbl: 'Low'  },
+    { until: z.moderate / scoreMax,      color: RISK_LEVELS.moderate.color,           lbl: 'Mod'  },
+    { until: z.extreme / scoreMax,       color: getRisk('high', accent).color,        lbl: 'High' },
+    { until: 1.0,                        color: getRisk('extreme', accent).color,     lbl: 'Ext'  },
+  ];
+
+  const markerPct = score == null
+    ? 0
+    : Math.max(0.5, Math.min(99, (score / scoreMax) * 100));
+
+  return (
+    <TiltCard
+      max={3}
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
+        border: `0.5px solid rgba(${palette.glow}, 0.20)`,
+        borderRadius: ae.radiusLg,
+        boxShadow: `0 20px 60px rgba(${palette.glow}, 0.08), inset 0 1px 0 rgba(255,255,255,0.04)`,
+      }}
+    >
+      {/* Top accent stripe — glow gradient pinned to the top edge */}
+      <div
+        aria-hidden
+        style={{
+          height: 2.5,
+          background: `linear-gradient(90deg, transparent, rgba(${palette.glow}, 0.75), transparent)`,
+          boxShadow: `0 0 14px ${palette.color}`,
+        }}
+      />
+      {/* Soft corner glow */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: -50,
+          right: -50,
+          width: 240,
+          height: 240,
+          borderRadius: '50%',
+          filter: 'blur(50px)',
+          pointerEvents: 'none',
+          background: `radial-gradient(circle, rgba(${palette.glow}, 0.14), transparent 70%)`,
+        }}
+      />
+      <GridPattern opacity={0.035} />
+
+      <div style={{ position: 'relative', padding: 26 }}>
+        {/* Header: icon stone + label, level pill on right */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                flexShrink: 0,
+                background: `radial-gradient(circle at 30% 30%, rgba(${palette.glow}, 0.22), rgba(${palette.glow}, 0.05))`,
+                border: `0.5px solid rgba(${palette.glow}, 0.30)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name={icon} size={15} color={palette.color} strokeWidth={1.6} />
+            </div>
+            <Eyebrow>{label}</Eyebrow>
+          </div>
+          {isLoading ? (
+            <Skeleton width={80} height={22} rounded="full" />
+          ) : tone ? (
+            <span
+              className="px-shimmer-pill"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 10px 5px 9px',
+                borderRadius: 99,
+                background: `linear-gradient(180deg, rgba(${tone.glow}, 0.18), rgba(${tone.glow}, 0.06))`,
+                border: `0.5px solid rgba(${tone.glow}, 0.32)`,
+                fontFamily: ae.fontMono,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.16em',
+                color: tone.color,
+                textTransform: 'uppercase',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 99,
+                  background: tone.color,
+                  boxShadow: `0 0 6px ${tone.color}`,
+                }}
+              />
+              {tone.label}
+            </span>
+          ) : null}
+        </div>
+
+        {/* Big number */}
+        <div style={{ marginTop: 18, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          {isLoading ? (
+            <Skeleton width={160} height={56} rounded="md" />
+          ) : score != null ? (
+            <>
+              <span
+                style={{
+                  fontFamily: ae.fontDisplay,
+                  fontSize: 60,
+                  fontWeight: ae.titleWeight,
+                  letterSpacing: '-0.04em',
+                  lineHeight: 0.9,
+                  color: ae.text,
+                  fontVariantNumeric: 'tabular-nums',
+                  textShadow: `0 0 32px rgba(${palette.glow}, 0.35)`,
+                }}
+              >
+                <AnimatedNumber value={score} format={(n) => n.toFixed(2)} duration={900} />
+              </span>
+              <span
+                style={{
+                  fontFamily: ae.fontMono,
+                  fontSize: 11,
+                  color: ae.textMute,
+                  letterSpacing: '0.12em',
+                }}
+              >
+                / {scoreMax.toFixed(2)}
+              </span>
+            </>
+          ) : (
+            <span
+              style={{
+                fontFamily: ae.fontDisplay,
+                fontSize: 44,
+                fontWeight: ae.titleWeight,
+                color: ae.textDim,
+                letterSpacing: '-0.025em',
+                lineHeight: 0.95,
+              }}
+            >
+              {emptyText}
+            </span>
+          )}
+        </div>
+
+        {/* Segmented gauge */}
+        <div style={{ marginTop: 22, position: 'relative' }}>
+          <div style={{ display: 'flex', gap: 3, height: 8, borderRadius: 99 }}>
+            {zones.map((zone, i) => {
+              const prev = i === 0 ? 0 : zones[i - 1].until;
+              const w = (zone.until - prev) * 100;
+              const active = score != null && (score / scoreMax) >= prev;
+              const rgb = hexToRgb(zone.color);
+              return (
+                <div
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={i}
+                  style={{
+                    width: `${w}%`,
+                    background: active
+                      ? `linear-gradient(180deg, rgba(${rgb}, 0.55), rgba(${rgb}, 0.25))`
+                      : `rgba(${rgb}, 0.12)`,
+                    border: `0.5px solid rgba(${rgb}, ${active ? 0.45 : 0.18})`,
+                    borderRadius: 99,
+                    transition: 'background 0.4s ease',
+                  }}
+                />
+              );
+            })}
+          </div>
+          {/* Marker — hidden when score is null */}
+          {score != null ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: -3,
+                left: `${markerPct}%`,
+                transform: 'translateX(-50%)',
+                width: 2,
+                height: 14,
+                borderRadius: 99,
+                background: '#fff',
+                boxShadow: `0 0 10px ${palette.color}`,
+                transition: 'left 0.6s cubic-bezier(0.3, 1, 0.4, 1)',
+              }}
+            />
+          ) : null}
+          {/* Zone labels */}
+          <div
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontFamily: ae.fontMono,
+              fontSize: 9.5,
+              color: ae.textMute,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {zones.map((zone, i) => (
+              <span
+                // eslint-disable-next-line react/no-array-index-key
+                key={i}
+                style={{
+                  color: tone && tone.color === zone.color ? tone.color : ae.textMute,
+                  fontWeight: tone && tone.color === zone.color ? 700 : 500,
+                }}
+              >
+                {zone.lbl}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Caption */}
+        {caption ? (
+          <p
+            style={{
+              margin: '20px 0 0',
+              paddingTop: 16,
+              borderTop: `0.5px solid ${ae.line}`,
+              fontFamily: ae.fontBody,
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: ae.textDim,
+            }}
+          >
+            {caption}
+          </p>
+        ) : null}
+      </div>
+    </TiltCard>
   );
 }
 
@@ -520,12 +1200,12 @@ function BigNumber({ children }: { children: React.ReactNode }) {
     <span
       style={{
         fontFamily: ae.fontDisplay,
-        fontSize: 22,
+        fontSize: 30,
         fontWeight: ae.titleWeight,
         color: ae.text,
-        letterSpacing: '-0.02em',
+        letterSpacing: '-0.03em',
         fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1,
+        lineHeight: 0.95,
       }}
     >
       {children}
@@ -533,16 +1213,15 @@ function BigNumber({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Caption({ children }: { children: React.ReactNode }) {
+function CondCaption({ children }: { children: React.ReactNode }) {
   const { ae } = useAesthetic();
   return (
     <div
       style={{
-        marginTop: 6,
-        fontFamily: ae.fontMono,
-        fontSize: 10.5,
-        color: ae.textMute,
-        letterSpacing: '0.06em',
+        marginTop: 8,
+        fontFamily: ae.fontBody,
+        fontSize: 13,
+        color: ae.textDim,
       }}
     >
       {children}

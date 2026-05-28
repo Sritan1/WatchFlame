@@ -1537,11 +1537,14 @@ function ExplainerModal({ visible, onClose }: { visible: boolean; onClose: () =>
             environment.
           </Text>
           <Text className="mt-2 text-sm text-chalk-400">
-            Active fires near you are tracked separately from satellite data and shown on
-            the Status and Map tabs.
+            On the <Text className="font-bold text-chalk-100">Status</Text> tab this score is
+            one half of a <Text className="font-bold text-chalk-100">Personal Threat
+            composite</Text>; the other half measures any active fires near you (distance,
+            size, wind alignment, containment). This calculator isolates the fire-weather
+            half so you can see how environment alone drives the number.
           </Text>
           <Text className="mt-4 text-base font-bold text-chalk-50">
-            How it&apos;s computed (V2)
+            How it&apos;s computed (V4)
           </Text>
           <Text className="mt-1 text-sm text-chalk-400">
             Three factors are combined <Text className="italic">multiplicatively</Text>, then
@@ -1655,10 +1658,10 @@ function ExplainerModal({ visible, onClose }: { visible: boolean; onClose: () =>
             were fit against the score distribution after the KBDI upgrade.
           </Text>
           <Text className="mt-3 text-[11px] italic text-chalk-500">
-            Numbers above are from the V2 baseline run; KBDI integration came after and
-            re-running the notebook would produce slightly updated decimals — the shape
-            of the conclusions still holds. See notebooks/validation_v2.ipynb in the
-            repo for the full analysis.
+            Numbers above are from the V2 baseline run; the V4 stack (KBDI + NDVI) layered
+            on after — re-running the notebook against V4 would produce slightly updated
+            decimals, but the shape of the conclusions still holds. See
+            notebooks/validation_v2.ipynb in the repo for the full analysis.
           </Text>
         </ScrollView>
       </SafeAreaView>
