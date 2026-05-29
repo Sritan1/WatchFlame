@@ -11,6 +11,8 @@ import { useMemo, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
+import { CompositeExplainerModal } from '@/components/status/CompositeExplainerModal';
+import { ConfidenceBreakdownModal, ConfidenceChip } from '@/components/status/ConfidenceChip';
 import { LocalKbdiCard } from '@/components/status/LocalKbdiCard';
 import { LocalNdviCard } from '@/components/status/LocalNdviCard';
 import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
@@ -30,10 +32,12 @@ import { TiltCard } from '@/components/ui/TiltCard';
 import { WindDial } from '@/components/ui/WindDial';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk } from '@/lib/api';
+import { computeConfidence } from '@/lib/confidence';
 import {
   aggregateThreat,
   bucketOf,
   composite,
+  compositeFromBuckets,
   compositeSubtitle,
   findThreatDriver,
   normalizeWeather,
@@ -68,6 +72,32 @@ const HEADLINE: Record<RiskLevel, [string, string]> = {
 const dirLabel = (deg: number | null | undefined) =>
   deg == null ? '—' : cardinal8(deg);
 
+/** Shared visual treatment for the two ghost-text triggers in the hero
+ *  meta-info row (Calibration · Why this score?). Both are small mono
+ *  caps with a trailing info icon; identical layout so they read as a
+ *  pair rather than two unrelated affordances. */
+function metaTriggerStyle(
+  ae: ReturnType<typeof useAesthetic>['ae'],
+  animationDelay: string,
+): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: 0,
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    color: ae.textMute,
+    fontFamily: ae.fontMono,
+    fontSize: 10.5,
+    fontWeight: 600,
+    letterSpacing: '0.16em',
+    textTransform: 'uppercase',
+    animationDelay,
+  };
+}
+
 export function StatusScreen() {
   const { ae, accent } = useAesthetic();
   const loc = useUserLocation();
@@ -77,6 +107,8 @@ export function StatusScreen() {
   const incidents = useNamedIncidentsNear(loc.coords);
   const units = useUnits();
   const [calibOpen, setCalibOpen] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const [confidenceOpen, setConfidenceOpen] = useState(false);
 
   // ── Composite score ─────────────────────────────────────────────────────
   // Two independent inputs:
@@ -140,12 +172,39 @@ export function StatusScreen() {
     risk.data !== undefined &&
     fires.data !== undefined &&
     incidents.data !== undefined;
+
+  // Component buckets — feed both the matrix-derived headline tier AND
+  // the breakdown row below the hero. For weather, prefer the backend's
+  // authoritative `regional_level` (or the global `danger_level` fallback)
+  // so the bucket pill on the Status breakdown card matches the Risk
+  // Calculator's pill for the same raw V4 score. `bucketOf(weatherSignal)`
+  // is mathematically equivalent when thresholds are present, but using
+  // the backend value directly is simpler and avoids any drift if the two
+  // band schemes ever diverge.
+  const weatherBucket: RiskLevel | null = risk.data
+    ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
+    : null;
+  const threatBucket: RiskLevel | null = anyFireInRange ? bucketOf(threatSignal) : null;
+
+  // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
+  // bucketOf(linear blend). Two reasons spelled out in
+  // web/lib/composite-risk.ts + docs/DECISIONS.md §6: the prior 0.45/0.55
+  // weights were a political knob with no empirical fit, and the linear
+  // blend's quartile sometimes lands in a tier the operational intent
+  // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
+  // The matrix encodes each cell's call explicitly in one published table.
+  const compositeBucket: RiskLevel = compositeReady
+    ? compositeFromBuckets(weatherBucket, threatBucket) ?? 'moderate'
+    : 'moderate'; // placeholder while loading (skeleton hides it anyway)
+
+  // `compositeScore` (linear blend, 0-1) is kept ONLY for the HeroOrb arc
+  // fill — it's a visual position cue, not the source of truth for the
+  // tier label. In edge cells the arc fill can sit visually in a slightly
+  // different band than the tier color; that's acceptable since the user
+  // reads the tier label, not the arc precise position.
   const compositeScore: number | null = compositeReady && weatherSignal != null
     ? composite(weatherSignal, threatSignal)
     : null;
-  const compositeBucket: RiskLevel = compositeScore != null
-    ? bucketOf(compositeScore)
-    : 'moderate'; // placeholder while loading (skeleton hides it anyway)
 
   // Floor 'low' to 'moderate' for the page CHROME (background waves, hero
   // orb palette, section eyebrow accent). The literal Risk pill below still
@@ -157,21 +216,6 @@ export function StatusScreen() {
   const pillTone = getRisk(compositeBucket, accent);
   const isAlarming = compositeBucket === 'high' || compositeBucket === 'extreme';
 
-  // Component buckets — for the subtitle copy + the breakdown row below the
-  // hero. We use these (NOT the composite bucket) so the user can see exactly
-  // which axis is driving the composite.
-  //
-  // For weather, prefer the backend's authoritative `regional_level` (or the
-  // global `danger_level` fallback) so the bucket pill on the Status
-  // breakdown card matches the Risk Calculator's pill for the same raw V4
-  // score. My own `bucketOf(weatherSignal)` is mathematically equivalent
-  // when thresholds are present, but using the backend value directly is
-  // simpler and avoids any drift if the two band schemes ever diverge.
-  const weatherBucket: RiskLevel | null = risk.data
-    ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
-    : null;
-  const threatBucket: RiskLevel | null = anyFireInRange ? bucketOf(threatSignal) : null;
-
   const heroReady = compositeReady;
   const headlineLines: [string, string] = compositeReady
     ? HEADLINE[compositeBucket]
@@ -179,6 +223,28 @@ export function StatusScreen() {
   const subtitle: string = compositeReady && weatherBucket != null
     ? compositeSubtitle({ weatherBucket, threatBucket })
     : 'Reading conditions for your area…';
+
+  // Confidence breakdown — computes the weakest-link confidence across
+  // weather observation age, KBDI availability, NDVI availability,
+  // calibration source, and driving-fire age. Shown as a small chip
+  // beneath the subtitle; tap to expand into a full breakdown modal.
+  const confidence = useMemo(
+    () =>
+      computeConfidence({
+        weatherUpdatedAt: weather.dataUpdatedAt,
+        weatherLoading: weather.isLoading,
+        riskData: risk.data,
+        riskLoading: risk.isLoading,
+        threatDriver,
+      }),
+    [
+      weather.dataUpdatedAt,
+      weather.isLoading,
+      risk.data,
+      risk.isLoading,
+      threatDriver,
+    ],
+  );
 
   return (
     <>
@@ -279,38 +345,64 @@ export function StatusScreen() {
                 </div>
               )}
 
-              {/* Calibration hint — opens CalibrationModal. Mirrors mobile. */}
-              {risk.data?.regional_level && risk.data?.regional_state ? (
-                <button
-                  type="button"
-                  onClick={() => setCalibOpen(true)}
-                  className="ember-fade-up"
-                  aria-label="What does calibrated for this state mean?"
-                  style={{
-                    marginTop: 14,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: 0,
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: ae.textMute,
-                    fontFamily: ae.fontMono,
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    letterSpacing: '0.16em',
-                    textTransform: 'uppercase',
-                    animationDelay: '500ms',
-                  }}
-                >
-                  Calibrated for {risk.data.regional_state}
-                  {risk.data.regional_level !== risk.data.danger_level
-                    ? ` · national: ${risk.data.danger_level}`
-                    : ''}
-                  <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
-                </button>
-              ) : null}
+              {/* Confidence chip — sits on its own row directly under the
+                  subtitle, AQI-style. The chip itself is a tight pill
+                  ("HIGH/MEDIUM/LOW CONFIDENCE"); the bottleneck signal
+                  (e.g. "NDVI 6d old") lives only in the breakdown modal
+                  triggered on click. Hidden during initial load when no
+                  meaningful confidence can be computed yet. */}
+              <div style={{ marginTop: 14, animationDelay: '600ms' }} className="ember-fade-up">
+                <ConfidenceChip
+                  confidence={confidence}
+                  onOpen={() => setConfidenceOpen(true)}
+                />
+              </div>
+
+              {/* Hero meta-info row: calibration hint + "Why this score?"
+                  trigger. Both open their respective modals — the
+                  calibration ladder explains where your bucket comes from,
+                  the explainer walks you through the matrix that produced
+                  the composite tier. */}
+              <div
+                style={{
+                  marginTop: 14,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 14,
+                }}
+              >
+                {risk.data?.regional_level && risk.data?.regional_state ? (
+                  <button
+                    type="button"
+                    onClick={() => setCalibOpen(true)}
+                    className="ember-fade-up"
+                    aria-label="What does calibrated for this state mean?"
+                    style={metaTriggerStyle(ae, '500ms')}
+                  >
+                    Calibrated for {risk.data.regional_state}
+                    {risk.data.regional_level !== risk.data.danger_level
+                      ? ` · national: ${risk.data.danger_level}`
+                      : ''}
+                    <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
+                  </button>
+                ) : null}
+
+                {/* Sibling trigger — opens the matrix explainer. Always
+                    available; doesn't require regional calibration. */}
+                {compositeReady ? (
+                  <button
+                    type="button"
+                    onClick={() => setWhyOpen(true)}
+                    className="ember-fade-up"
+                    aria-label="Why this score? — open the matrix explainer"
+                    style={metaTriggerStyle(ae, '600ms')}
+                  >
+                    Why this score?
+                    <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
+                  </button>
+                ) : null}
+              </div>
 
               <div
                 className="ember-fade-up"
@@ -493,6 +585,26 @@ export function StatusScreen() {
         onClose={() => setCalibOpen(false)}
         userScore={risk.data?.risk_score ?? null}
         userState={risk.data?.regional_state ?? null}
+      />
+
+      <CompositeExplainerModal
+        open={whyOpen}
+        onClose={() => setWhyOpen(false)}
+        weatherBucket={weatherBucket}
+        threatBucket={threatBucket}
+        compositeBucket={compositeReady ? compositeBucket : null}
+        weatherRawScore={risk.data?.risk_score ?? null}
+        threatSignal={compositeReady ? threatSignal : null}
+        regionalState={risk.data?.regional_state ?? null}
+        regionalThresholds={risk.data?.regional_thresholds ?? null}
+        driver={threatDriver}
+        distanceUnit={units.distance}
+      />
+
+      <ConfidenceBreakdownModal
+        open={confidenceOpen}
+        onClose={() => setConfidenceOpen(false)}
+        confidence={confidence}
       />
     </>
   );
