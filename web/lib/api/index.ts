@@ -7,6 +7,7 @@
 // Mocks are used when USE_MOCKS=true OR when API_URL is empty.
 
 import type {
+  CalibrationInfo,
   DisastersNearResponse,
   FireCollection,
   GeocodeHit,
@@ -50,6 +51,7 @@ const realApi = {
   },
   risk: (body: RiskRequest) =>
     request<RiskResponse>('/risk', { method: 'POST', body: JSON.stringify(body) }),
+  riskCalibration: () => request<CalibrationInfo>('/risk/calibration'),
   weather: (lat: number, lon: number) =>
     request<WeatherResponse>(`/weather?lat=${lat}&lon=${lon}`),
   geocode: (query: string) =>

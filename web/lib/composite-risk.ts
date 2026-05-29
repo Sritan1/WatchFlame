@@ -134,6 +134,10 @@ export function normalizeWeather(
   const thresholds = t && isThresholdsValid(t) ? t : GLOBAL_FALLBACK_THRESHOLDS;
   const { low, moderate, extreme, score_max } = thresholds;
 
+  // NaN guard: a NaN rawScore would fall through every comparison below
+  // (NaN < x is always false), produce NaN, then bucketOf(NaN) would
+  // classify as 'extreme' and pin the orb to CRITICAL on bad data.
+  if (!Number.isFinite(rawScore)) return 0;
   if (rawScore <= 0) return 0;
   // LOW band: [0, low) → [0, 0.25)
   if (rawScore < low) return (rawScore / low) * BUCKET_EDGES.low;
@@ -171,7 +175,7 @@ function isThresholdsValid(t: RegionalThresholds): boolean {
  *
  *  Pipeline:
  *    distance → exponential decay (closer = more)
- *    size     → linear ramp from 50ac to 1000ac
+ *    size     → linear ramp from 50ac to 5000ac (SIZE_CEILING_ACRES)
  *    OR-combine the two (either factor alone can pull the result to 1)
  *    wind alignment bump (additive ±0.15, only when wind is non-calm)
  *    stale-FIRMS dampener (multiplicative ×0.6)
@@ -462,7 +466,17 @@ export function findThreatDriver(args: {
         }
       }
     }
-    if (nearestIncident) {
+    // Skip the swap when the candidate incident is already substantially
+    // contained. A fresh FIRMS pixel next to a 75%+ contained incident is
+    // either a residual hot spot or a flare-up outside the held perimeter
+    // — swapping in the contained record would show "Containment: 90%"
+    // next to the FIRMS pixel's high threat number, a visible contradiction.
+    // Keep the FIRMS pixel as the surfaced driver in that case.
+    const incidentIsContained =
+      nearestIncident != null &&
+      nearestIncident.inc.contained_pct != null &&
+      nearestIncident.inc.contained_pct >= CONTAINED_PCT_THRESHOLD;
+    if (nearestIncident && !incidentIsContained) {
       const bearing = bearingTo(userLoc, {
         lat: nearestIncident.inc.lat,
         lon: nearestIncident.inc.lon,
@@ -553,8 +567,13 @@ export function compositeSubtitle(args: {
   if (wHot && tHot) {
     return 'Both fire weather and a nearby fire are elevated — review your plan.';
   }
-  if (wHot && (threatBucket == null || threatBucket === 'low')) {
-    return 'Fire weather is elevated — no active fires nearby.';
+  if (wHot) {
+    // wHot && !tHot covers (W=HIGH/EXT) × (T = null | low | moderate).
+    // Subtitle reflects that fire weather drives the bucket; threat=moderate
+    // still leaves weather as the headline driver.
+    return threatBucket == null || threatBucket === 'low'
+      ? 'Fire weather is elevated — no active fires nearby.'
+      : 'Fire weather is elevated — a nearby fire is also adding risk.';
   }
   if (tHot && (weatherBucket === 'low' || weatherBucket === 'moderate')) {
     return 'An active fire is nearby — review your plan.';
@@ -579,7 +598,7 @@ function angularDiff(a: number, b: number): number {
   return Math.abs((((a - b) % 360) + 540) % 360 - 180);
 }
 
-function distanceMiles(a: LatLon, b: LatLon): number {
+export function distanceMiles(a: LatLon, b: LatLon): number {
   const R = 3958.8;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -591,7 +610,7 @@ function distanceMiles(a: LatLon, b: LatLon): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function bearingTo(from: LatLon, to: LatLon): number {
+export function bearingTo(from: LatLon, to: LatLon): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const toDeg = (r: number) => (r * 180) / Math.PI;
   const φ1 = toRad(from.lat);
@@ -603,10 +622,10 @@ function bearingTo(from: LatLon, to: LatLon): number {
 }
 
 /** FIRMS acq_date is "YYYY-MM-DD" and acq_time is "HHMM" (UTC). */
-function isFirmsStale(
+export function isFirmsStale(
   acqDate: string | null,
   acqTime: string | null,
-  nowMs: number,
+  nowMs: number = Date.now(),
 ): boolean {
   const ageHrs = firmsAgeHours(acqDate, acqTime, nowMs);
   if (ageHrs == null) return false; // unknown age → don't dampen

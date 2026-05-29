@@ -67,6 +67,43 @@ export interface RiskResponse {
   ndvi_anomaly?: number | null;
 }
 
+/** Per-state calibration thresholds + score-distribution summary. Shape
+ *  matches `api/data/regional_thresholds.json` per-state entries. */
+export interface StateCalibration {
+  n_fires: number;
+  bbox: [number, number, number, number];
+  centroid: [number, number];
+  thresholds: {
+    low: number;
+    moderate: number;
+    high: number;
+    extreme: number;
+  };
+  score_summary: {
+    min: number;
+    median: number;
+    mean: number;
+    max: number;
+  };
+}
+
+/** Backend diagnostic response from `/risk/calibration`. Returns the full
+ *  per-state thresholds dict so the calibration ladder UI can render
+ *  without a separate copy of the JSON. */
+export interface CalibrationInfo {
+  version: string | null;
+  fitted_at: string | null;
+  algorithm_version: string | null;
+  states_calibrated: string[];
+  global_thresholds: {
+    low: number;
+    moderate: number;
+    high: number;
+    extreme: number;
+  };
+  states: Record<string, StateCalibration>;
+}
+
 export interface WeatherResponse {
   temperature: number;
   humidity: number;

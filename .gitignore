@@ -78,3 +78,10 @@ Risk Screen 2.png
 Risk Screen 3.png
 Safety screen 1.png
 Safety screen 2.png
+
+# Microsoft Office temp/lock files
+~$*
+
+# Local-only temporary scratch (e.g. commit message drafts)
+.commit-msg.tmp
+.review-diff.tmp
