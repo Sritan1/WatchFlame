@@ -14,6 +14,7 @@ Built solo as a portfolio project to demonstrate end-to-end product engineering:
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [The risk algorithm](#the-risk-algorithm)
+- [Design decisions](docs/DECISIONS.md) — load-bearing engineering choices, each with cost + alternative named
 - [Data sources](#data-sources)
 - [Run locally](#run-locally)
 - [Project layout](#project-layout)
@@ -26,7 +27,7 @@ Built solo as a portfolio project to demonstrate end-to-end product engineering:
 
 ## What it does
 
-**Status screen** — A live fire-weather score for your current GPS location, calibrated against your state's historical fire-day percentile distribution. Shows the regional danger level, the active drought index (KBDI), the live vegetation-stress signal (NDVI anomaly from Sentinel-2 satellite), nearby active fires, and a FEMA disaster banner when applicable.
+**Status screen** — A live composite risk tier for your current GPS location. Combines two independent axes — calibration-aware fire weather (V4 algorithm via VPD × wind × KBDI drought × NDVI vegetation anomaly) and active-fire proximity (distance + size + wind alignment + containment + FIRMS staleness) — through a published 4×4 lookup matrix, not a politically-weighted average. The hero pairs with three click-to-expand modals that document the math end-to-end: the **calibration ladder** shows where your score lands across all 17 fitted states; the **"Why this score?" explainer** shows the matrix cell your weather and threat tiers landed in; the **confidence breakdown** itemizes the freshness of every upstream signal feeding the tier. Also shows the active drought index (KBDI), the live vegetation-stress signal (NDVI anomaly from Sentinel-2 satellite), nearby active fires, and a FEMA disaster banner when applicable.
 
 **Map screen** — Live NASA FIRMS satellite fire detections plus named-incident overlays from NIFC and CAL FIRE, sized by acreage and color-coded by fire-weather risk. Pull-to-refresh, tap-to-inspect, zoom-aware hit testing, two distinct bottom sheets for the two data layers.
 
@@ -146,7 +147,25 @@ For state membership at request time, the route calls the **Census Bureau's reve
 
 ![Per-state regional thresholds](docs/regional_thresholds.png)
 
-Each colored bar is one state's percentile-derived bucket boundaries. Wider bars = larger spread between routine fire-day weather and extreme fire-day weather in that state. Notably narrow: FL/GA/NC (humid SE belt — fire-day weather is concentrated in a tight range). Notably wide: NM/WY (large interior West, more variable conditions).
+Each row is one state's calibrated tier bands. The vertical probe line at score **0.45** shows the headline result of calibration: the same raw V4 score lands in **EXT** in NC/GA/FL (top three rows), **MOD** in NM/AZ/UT/NV/CA (next cluster), and **HIGH** for the nine states in between — a 2-tier swing across the country for an identical number. The same score is interpreted differently because the underlying fire-day distribution is different; calibration is what makes that legible to the user.
+
+### Personal Threat composite (Status page)
+
+Fire weather is one half of the picture. The other half — **how exposed are you to an active fire right now?** — needs distance, size, wind alignment, containment, and detection age of any fires within 50 mi of the user. The Status page combines both axes into a single **headline tier** through a published 4×4 lookup matrix:
+
+```
+                T=none     T=low      T=mod      T=high     T=ext
+W=low           LOW        LOW        LOW        MOD        HIGH
+W=mod           LOW        MOD        MOD        HIGH       HIGH
+W=high          MOD        MOD        HIGH       HIGH       EXT
+W=ext           MOD        HIGH       HIGH       EXT        EXT
+```
+
+`W` is the calibration-aware fire-weather tier (LOW / MOD / HIGH / EXT from per-state percentile bucketing above). `T` is the active-fire threat tier — derived from `t = clamp01((base + windBump) × staleDampener × containmentDampener)` where `base = 1 − exp(−d/21) · (1 − size_score)` aggregates distance and size across all fires within 50 mi, with ±0.15 wind-alignment adjustment, ×0.6 dampener for stale FIRMS detections (>24 hr), and ×0.6 dampener for fires ≥75% contained. `T = none` is a fifth column for the "no active fires in range" case, distinct from the lowest threat tier.
+
+**Why a matrix and not a weighted average?** An earlier version was `composite = 0.45 × W + 0.55 × T` bucketed by quartile. Those weights weren't fitted to anything — they were chosen to cap weather-alone risk at MODERATE so the headline never escalated to EXTREME on a hot dry day with no nearby fire. The matrix encodes that same intent directly (`W=ext × T=none → MOD` is the same constraint, now editable as a single cell), but every other cell is now argued on its own merits instead of derived through two arbitrary coefficients. The full rationale, including cells where the matrix disagrees with the prior linear blend, lives in [`docs/DECISIONS.md §6`](docs/DECISIONS.md#6-from-political-weights-to-a-published-tier-matrix).
+
+The composite logic lives in [`web/lib/composite-risk.ts`](web/lib/composite-risk.ts) (pure functions, no React, easy to unit-test). The Status page surfaces it through three click-to-expand modals — calibration ladder, "Why this score?" matrix explainer, and confidence breakdown — so the entire derivation is explainable from the orb back to the upstream data sources.
 
 ### Validation
 
