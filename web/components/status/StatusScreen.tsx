@@ -7,7 +7,7 @@
 // Cards beyond these (Active Incident, Regional Risk Index, Closest Fires list,
 // FEMA banner) live on Map / Safety in mobile; mobile Status doesn't show them.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
@@ -16,6 +16,7 @@ import { LocalNdviCard } from '@/components/status/LocalNdviCard';
 import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Button } from '@/components/ui/Button';
+import { cardinal8 } from '@/components/ui/CompassRose';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { HeroBand } from '@/components/ui/HeroBand';
@@ -64,9 +65,8 @@ const HEADLINE: Record<RiskLevel, [string, string]> = {
   extreme:  ['Critical',    'Conditions'],
 };
 
-const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const dirLabel = (deg: number | null | undefined) =>
-  deg == null ? '—' : DIRS[Math.round(deg / 45) % 8];
+  deg == null ? '—' : cardinal8(deg);
 
 export function StatusScreen() {
   const { ae, accent } = useAesthetic();
@@ -88,38 +88,50 @@ export function StatusScreen() {
   // Calibration matters: a Bronson FL day at the 95th percentile FOR FL has
   // w ≈ 0.92 even though raw/score_max is only ~0.42, because the regional
   // thresholds remap each tier into a quarter of [0, 1].
-  const weatherSignal: number | null = risk.data
-    ? normalizeWeather(risk.data.risk_score, risk.data.regional_thresholds ?? null)
-    : null;
-  const threatSignal: number =
-    incidents.data != null && fires.data != null
-      ? aggregateThreat({
-          userLoc: loc.coords,
-          namedIncidents: incidents.data,
-          firmsHits: fires.data.features,
-          windDeg: weather.data?.wind_deg ?? null,
-          windSpeedKph: weather.data?.wind_speed ?? null,
-        })
-      : 0;
+  const weatherSignal: number | null = useMemo(
+    () =>
+      risk.data
+        ? normalizeWeather(risk.data.risk_score, risk.data.regional_thresholds ?? null)
+        : null,
+    [risk.data],
+  );
+  const windDeg = weather.data?.wind_deg ?? null;
+  const windSpeedKph = weather.data?.wind_speed ?? null;
+  const threatSignal: number = useMemo(
+    () =>
+      incidents.data != null && fires.data != null
+        ? aggregateThreat({
+            userLoc: loc.coords,
+            namedIncidents: incidents.data,
+            firmsHits: fires.data.features,
+            windDeg,
+            windSpeedKph,
+          })
+        : 0,
+    [incidents.data, fires.data, loc.coords, windDeg, windSpeedKph],
+  );
   // The single fire driving the threat score — for the Threat Source card.
   // Applies the FIRMS→named-incident tiebreak inside findThreatDriver so a
   // satellite pixel sitting on top of a real Cal Fire incident surfaces the
   // named incident instead.
-  const threatDriver: ThreatDriver | null =
-    incidents.data != null && fires.data != null
-      ? findThreatDriver({
-          userLoc: loc.coords,
-          namedIncidents: incidents.data,
-          firmsHits: fires.data.features,
-          windDeg: weather.data?.wind_deg ?? null,
-          windSpeedKph: weather.data?.wind_speed ?? null,
-        })
-      : null;
-  // True when there's at least one fire close enough to contribute. We use
-  // this to differentiate "no fires in range" (subtitle should say so) from
-  // "fires exist but they're LOW threat" in `compositeSubtitle`.
-  const anyFireInRange: boolean =
-    (incidents.data?.length ?? 0) > 0 || (fires.data?.features.length ?? 0) > 0;
+  const threatDriver: ThreatDriver | null = useMemo(
+    () =>
+      incidents.data != null && fires.data != null
+        ? findThreatDriver({
+            userLoc: loc.coords,
+            namedIncidents: incidents.data,
+            firmsHits: fires.data.features,
+            windDeg,
+            windSpeedKph,
+          })
+        : null,
+    [incidents.data, fires.data, loc.coords, windDeg, windSpeedKph],
+  );
+  // True when there's at least one fire that contributed to the threat
+  // signal — i.e. within THREAT_RADIUS_MI. Derived from the actual
+  // computation, NOT from the raw dataset (useFiresAroundMe pulls a 250 mi
+  // bbox, so the dataset can be non-empty even with no fire in range).
+  const anyFireInRange: boolean = threatDriver != null;
 
   // While any input is loading, treat composite as null and skeleton the
   // hero rather than show stale or partial values.
@@ -476,7 +488,12 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
-      <CalibrationModal open={calibOpen} onClose={() => setCalibOpen(false)} />
+      <CalibrationModal
+        open={calibOpen}
+        onClose={() => setCalibOpen(false)}
+        userScore={risk.data?.risk_score ?? null}
+        userState={risk.data?.regional_state ?? null}
+      />
     </>
   );
 }
@@ -1145,12 +1162,16 @@ function ComponentScoreCard({
               }}
             />
           ) : null}
-          {/* Zone labels */}
+          {/* Zone labels — each label's container matches the width of the
+              bar segment above it (with the same 3px gap), so the centered
+              text label always sits beneath the center of its bar. This
+              matters for regional thresholds where the segments aren't
+              equal-width (e.g. CA's 30/30/20/20 split). */}
           <div
             style={{
               marginTop: 10,
               display: 'flex',
-              justifyContent: 'space-between',
+              gap: 3,
               fontFamily: ae.fontMono,
               fontSize: 9.5,
               color: ae.textMute,
@@ -1158,18 +1179,25 @@ function ComponentScoreCard({
               textTransform: 'uppercase',
             }}
           >
-            {zones.map((zone, i) => (
-              <span
-                // eslint-disable-next-line react/no-array-index-key
-                key={i}
-                style={{
-                  color: tone && tone.color === zone.color ? tone.color : ae.textMute,
-                  fontWeight: tone && tone.color === zone.color ? 700 : 500,
-                }}
-              >
-                {zone.lbl}
-              </span>
-            ))}
+            {zones.map((zone, i) => {
+              const prev = i === 0 ? 0 : zones[i - 1].until;
+              const w = (zone.until - prev) * 100;
+              const isActive = tone != null && tone.color === zone.color;
+              return (
+                <span
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={i}
+                  style={{
+                    width: `${w}%`,
+                    textAlign: 'center',
+                    color: isActive ? tone!.color : ae.textMute,
+                    fontWeight: isActive ? 700 : 500,
+                  }}
+                >
+                  {zone.lbl}
+                </span>
+              );
+            })}
           </div>
         </div>
 
