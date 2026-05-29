@@ -337,12 +337,14 @@ Frontend uses TypeScript strict mode + `npx tsc --noEmit` for typecheck. No runt
 - ✅ Saved-locations + UnitsProvider context with AsyncStorage persistence
 - ✅ Animated wave/glow backgrounds with focus-pause performance optimization
 - ✅ Four in-app explainer modals: regional calibration, map legend, shelter info, disclaimer
+- ✅ Web app port at `web/` — Next.js 16 + Tailwind v4 + react-leaflet + MapTiler, sharing the FastAPI backend with mobile. All four mobile screens (Status / Map / Risk / Safety) plus Fire Detail, Settings, and Locations are mirrored with web-native interactions (cursor tilt, scroll, dropdown menus) and the same V4 algorithm + composite math
+- ✅ Personal Threat composite (web) — fire weather + active-fire proximity combined into a 0-1 score with calibration-aware normalization, FIRMS→incident tiebreak, wind-alignment bump, and stale/containment dampeners
 
 ### Deferred (in priority order)
 - Security review pass (CORS, rate limiting, input audit) before any public deploy
 - Railway deploy + custom domain (currently the API only runs from the laptop)
 - App icon (1024×1024) + splash screen via `expo-splash-screen`
-- Web app port via Expo for Web — main blocker is swapping `react-native-maps` (no web support) for `react-leaflet` or similar, behind `.native.tsx`/`.web.tsx` per-platform files. Roughly 1–2 weeks of work; sequenced after Railway deploy so the web app can hit the live backend. Significantly lower demo friction than Expo Go.
+- Mobile parity for the composite — web-only currently; mobile Status still shows raw fire-weather only. Port `personalThreatBucket` to `app/lib/threat.ts` and unify the Safety banner + Fire Detail "Threat to You" tile
 - Further phone-heat reduction. Current state already pauses the Status-screen animations when the screen isn't focused or the app is backgrounded, and the wave-path worklet runs at ~30% lower density than the original design. If long-session users still feel heat, the next levers are: reduce wave count (5→4) and blob count (4→3); migrate `WavesBackground` to `react-native-skia` for GPU-accelerated rendering (biggest single win); respect the OS-level "Reduce Motion" accessibility setting and disable animations when enabled; detect thermal state on iOS (`ProcessInfo.thermalState`) and degrade animations under thermal pressure; lengthen the TanStack Query refetch intervals on Status.
 - Push notifications when a fire is detected near saved locations (requires dev build, not Expo Go)
 - Lightning vs. human-caused fire split (separate fitted thresholds for ignition source)

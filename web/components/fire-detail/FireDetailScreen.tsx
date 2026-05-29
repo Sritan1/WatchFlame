@@ -19,12 +19,18 @@ import { useSearchParams } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { cardinal8 } from '@/components/ui/CompassRose';
 import { PageSection } from '@/components/ui/PageSection';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk } from '@/lib/api';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
-import { personalThreatBucket } from '@/lib/composite-risk';
+import {
+  bearingTo,
+  distanceMiles,
+  isFirmsStale,
+  personalThreatBucket,
+} from '@/lib/composite-risk';
 import {
   useFiresNear,
   useNamedIncidentsNear,
@@ -68,33 +74,9 @@ const MiniMap = dynamic(
 
 // ─── Geometry helpers (inlined; web has no shared lib/geo) ────────────────
 
-function distanceMiles(a: LatLon, b: LatLon): number {
-  const R = 3958.8;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
-function bearingDeg(a: LatLon, b: LatLon): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
-  const φ1 = toRad(a.lat);
-  const φ2 = toRad(b.lat);
-  const Δλ = toRad(b.lon - a.lon);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
-function compassBearing(deg: number): string {
-  return COMPASS_8[Math.round(deg / 45) % 8];
-}
+// distanceMiles + bearingTo come from web/lib/composite-risk so the threat
+// math and the displayed numbers stay in lockstep. cardinal8 comes from
+// CompassRose so all surfaces share the same 8-point label set.
 
 function formatDate(iso: string): string {
   try {
@@ -153,11 +135,11 @@ export function FireDetailScreen() {
   );
   // Bearing in raw degrees — feeds `personalThreatBucket` for wind alignment.
   const bearingDegFromMe = useMemo(
-    () => (me.coords && fireLoc ? bearingDeg(me.coords, fireLoc) : null),
+    () => (me.coords && fireLoc ? bearingTo(me.coords, fireLoc) : null),
     [me.coords, fireLoc],
   );
   const bearingFromMe = useMemo(
-    () => (bearingDegFromMe != null ? compassBearing(bearingDegFromMe) : null),
+    () => (bearingDegFromMe != null ? cardinal8(bearingDegFromMe) : null),
     [bearingDegFromMe],
   );
 
@@ -230,30 +212,41 @@ export function FireDetailScreen() {
   // stale FIRMS + containment dampener. Synchronous; wind/age modifiers
   // gracefully degrade when their inputs aren't yet loaded (null wind →
   // skip bump). No new loading state introduced.
-  const isStaleFirms = useMemo(() => {
-    // Only FIRMS-only flows (no matched incident) participate in the
-    // stale-pixel dampener. Match the same 24h threshold the threat
-    // formula uses (STALE_FIRMS_HOURS in composite-risk.ts).
-    if (matched || !acqDate) return false;
-    const time = (acqTime ?? '0000').padStart(4, '0');
-    const iso = `${acqDate}T${time.slice(0, 2)}:${time.slice(2)}:00Z`;
-    const ms = Date.parse(iso);
-    if (!Number.isFinite(ms)) return false;
-    return (Date.now() - ms) / (3600 * 1000) > 24;
-  }, [matched, acqDate, acqTime]);
+  // Only FIRMS-only flows (no matched incident) participate in the
+  // stale-pixel dampener; reuse the shared helper so the threshold is in
+  // one place.
+  const isStale = useMemo(
+    () => (matched ? false : isFirmsStale(acqDate, acqTime)),
+    [matched, acqDate, acqTime],
+  );
 
-  const threatLevel: RiskLevel | null =
-    distFromMe == null || bearingDegFromMe == null
-      ? null
-      : personalThreatBucket({
-          distanceMi: distFromMe,
-          acres: matched?.acres ?? null,
-          containedPct: matched?.contained_pct ?? null,
-          isStaleFirms,
-          windDeg: userWeather.data?.wind_deg ?? null,
-          windSpeedKph: userWeather.data?.wind_speed ?? null,
-          bearingToFireDeg: bearingDegFromMe,
-        });
+  const userWindDeg = userWeather.data?.wind_deg ?? null;
+  const userWindSpeedKph = userWeather.data?.wind_speed ?? null;
+  const matchedAcres = matched?.acres ?? null;
+  const matchedContainedPct = matched?.contained_pct ?? null;
+  const threatLevel: RiskLevel | null = useMemo(
+    () =>
+      distFromMe == null || bearingDegFromMe == null
+        ? null
+        : personalThreatBucket({
+            distanceMi: distFromMe,
+            acres: matchedAcres,
+            containedPct: matchedContainedPct,
+            isStaleFirms: isStale,
+            windDeg: userWindDeg,
+            windSpeedKph: userWindSpeedKph,
+            bearingToFireDeg: bearingDegFromMe,
+          }),
+    [
+      distFromMe,
+      bearingDegFromMe,
+      matchedAcres,
+      matchedContainedPct,
+      isStale,
+      userWindDeg,
+      userWindSpeedKph,
+    ],
+  );
   const threatTone = threatLevel ? getRisk(threatLevel, accent) : null;
 
   const openInMaps = `https://www.google.com/maps?q=${fireLat},${fireLon}`;

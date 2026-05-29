@@ -44,31 +44,47 @@ export function useRiskForInputs(input: RiskRequest, debounceMs = 250) {
 }
 
 /** Compute risk from a fresh weather reading. 5 min cache + full coord
- *  precision (same reason as useWeather). */
+ *  precision (same reason as useWeather).
+ *
+ *  Inputs are rounded to the same integer precision the Risk Calculator's
+ *  sliders use (`Math.round(localTemp)` etc. in RiskScreen.applyLocal).
+ *  Status displays them rounded too (`formatTemp(t, unit, 0)`), so this
+ *  guarantees the score on Status's Fire Weather card matches the score on
+ *  Risk Calculator for the same coords — both surfaces feed the backend the
+ *  same numbers the user sees in the UI. */
 export function useRiskFromWeather(
   weather: { temperature: number; humidity: number; wind_speed: number } | undefined,
   coords?: LatLon,
 ) {
+  const tempInt = weather ? Math.round(weather.temperature) : undefined;
+  const humidityInt = weather ? Math.round(weather.humidity) : undefined;
+  const windInt = weather ? Math.round(weather.wind_speed) : undefined;
   return useQuery({
-    queryKey: [
-      'risk',
-      weather?.temperature,
-      weather?.humidity,
-      weather?.wind_speed,
-      coords?.lat,
-      coords?.lon,
-    ],
+    queryKey: ['risk', tempInt, humidityInt, windInt, coords?.lat, coords?.lon],
     queryFn: () =>
       api.risk({
-        temperature: weather!.temperature,
-        humidity: weather!.humidity,
-        wind_speed: weather!.wind_speed,
+        temperature: tempInt!,
+        humidity: humidityInt!,
+        wind_speed: windInt!,
         days_since_rain: 7,
         season: currentSeason(),
         ...(coords ? { lat: coords.lat, lon: coords.lon } : {}),
       }),
     enabled: !!weather,
     staleTime: 5 * 60_000,
+  });
+}
+
+/** Per-state calibration thresholds + metadata for the Status calibration
+ *  ladder. Backed by `/risk/calibration` which is essentially static —
+ *  values change only when scripts/build_regional_thresholds.py re-runs,
+ *  so we treat this as a long-lived session-level cache. */
+export function useRiskCalibration() {
+  return useQuery({
+    queryKey: ['risk-calibration'],
+    queryFn: () => api.riskCalibration(),
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 }
 
