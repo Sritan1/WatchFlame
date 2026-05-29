@@ -183,11 +183,19 @@ def get_state_calibration(state: str | None) -> dict | None:
 
 
 def calibration_info() -> dict:
-    """Diagnostic snapshot for /healthz or a debug endpoint."""
+    """Diagnostic snapshot for /healthz or a debug endpoint.
+
+    Includes the full per-state thresholds dict so the Status calibration
+    modal can render its 17-state comparison visualization without needing
+    its own copy of the JSON. The frontend pulls this once per session and
+    TanStack caches it; values change only when the calibration script
+    re-runs (rarely).
+    """
     return {
         "version": _DATA.get("version"),
         "fitted_at": _DATA.get("fitted_at"),
         "algorithm_version": _DATA.get("algorithm_version"),
         "states_calibrated": sorted(_STATES.keys()),
         "global_thresholds": _GLOBAL,
+        "states": _STATES,
     }

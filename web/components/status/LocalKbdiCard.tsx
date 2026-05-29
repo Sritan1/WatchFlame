@@ -4,6 +4,7 @@
 // Premium chrome: TiltCard + corner glow + GridPattern + 4-segment gauge
 // with current marker, matching the Score Breakdown row visually.
 
+import { LevelPill } from '@/components/status/LevelPill';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
@@ -17,12 +18,21 @@ interface Bucket {
   rgb: string;
 }
 
-/** Standard KBDI buckets (Keetch & Byram 1968). */
+/** Standard KBDI buckets (Keetch & Byram 1968). Single source of truth —
+ *  `kbdiBucket()` looks up by raw value (0–800), `KbdiBar` derives the same
+ *  segments from this same array so threshold + color drift is impossible. */
+export const KBDI_BUCKETS: ReadonlyArray<Bucket & { until: number }> = [
+  { until: 200, label: 'Moist',    color: '#7ee787', rgb: '126, 231, 135' },
+  { until: 400, label: 'Dry',      color: '#fbbf24', rgb: '251, 191, 36'  },
+  { until: 600, label: 'Very dry', color: '#fb923c', rgb: '251, 146, 60'  },
+  { until: 800, label: 'Drought',  color: '#ef4444', rgb: '239, 68, 68'   },
+];
+
 export function kbdiBucket(kbdi: number): Bucket {
-  if (kbdi < 200) return { label: 'Moist',    color: '#7ee787', rgb: '126, 231, 135' };
-  if (kbdi < 400) return { label: 'Dry',      color: '#fbbf24', rgb: '251, 191, 36'  };
-  if (kbdi < 600) return { label: 'Very dry', color: '#fb923c', rgb: '251, 146, 60'  };
-  return            { label: 'Drought',  color: '#ef4444', rgb: '239, 68, 68'   };
+  for (const b of KBDI_BUCKETS) {
+    if (kbdi < b.until) return { label: b.label, color: b.color, rgb: b.rgb };
+  }
+  return KBDI_BUCKETS[KBDI_BUCKETS.length - 1];
 }
 
 export function LocalKbdiCard({
@@ -221,16 +231,23 @@ export function LocalKbdiCard({
   );
 }
 
-/** 4-segment KBDI gauge with marker dot at the current value. */
+/** 4-segment KBDI gauge with marker dot at the current value. Segments are
+ *  derived from the shared KBDI_BUCKETS constant so labels + colors stay in
+ *  lockstep with kbdiBucket(). */
 function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; value: number }) {
-  const max = 800;
+  const max = KBDI_BUCKETS[KBDI_BUCKETS.length - 1].until;
   const pct = Math.min(1, Math.max(0, value / max));
-  const segments = [
-    { until: 0.25, color: '#7ee787', lbl: 'Moist' },
-    { until: 0.5,  color: '#fbbf24', lbl: 'Dry'   },
-    { until: 0.75, color: '#fb923c', lbl: 'Very dry' },
-    { until: 1.0,  color: '#ef4444', lbl: 'Drought' },
-  ];
+  const segments = KBDI_BUCKETS.map((b) => ({
+    until: b.until / max,
+    color: b.color,
+    lbl: b.label,
+  }));
+
+  // Marker color = the segment the current value sits in. Compute once;
+  // re-used for both the border and box-shadow below.
+  const markerColor =
+    segments.find((s, i) => pct >= (i === 0 ? 0 : segments[i - 1].until) && pct < s.until)?.color
+    ?? segments[segments.length - 1].color;
 
   return (
     <div>
@@ -268,8 +285,8 @@ function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; val
             height: 16,
             borderRadius: 99,
             background: '#fff',
-            border: `2px solid ${segments.find((s, i) => pct >= (i === 0 ? 0 : segments[i - 1].until) && pct < s.until)?.color ?? segments[0].color}`,
-            boxShadow: `0 0 10px ${segments.find((s, i) => pct >= (i === 0 ? 0 : segments[i - 1].until) && pct < s.until)?.color ?? segments[0].color}`,
+            border: `2px solid ${markerColor}`,
+            boxShadow: `0 0 10px ${markerColor}`,
             transition: 'left 0.7s cubic-bezier(0.3, 1, 0.4, 1)',
           }}
         />
@@ -304,50 +321,5 @@ function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; val
         })}
       </div>
     </div>
-  );
-}
-
-function LevelPill({
-  ae,
-  color,
-  glow,
-  label,
-}: {
-  ae: ReturnType<typeof useAesthetic>['ae'];
-  color: string;
-  glow: string;
-  label: string;
-}) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '5px 10px 5px 9px',
-        borderRadius: 99,
-        background: `linear-gradient(180deg, rgba(${glow}, 0.18), rgba(${glow}, 0.06))`,
-        border: `0.5px solid rgba(${glow}, 0.32)`,
-        fontFamily: ae.fontMono,
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: '0.16em',
-        color,
-        textTransform: 'uppercase',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 99,
-          background: color,
-          boxShadow: `0 0 6px ${color}`,
-        }}
-      />
-      {label}
-    </span>
   );
 }

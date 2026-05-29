@@ -13,7 +13,7 @@
 // inside cards (per design spec).
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { memo, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { FireFieldsExplainerModal } from '@/components/map/FireFieldsExplainerModal';
@@ -21,21 +21,9 @@ import type { MapSelection } from '@/components/map/MapImpl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
+import { distanceMiles } from '@/lib/composite-risk';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
-
-/** Great-circle distance in miles (haversine) — used to label the satellite
- *  detail card. Named incidents already carry `distance_mi` from the backend. */
-function distanceMiles(a: LatLon, b: LatLon): number {
-  const R = 3958.8;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
 
 export function IncidentsRail({
   fires,
@@ -517,7 +505,7 @@ function buildFirmsDetailHref(feature: FireFeature): string {
 
 // ─── Incident Card ────────────────────────────────────────────────────────
 
-function IncidentCard({
+function IncidentCardImpl({
   fire,
   risk,
   severity,
@@ -539,8 +527,15 @@ function IncidentCard({
   const { ae } = useAesthetic();
 
   // Cursor-following highlight — sets CSS vars used by .inc-card-shine.
+  // getBoundingClientRect() forces a synchronous layout flush, so we cache
+  // it on mouseEnter (and refresh per-card on each hover entry) instead of
+  // paying the cost on every one of the ~60 mousemove events/sec.
+  const rectRef = useRef<DOMRect | null>(null);
+  const onEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    rectRef.current = e.currentTarget.getBoundingClientRect();
+  };
   const onMove = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
+    const r = rectRef.current ?? e.currentTarget.getBoundingClientRect();
     e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`);
     e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`);
   };
@@ -554,6 +549,7 @@ function IncidentCard({
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onEnter}
       onMouseMove={onMove}
       data-selected={isSelected ? 'true' : 'false'}
       className={`inc-card${isSelected ? ' inc-card-sel' : ''}`}
@@ -811,6 +807,21 @@ function Stat({
     </div>
   );
 }
+
+// onClick is a fresh inline closure on every parent render — we know that's
+// expected (it captures isSelected + onSelect from the parent). Skip it in
+// the comparator so the card can bail when nothing visible actually changed.
+const IncidentCard = memo(IncidentCardImpl, (prev, next) =>
+  prev.fire === next.fire &&
+  prev.severity === next.severity &&
+  prev.index === next.index &&
+  prev.isSelected === next.isSelected &&
+  prev.isUrgent === next.isUrgent &&
+  prev.distanceUnit === next.distanceUnit &&
+  prev.risk.color === next.risk.color &&
+  prev.risk.glow === next.risk.glow &&
+  prev.risk.label === next.risk.label,
+);
 
 // ─── Minimal selected-row footer ──────────────────────────────────────────
 
