@@ -4,6 +4,7 @@
 // · moderate risk overall. All RNG is seeded by lat/lon so the mock is stable.
 
 import type {
+  CalibrationInfo,
   DisastersNearResponse,
   FireCollection,
   GeocodeHit,
@@ -367,10 +368,33 @@ function computeMockRisk(req: RiskRequest): RiskResponse {
   };
 }
 
+// Compact mirror of api/data/regional_thresholds.json — used only when
+// mocks are enabled so the Status calibration ladder still renders without
+// a backend. Trimmed to the four fields the UI actually reads.
+const MOCK_CALIBRATION: CalibrationInfo = {
+  version: 'v4',
+  fitted_at: '2026-05-17',
+  algorithm_version: 'v4-mock',
+  states_calibrated: ['AZ', 'CA', 'CO', 'FL', 'GA', 'NC', 'NV', 'WA'],
+  global_thresholds: { low: 0.3, moderate: 0.6, high: 0.8, extreme: 0.8 },
+  states: {
+    CA: { n_fires: 100, bbox: [-124, 32, -114, 42], centroid: [37, -120],
+          thresholds: { low: 0.37, moderate: 0.46, high: 0.50, extreme: 0.51 },
+          score_summary: { min: 0.07, median: 0.37, mean: 0.36, max: 0.57 } },
+    FL: { n_fires: 100, bbox: [-87, 24, -80, 31], centroid: [28, -83],
+          thresholds: { low: 0.27, moderate: 0.33, high: 0.39, extreme: 0.42 },
+          score_summary: { min: 0.10, median: 0.27, mean: 0.28, max: 0.45 } },
+    AZ: { n_fires: 100, bbox: [-115, 31, -109, 37], centroid: [34, -112],
+          thresholds: { low: 0.40, moderate: 0.50, high: 0.55, extreme: 0.59 },
+          score_summary: { min: 0.15, median: 0.40, mean: 0.40, max: 0.62 } },
+  },
+};
+
 export const mockApi = {
   health: () => delay({ ok: true }),
   fires: (_opts?: { days?: number; bbox?: string }) => delay(MOCK_FIRES),
   risk: (body: RiskRequest) => delay(computeMockRisk(body), 320),
+  riskCalibration: () => delay(MOCK_CALIBRATION, 120),
   weather: (_lat: number, _lon: number) => delay(MOCK_WEATHER),
   geocode: (query: string): Promise<GeocodeHit[]> => {
     const q = query.trim().toLowerCase();

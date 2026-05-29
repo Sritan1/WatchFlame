@@ -15,7 +15,10 @@ import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
 import { type LatLon } from '@/lib/api';
 import {
+  bearingTo,
   bucketOf,
+  distanceMiles,
+  isFirmsStale,
   normalizeWeather,
   personalThreatBucket,
 } from '@/lib/composite-risk';
@@ -30,26 +33,11 @@ import {
 import { floorLow, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 
-function bearingTo(from: LatLon, to: LatLon): number {
-  const dLon = (to.lon - from.lon) * (Math.PI / 180);
-  const lat1 = from.lat * (Math.PI / 180);
-  const lat2 = to.lat * (Math.PI / 180);
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  return (Math.atan2(y, x) * 180) / Math.PI;
-}
-
-/** Great-circle distance in miles (haversine). */
-function distanceMiles(a: LatLon, b: LatLon): number {
-  const R = 3958.8;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
+// distanceMiles + bearingTo come from web/lib/composite-risk so the threat
+// math and the displayed numbers share one implementation. Note: the
+// shared bearingTo returns 0–360 (already normalized), so the previous
+// `normalizeBearing` call below is now a no-op — kept as a safety net in
+// case a future change re-introduces an unnormalized input path.
 
 export function SafetyScreen() {
   const { ae } = useAesthetic();
@@ -119,19 +107,16 @@ export function SafetyScreen() {
     : 0;
 
   // Stale-FIRMS dampener — only applies when the winning fire is a FIRMS
-  // pixel (no named incident) and its acq_date is older than 24h. Matches
-  // the same 24h threshold the threat formula uses internally.
-  const closestIsStaleFirms = (() => {
-    if (closestIsIncident || !nearestSatHit) return false;
-    const acqDate = nearestSatHit.feature.properties.acq_date;
-    const acqTime = nearestSatHit.feature.properties.acq_time;
-    if (!acqDate) return false;
-    const time = (acqTime ?? '0000').padStart(4, '0');
-    const iso = `${acqDate}T${time.slice(0, 2)}:${time.slice(2)}:00Z`;
-    const ms = Date.parse(iso);
-    if (!Number.isFinite(ms)) return false;
-    return (Date.now() - ms) / (3600 * 1000) > 24;
-  })();
+  // pixel (no named incident) and its acq_date is older than the shared
+  // STALE_FIRMS_HOURS threshold. Reuses the helper from composite-risk so
+  // the threshold lives in one place.
+  const closestIsStaleFirms =
+    !closestIsIncident && nearestSatHit
+      ? isFirmsStale(
+          nearestSatHit.feature.properties.acq_date,
+          nearestSatHit.feature.properties.acq_time,
+        )
+      : false;
 
   // Severity for the closest detection. Uses the SHARED personalThreatBucket
   // so the value matches Status's Active Fire Threat and Fire Detail's
@@ -272,9 +257,10 @@ function normalizeBearing(b: number): number {
  *  - **weather**: raw fire-weather risk from /risk (low | moderate | high |
  *    extreme). Driven by VPD × wind × drought × NDVI/season at the user's
  *    location.
- *  - **threat**: distance-and-size heuristic for the closest active fire
- *    (low | moderate | high | extreme). Already computed upstream as
- *    `nearestSeverity` from severityOf().
+ *  - **threat**: per-fire distance + size + wind + containment + staleness
+ *    heuristic for the closest active fire (low | moderate | high | extreme).
+ *    Computed upstream as `nearestSeverity` via personalThreatBucket() so it
+ *    matches Status's Active Fire Threat and Fire Detail's "Threat to You".
  *
  *  Decision matrix (per user spec — no "EVACUATE IMMEDIATELY" copy, since
  *  that's a 911-class instruction we shouldn't claim authority over):

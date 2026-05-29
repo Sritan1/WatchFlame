@@ -18,6 +18,7 @@
 import Link from 'next/link';
 
 import { Icon } from '@/components/Icon';
+import { cardinal8 } from '@/components/ui/CompassRose';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -26,11 +27,6 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { formatFirmsAge, type ThreatDriver, type WindAlignment } from '@/lib/composite-risk';
 import { RISK_LEVELS } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
-
-const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
-function cardinal8(deg: number): string {
-  return COMPASS_8[Math.round(deg / 45) % 8];
-}
 
 function formatStartedDate(iso: string | null): string | null {
   if (!iso) return null;
@@ -173,10 +169,12 @@ export function ThreatSourceCard({
         : 'NIFC WFIGS'
       : 'NASA FIRMS';
 
+  const startedStr =
+    driver.kind === 'incident' ? formatStartedDate(driver.incident.started) : null;
   const subDetail =
     driver.kind === 'incident'
-      ? formatStartedDate(driver.incident.started)
-        ? `started ${formatStartedDate(driver.incident.started)}`
+      ? startedStr
+        ? `started ${startedStr}`
         : null
       : (() => {
           const age = formatFirmsAge(
