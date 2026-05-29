@@ -297,11 +297,65 @@ export function aggregateThreat(args: {
   return worst;
 }
 
-/** Composite score. Locked weighted average: 0.45 × weather + 0.55 × threat.
- *  Weights sum to 1.0; both inputs are in [0, 1] so output is guaranteed
- *  in [0, 1] without clamping. */
+/** Composite score (0–1) — linear blend used ONLY for the Status orb arc
+ *  visualization. The user-facing tier no longer comes from `bucketOf` of
+ *  this number; it comes from the calibrated `compositeFromBuckets`
+ *  matrix below. The two are coherent at most cells (the matrix was
+ *  designed to agree with the linear blend at the corners) but can
+ *  visually disagree by one band in a few middle cells — acceptable since
+ *  the tier label, not the arc fill, is what the user reads. */
 export function composite(weather: number, threat: number): number {
   return COMPOSITE_WEIGHTS.weather * weather + COMPOSITE_WEIGHTS.threat * threat;
+}
+
+// ─── Composite tier matrix ────────────────────────────────────────────────
+//
+// Replaces the prior `bucketOf(0.45*W + 0.55*T)` derivation. Two reasons:
+//
+// 1. The 0.45/0.55 weights were a political knob (don't cry wolf on
+//    weather alone), not an empirical fit. A lookup matrix makes each
+//    cell explainable on its own terms, with no hidden coefficients.
+// 2. The linear blend's bucket sometimes lands in a tier the operational
+//    intent wouldn't (e.g. W=high × T=mod maps to ~0.48 → MOD under the
+//    linear blend, but the operational read is HIGH because both axes
+//    are simultaneously elevated). The matrix captures that intent
+//    directly.
+//
+// Design constraints encoded:
+//
+//   - W=ext × T=none lands at MOD, not HIGH. Preserves "weather alone
+//     never escalates to HIGH" — the spirit of the prior 0.45 cap.
+//   - W=none × T=ext lands at HIGH, not EXT. Close active fire on a
+//     calm humid day is real but the wider environment isn't reinforcing
+//     catastrophic spread; EXT is reserved for both axes screaming.
+//   - The diagonal is identity (low/low=LOW, mod/mod=MOD, etc).
+//   - Both-axes-elevated cells (HIGH×HIGH+) escalate to EXT once either
+//     axis crosses into EXT itself.
+//
+// If a cell ever needs to change, this is the one place to do it.
+
+type ThreatTier = RiskLevel | 'none';
+
+const COMPOSITE_MATRIX: Record<RiskLevel, Record<ThreatTier, RiskLevel>> = {
+  //              T=none      T=low       T=moderate  T=high      T=extreme
+  low:      {     none: 'low',      low: 'low',      moderate: 'low',      high: 'moderate', extreme: 'high'     },
+  moderate: {     none: 'low',      low: 'moderate', moderate: 'moderate', high: 'high',     extreme: 'high'     },
+  high:     {     none: 'moderate', low: 'moderate', moderate: 'high',     high: 'high',     extreme: 'extreme'  },
+  extreme:  {     none: 'moderate', low: 'high',     moderate: 'high',     high: 'extreme',  extreme: 'extreme'  },
+};
+
+/** Headline tier from the two component tiers. `null` threatBucket means
+ *  "no fire in range" — distinct from `low` (a fire is present but not
+ *  threatening), so the matrix has a dedicated `none` column. When the
+ *  weather bucket is null (still loading), returns null — the caller
+ *  should show a skeleton until inputs resolve. */
+export function compositeFromBuckets(
+  weatherBucket: RiskLevel | null,
+  threatBucket: RiskLevel | null,
+): RiskLevel | null {
+  if (weatherBucket == null) return null;
+  const threatKey: ThreatTier = threatBucket ?? 'none';
+  return COMPOSITE_MATRIX[weatherBucket][threatKey];
 }
 
 /** Per-fire personal threat bucket. Wraps `fireThreatFactor` + `bucketOf`
@@ -552,9 +606,17 @@ export function bucketOf(score: number): RiskLevel {
   return 'extreme';
 }
 
-/** Generate a context-aware subtitle that names which signal(s) are driving
- *  the composite. Five canonical patterns; falls back to a generic line for
- *  the in-between cases. */
+/** Five canonical subtitle patterns, one per matrix-row archetype. Each
+ *  message names the dominant driver(s) of the headline tier so the user
+ *  understands WHY they landed where they did — not just the label.
+ *
+ *  Maps cleanly across every cell of `COMPOSITE_MATRIX`:
+ *    both axes elevated   → "Both... elevated"
+ *    weather hot + no fire → "Fire weather is elevated — no active fires"
+ *    weather hot + fire    → "Fire weather is elevated — a fire is also..."
+ *    threat hot (W cool)   → "An active fire is nearby..."
+ *    neither hot + no fire → "No immediate fire risk in your area"
+ *    neither hot + fire    → "Conditions are calm — monitor for changes" */
 export function compositeSubtitle(args: {
   weatherBucket: RiskLevel;
   /** Null when no fires are in range (distinct from LOW threat). */
@@ -568,23 +630,17 @@ export function compositeSubtitle(args: {
     return 'Both fire weather and a nearby fire are elevated — review your plan.';
   }
   if (wHot) {
-    // wHot && !tHot covers (W=HIGH/EXT) × (T = null | low | moderate).
-    // Subtitle reflects that fire weather drives the bucket; threat=moderate
-    // still leaves weather as the headline driver.
-    return threatBucket == null || threatBucket === 'low'
+    return threatBucket == null
       ? 'Fire weather is elevated — no active fires nearby.'
       : 'Fire weather is elevated — a nearby fire is also adding risk.';
   }
-  if (tHot && (weatherBucket === 'low' || weatherBucket === 'moderate')) {
+  if (tHot) {
     return 'An active fire is nearby — review your plan.';
   }
-  if (
-    threatBucket == null &&
-    (weatherBucket === 'low' || weatherBucket === 'moderate')
-  ) {
+  if (threatBucket == null) {
     return 'No immediate fire risk in your area.';
   }
-  return 'Moderate conditions — monitor for changes.';
+  return 'Conditions are calm — monitor for changes.';
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────

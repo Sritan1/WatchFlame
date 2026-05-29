@@ -74,15 +74,23 @@ NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for vari
 
 ---
 
-## 6. The composite weights (0.45 weather + 0.55 threat) are a political knob
+## 6. From political weights to a published tier matrix
 
-**Decision.** The Personal Threat composite combines environment and active-fire threat as `composite = 0.45 × W + 0.55 × T`. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+**Decision.** The headline tier on Status comes from a `(weather_tier, threat_tier) → headline_tier` lookup matrix, not from `bucketOf(0.45 × W + 0.55 × T)`. See `COMPOSITE_MATRIX` in [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
 
-**Why.** The weights were chosen so that "dangerous weather, no active fire" caps at 0.45 — mid-MODERATE on the composite — and the headline never escalates to EXTREME from environment alone. This is a design constraint about not crying wolf on a hot dry day with no nearby fire, not an empirical derivation. The 0.55/0.45 split is not fitted to anything.
+```
+                T=none     T=low      T=mod      T=high     T=ext
+W=low           LOW        LOW        LOW        MOD        HIGH
+W=mod           LOW        MOD        MOD        HIGH       HIGH
+W=high          MOD        MOD        HIGH       HIGH       EXT
+W=ext           MOD        HIGH       HIGH       EXT        EXT
+```
 
-**Cost.** The composite collapses operationally-different situations to the same number. A `composite = 0.50` (HIGH bucket boundary) can be reached by `W=0, T=0.91` (close fire, no environmental risk) or `W=0.55, T=0.46` (mid-tier weather, weak threat). Those situations warrant different actions, but the composite tier doesn't differentiate.
+**Why.** The earlier version used `0.45 × W + 0.55 × T` and bucketed the result by quartile. The weights were chosen for one reason — *"weather alone caps at 0.45, so the headline never escalates to EXTREME from environment alone"* — and were not fitted to anything. That made every cell of the implied decision space derived through two arbitrary coefficients instead of being argued on its own merits. The matrix encodes each cell's intent directly: `W=ext × T=none → MOD` is the same "don't cry wolf on hot dry days without an active fire" constraint, now visible and editable as a single cell. Cells on the corners agree with the prior linear blend (e.g. `W=ext × T=ext → EXT` both ways); cells in the middle now reflect operational intent rather than arithmetic accident (e.g. `W=high × T=mod` is now HIGH instead of the linear blend's ~0.48 → MOD).
 
-**Where it could go.** Replace the linear combination with a `(W_tier, T_tier) → headline_tier` lookup matrix. The matrix is explainable cell-by-cell ("we set the W=EXTREME, T=NONE cell to AWARE because environment-alone shouldn't push to WATCH") and lives in one published table, not split across two coefficients that need to be defended individually. This is the single highest-impact algorithmic improvement on the deferred list.
+**Cost.** The composite-as-a-single-number disappears as a tier source — there's no longer one scalar that summarizes the whole picture. The orb's arc fill still uses the linear blend as a visual position cue (so the orb moves continuously as inputs change), but that number is decorative; the tier label is authoritative. In a handful of edge cells the arc position and the tier color can visually disagree by one band — acceptable since users read the tier label, not the precise arc position.
+
+**Where it could go.** The 4×4 grid still produces only 4 output tiers (LOW / MOD / HIGH / EXT). A 5-state action vocabulary (STAND DOWN / STANDBY / AWARE / WATCH / ACTION) would map decisions to behaviors instead of adjectives — the same change operational systems like NWS Storm Prediction Center make when they cascade Fire Weather Watch → Red Flag Warning. Out of scope for this revision; would touch the orb palette, headline copy, Safety banner styling, and the calibration ladder color scheme simultaneously.
 
 ---
 
