@@ -170,10 +170,14 @@ def main() -> None:
             fontweight="bold",
             color="#111827",
         )
-        ax.text(
-            i,
-            -y_max * 0.05,
+        # n=125 caption — positioned in axes-fraction coords so it sits
+        # cleanly below the x-tick labels regardless of the data y_max.
+        ax.annotate(
             f"n={int(agg.loc[b, 'n'])}",
+            xy=(i, 0),
+            xycoords=("data", "axes fraction"),
+            xytext=(0, -38),
+            textcoords="offset points",
             ha="center",
             fontsize=9.5,
             color="#6b7280",
@@ -182,7 +186,7 @@ def main() -> None:
     ax.set_xticks(x)
     ax.set_xticklabels([LABELS[b] for b in BUCKETS], fontsize=11)
     ax.set_ylabel("Mean predicted V4 fire-weather score (95 % CI)", fontsize=11)
-    ax.set_xlabel("Fire size bucket", fontsize=11, labelpad=18)
+    ax.set_xlabel("Fire size bucket", fontsize=11, labelpad=36)
     ax.set_title(
         f"V4 algorithm — validated against {len(ew)} historical fires\n"
         f"Spearman ρ(log size, predicted V4) = {spearman_r:+.2f}   "
