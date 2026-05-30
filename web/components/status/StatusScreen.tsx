@@ -7,7 +7,7 @@
 // Cards beyond these (Active Incident, Regional Risk Index, Closest Fires list,
 // FEMA banner) live on Map / Safety in mobile; mobile Status doesn't show them.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
@@ -228,6 +228,19 @@ export function StatusScreen() {
   // weather observation age, KBDI availability, NDVI availability,
   // calibration source, and driving-fire age. Shown as a small chip
   // beneath the subtitle; tap to expand into a full breakdown modal.
+  //
+  // `confidenceNowMs` ticks once a minute via setInterval so the chip's
+  // age-based signals (weather observation age, FIRMS detection age)
+  // advance over time even when TanStack hasn't refetched. Without this,
+  // computeConfidence's internal `Date.now()` is captured by useMemo at
+  // the moment its deps last changed — and the chip stays frozen at
+  // "X min ago" until the next refetch (10+ min for /weather).
+  const [confidenceNowMs, setConfidenceNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setConfidenceNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const confidence = useMemo(
     () =>
       computeConfidence({
@@ -236,6 +249,7 @@ export function StatusScreen() {
         riskData: risk.data,
         riskLoading: risk.isLoading,
         threatDriver,
+        nowMs: confidenceNowMs,
       }),
     [
       weather.dataUpdatedAt,
@@ -243,6 +257,7 @@ export function StatusScreen() {
       risk.data,
       risk.isLoading,
       threatDriver,
+      confidenceNowMs,
     ],
   );
 

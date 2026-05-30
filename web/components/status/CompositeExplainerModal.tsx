@@ -24,6 +24,12 @@ import type { ThreatDriver } from '@/lib/composite-risk';
 import { hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, type DistanceUnit } from '@/lib/use-units';
 
+// Module-level number formatter. Pinned to en-US so SSR (Node) and the
+// client browser produce identical output regardless of the client locale —
+// `toLocaleString(undefined, ...)` would use ambient locale on each side
+// and trigger a React hydration mismatch warning for any non-US visitor.
+const ACRES_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
 const TIER_LONG: Record<RiskLevel, string> = {
   low: 'LOW',
   moderate: 'MODERATE',
@@ -123,7 +129,7 @@ export function CompositeExplainerModal({
                     1,
                   )} away${
                     driver.incident.acres != null
-                      ? `, ${driver.incident.acres.toLocaleString(undefined, { maximumFractionDigits: 0 })} ac`
+                      ? `, ${ACRES_FORMAT.format(driver.incident.acres)} ac`
                       : ''
                   }`
                 : `Satellite detection ${formatDistance(driver.distanceMi, distanceUnit, 1)} away`

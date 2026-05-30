@@ -36,7 +36,11 @@ export interface ConfidenceSignal {
 }
 
 export interface ConfidenceResult {
-  level: ConfidenceLevel;
+  /** Null while loading or when no determinate confidence can be computed.
+   *  Distinct from 'low' / 'medium' / 'high' so consumers must handle the
+   *  "no answer yet" case explicitly rather than silently rendering one
+   *  of the three semantic levels as a placeholder. */
+  level: ConfidenceLevel | null;
   signals: ConfidenceSignal[];
   /** True when at least one input is still resolving — caller should
    *  render the chip as a skeleton rather than a stale level. */
@@ -56,7 +60,9 @@ const FIRMS_WARN_HR = 24; // matches STALE_FIRMS_HOURS in composite-risk
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 function minutesAgo(timestampMs: number | null, nowMs: number): number | null {
-  if (timestampMs == null || timestampMs === 0) return null;
+  if (timestampMs == null || !Number.isFinite(timestampMs) || timestampMs === 0) {
+    return null;
+  }
   return Math.max(0, (nowMs - timestampMs) / 60_000);
 }
 
@@ -67,6 +73,17 @@ function ageLabel(minutes: number | null): string {
   const hours = minutes / 60;
   if (hours < 24) return `${Math.round(hours)} hr ago`;
   return `${Math.round(hours / 24)} day${Math.round(hours / 24) === 1 ? '' : 's'} ago`;
+}
+
+/** Sub-1-hour FIRMS ages need finer granularity than `Math.round(hours)` —
+ *  a 20-minute-old detection should read "20 min ago", not "0 hr ago". */
+function firmsAgeLabel(ageHr: number): string {
+  if (ageHr < 1) {
+    const minutes = Math.round(ageHr * 60);
+    if (minutes < 1) return 'FIRMS, just now';
+    return `FIRMS, ${minutes} min ago`;
+  }
+  return `FIRMS, ${Math.round(ageHr)} hr ago`;
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────
@@ -89,9 +106,35 @@ export function computeConfidence(args: {
   let warns = 0;
   let bads = 0;
 
-  // Loading short-circuit — render skeleton, not stale level.
+  // Loading short-circuit — render skeleton, not stale level. `level: null`
+  // (not 'high') so any consumer that ignores the loading flag still doesn't
+  // see a misleadingly-confident placeholder.
   if (args.weatherLoading || args.riskLoading || args.riskData === undefined) {
-    return { level: 'high', signals: [], loading: true };
+    return { level: null, signals: [], loading: true };
+  }
+
+  // /risk errored — distinguished from "loading" (riskData === undefined)
+  // and "succeeded" (riskData is a value). Show a single "Risk endpoint"
+  // bad-status row so the user sees the actual failure mode rather than
+  // three misleading-fallback warns for KBDI / NDVI / Calibration.
+  if (args.riskData === null) {
+    const wMinErr = minutesAgo(args.weatherUpdatedAt, now);
+    const errSignals: ConfidenceSignal[] = [];
+    if (wMinErr != null) {
+      errSignals.push({
+        label: 'Weather observation',
+        value: ageLabel(wMinErr),
+        status: wMinErr < WEATHER_GOOD_MIN ? 'good' : wMinErr < WEATHER_WARN_MIN ? 'warn' : 'bad',
+        contributesToLevel: true,
+      });
+    }
+    errSignals.push({
+      label: 'Risk endpoint',
+      value: 'unavailable',
+      status: 'bad',
+      contributesToLevel: true,
+    });
+    return { level: 'low', signals: errSignals, loading: false };
   }
 
   // 1. Weather observation freshness
@@ -120,9 +163,10 @@ export function computeConfidence(args: {
   if (wStatus === 'warn') warns++;
   if (wStatus === 'bad') bads++;
 
-  // 2. KBDI (drought integrator)
+  // 2. KBDI (drought integrator) — Number.isFinite guard catches NaN values
+  // that would otherwise slip into the 'good' branch and render "value: NaN".
   const kbdi = args.riskData?.kbdi;
-  if (kbdi == null) {
+  if (kbdi == null || !Number.isFinite(kbdi)) {
     signals.push({
       label: 'KBDI (drought)',
       value: 'days-since-rain proxy',
@@ -139,9 +183,9 @@ export function computeConfidence(args: {
     });
   }
 
-  // 3. NDVI (vegetation anomaly)
+  // 3. NDVI (vegetation anomaly) — same NaN guard as KBDI
   const ndvi = args.riskData?.ndvi_anomaly;
-  if (ndvi == null) {
+  if (ndvi == null || !Number.isFinite(ndvi)) {
     signals.push({
       label: 'NDVI (vegetation)',
       value: 'season multiplier fallback',
@@ -176,18 +220,18 @@ export function computeConfidence(args: {
     const ageHr = driver.ageHours;
     let fStatus: SignalStatus;
     let fValue: string;
-    if (ageHr == null) {
+    if (ageHr == null || !Number.isFinite(ageHr)) {
       fStatus = 'warn';
       fValue = 'satellite detection, age unknown';
     } else if (ageHr < FIRMS_GOOD_HR) {
       fStatus = 'good';
-      fValue = `FIRMS, ${Math.round(ageHr)} hr ago`;
+      fValue = firmsAgeLabel(ageHr);
     } else if (ageHr < FIRMS_WARN_HR) {
       fStatus = 'warn';
-      fValue = `FIRMS, ${Math.round(ageHr)} hr ago`;
+      fValue = firmsAgeLabel(ageHr);
     } else {
       fStatus = 'bad';
-      fValue = `FIRMS, ${Math.round(ageHr)} hr ago (stale)`;
+      fValue = `${firmsAgeLabel(ageHr)} (stale)`;
     }
     signals.push({
       label: 'Driving fire',

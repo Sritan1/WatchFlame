@@ -47,7 +47,7 @@ export function ConfidenceChip({
 }) {
   const { ae } = useAesthetic();
 
-  if (confidence.loading) {
+  if (confidence.loading || confidence.level === null) {
     return <Skeleton width={158} height={26} rounded="full" />;
   }
 
@@ -114,7 +114,14 @@ export function ConfidenceBreakdownModal({
   confidence: ConfidenceResult;
 }) {
   const { ae } = useAesthetic();
-  const tone = TONE[confidence.level];
+  // While loading or before a determinate confidence is computed, render a
+  // muted neutral palette so the outcome row doesn't claim a level it
+  // doesn't have. The chip itself won't open this modal during loading
+  // (its render returns a Skeleton), so this branch is rare — but still
+  // worth handling defensively for any future caller.
+  const tone = confidence.level
+    ? TONE[confidence.level]
+    : { color: 'rgba(255,255,255,0.55)', rgb: '255,255,255', label: 'Resolving…' };
 
   return (
     <Modal open={open} onClose={onClose} eyebrow="Data Quality" title="Confidence breakdown" maxWidth={560}>
