@@ -1,5 +1,7 @@
 # WildFire
 
+[![Validated against 500 historical fires](https://img.shields.io/badge/validated-500%20historical%20fires-3FB68B?style=flat-square)](docs/v4_validation.png) [![17-state regional calibration](https://img.shields.io/badge/calibration-17%20states-E8B339?style=flat-square)](docs/regional_thresholds.png) [![Design decisions](https://img.shields.io/badge/docs-design%20decisions-FF7A3A?style=flat-square)](docs/DECISIONS.md)
+
 A mobile wildfire-awareness app for the US. Live satellite fire detections, regionally-calibrated risk scoring driven by real per-location vegetation and weather data, evacuation shelter lookup, and a transparent what-if risk calculator — all on your phone via Expo Go.
 
 Built solo as a portfolio project to demonstrate end-to-end product engineering: a real fire-weather algorithm (V4 NDVI anomaly × KBDI × multiplicative VPD with per-state percentile thresholds), live data fusion across nine government and satellite sources, and a mobile UI with intentional motion design and accessibility considerations.
@@ -169,19 +171,21 @@ The composite logic lives in [`web/lib/composite-risk.ts`](web/lib/composite-ris
 
 ### Validation
 
-Two notebooks validate the algorithm against the Kaggle 1.88M US Wildfires dataset:
+The V4 algorithm is hindcast against a stratified 500-fire sample from the USDA Fire Program Analysis Fire-Occurrence Database (FPA-FOD, 1992–2015), with real day-of-fire weather pulled from the Open-Meteo Archive and real KBDI computed per fire from a 365-day precipitation + temperature window.
 
-**[notebooks/validation.ipynb](notebooks/validation.ipynb)** — 50,000-fire random sample, monthly aggregate sanity check using seasonal climate normals as input.
+![V4 algorithm validated against 500 historical fires — Spearman 0.23, non-overlapping 95% CIs between smallest and largest fire-size buckets](docs/v4_validation.png)
 
-**[notebooks/validation_v2.ipynb](notebooks/validation_v2.ipynb)** — Stratified 500-fire sample with real day-of-fire weather pulled from Open-Meteo, 125 fires per size bucket, plus the per-state threshold-fitting analysis behind the regional calibration.
+**Headline results (N=500, 100% real KBDI):**
 
-Key result:
+- **Mean predicted V4 score discriminates fire size**: 0.433 for >1,000-ac fires vs 0.316 for <1-ac fires, with **non-overlapping 95% confidence intervals** between the two extremes (small upper bound 0.346; very-large lower bound 0.398). The algorithm assigns materially higher risk to days that produced large fires than to days that produced small ones, even though it doesn't know the fire occurred.
+- **Spearman ρ = +0.23** between `log(fire size)` and predicted V4 score across the full sample — modest but real positive correlation. The V4 score is a fire-weather index, not a fire-size predictor; this is the upper bound of what a well-calibrated environmental severity score should achieve on a sample dominated by ignition-cause variance.
+- **Sample shape**: stratified by FPA-FOD size class (125 fires each from <1 ac / 1-100 ac / 100-1,000 ac / >1,000 ac), deterministic `seed=7`. Reproduce via [scripts/validate_v4_chart.py](scripts/validate_v4_chart.py).
 
-![Discrimination by fire size — seasonal-input vs real-input](docs/predicted_v2.png)
+**Honest read of the middle buckets**: the 1-100 ac bucket (mean 0.276) sits *slightly below* the <1 ac bucket (mean 0.316), breaking strict monotonicity. The most likely explanation is the 1-100 ac range being dominated by human-caused fires (debris burning, equipment ignitions) that happen on otherwise-mild weather days. The two extreme buckets are cleanly separated, which is the load-bearing claim for a fire-weather index. Sampling 125 fires per bucket isn't enormous; the middle buckets carry visible noise.
 
-Same algorithm, two ways of feeding it inputs. With real per-fire weather, the algorithm separates very-large fires (mean 0.459) from small fires (mean 0.316) with non-overlapping 95% CIs — a 0.14 spread vs. 0.06 with only seasonal climate input. Spearman correlation between `log(fire size)` and predicted risk: **0.272 with real weather**, 0.183 with seasonal-only. Input quality matters as much as formula quality.
-
-<!-- TODO: regenerate the V4 validation chart once the recalibrated regional thresholds settle, to capture the NDVI baseline shift -->
+**Earlier baselines for context**:
+- [notebooks/validation.ipynb](notebooks/validation.ipynb) — 50,000-fire monthly aggregate using seasonal climate normals (no real per-fire weather). Spearman ρ ≈ 0.18.
+- [notebooks/validation_v2.ipynb](notebooks/validation_v2.ipynb) — same 500-fire sample using real weather but the V2 days-since-rain drought proxy (no KBDI integrator). Spearman ρ ≈ 0.27, very-large mean 0.459. The V4 numbers are slightly different because KBDI replaces the cruder drought proxy — better-grounded science, near-equivalent discrimination.
 
 ### Honest gaps
 

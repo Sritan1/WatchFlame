@@ -6,7 +6,7 @@
 //   3. Berkeley, CA as fallback.
 // The mobile equivalent is lib/hooks.ts's useActiveLocation.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { BERKELEY } from './api';
 import type { LatLon } from './api';
@@ -75,22 +75,34 @@ function useDeviceGps(): GpsState {
   return state;
 }
 
-/** What every screen should call. Honors saved-location override, else GPS, else fallback. */
+/** What every screen should call. Honors saved-location override, else GPS, else fallback.
+ *
+ *  Coords identity must stay stable across renders when nothing actually changed —
+ *  consumers downstream use `loc.coords` as a `useMemo` dependency (threat aggregation,
+ *  confidence calc, etc.). Without memoization here, the saved-location branch returned
+ *  a fresh `{ lat, lon }` literal on every render, invalidating every dependent memo
+ *  in the tree and re-running threat aggregation on each tick. */
 export function useUserLocation(): LocationState {
   const gps = useDeviceGps();
   const { items, activeId } = useSavedLocations();
 
-  if (activeId) {
-    const active = items.find((i) => i.id === activeId);
-    if (active) {
-      return {
-        coords: { lat: active.lat, lon: active.lon },
-        label: active.label,
-        isFallback: false,
-        isSaved: true,
-        permission: gps.permission,
-      };
-    }
+  const active = activeId ? items.find((i) => i.id === activeId) : undefined;
+  const savedLat = active?.lat;
+  const savedLon = active?.lon;
+  // Memoize by primitive (lat/lon) so identity only changes when coords change.
+  const savedCoords = useMemo<LatLon | null>(
+    () => (savedLat != null && savedLon != null ? { lat: savedLat, lon: savedLon } : null),
+    [savedLat, savedLon],
+  );
+
+  if (active && savedCoords) {
+    return {
+      coords: savedCoords,
+      label: active.label,
+      isFallback: false,
+      isSaved: true,
+      permission: gps.permission,
+    };
   }
 
   return {

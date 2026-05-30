@@ -29,14 +29,21 @@ export function FactorBreakdown({
   season,
   seasonLabel,
   caption,
+  vegetationDetail,
 }: {
   vpd: number;
   wind: number;
   drought: number;
+  /** Vegetation multiplier value (NDVI-derived OR calendar-season scalar). */
   season: number;
+  /** Short source label — "NDVI" or "Spring"/"Summer"/etc. */
   seasonLabel: string;
   /** Three captions, one per row — provided by parent so we can keep this dumb. */
   caption: { vpd: string; wind: string; drought: string };
+  /** One-line context for the vegetation factor — e.g. "NDVI anomaly: -0.05
+   *  (drier than 3-yr norm)" or "Calendar season — Sentinel-2 unavailable".
+   *  Optional: falls back to the existing minimal display when absent. */
+  vegetationDetail?: string;
 }) {
   const { ae } = useAesthetic();
   const [explainerOpen, setExplainerOpen] = useState(false);
@@ -148,67 +155,122 @@ export function FactorBreakdown({
           </div>
         ))}
 
-        {/* Season multiplier footer */}
+        {/* Vegetation factor — lifted above the "How is this calculated?"
+         *  button so NDVI gets the visual weight its operational importance
+         *  deserves. Mathematically the multiplier sits outside the weighted
+         *  sum (raw = vpd^0.5 × wind^0.3 × drought^0.2; score = vegFactor ×
+         *  raw), so it doesn't get a percentage-bar treatment — but it does
+         *  get its own card-within-a-card with the source named explicitly
+         *  ("NDVI" vs "Summer"/etc) and an inline context line. */}
         <div
           style={{
             marginTop: 'auto',
             paddingTop: 16,
             borderTop: `0.5px solid ${ae.line}`,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
           }}
         >
-          <div>
-            <Eyebrow>Season multiplier</Eyebrow>
-            <div
-              style={{
-                marginTop: 4,
-                fontFamily: ae.fontDisplay,
-                fontSize: 18,
-                fontWeight: 600,
-                color: ae.text,
-                letterSpacing: ae.titleTracking,
-              }}
-            >
-              ×{season.toFixed(2)}{' '}
-              <span
-                style={{
-                  fontFamily: ae.fontMono,
-                  fontSize: 11,
-                  color: ae.textMute,
-                  fontWeight: 400,
-                  marginLeft: 6,
-                  textTransform: ae.chipUpper ? 'uppercase' : 'none',
-                }}
-              >
-                {seasonLabel}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setExplainerOpen(true)}
+          <div
             style={{
-              padding: '8px 12px',
-              borderRadius: 8,
-              background: `rgba(${RISK_LEVELS.low.glow}, 0.08)`,
-              border: `0.5px solid rgba(${RISK_LEVELS.low.glow}, 0.22)`,
-              color: RISK_LEVELS.low.color,
-              cursor: 'pointer',
-              fontFamily: ae.fontMono,
-              fontSize: 10.5,
-              fontWeight: 600,
-              letterSpacing: '0.10em',
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
+              padding: '14px 16px',
+              borderRadius: 12,
+              background: `linear-gradient(180deg, rgba(${RISK_LEVELS.low.glow}, 0.06), rgba(${RISK_LEVELS.low.glow}, 0.02))`,
+              border: `0.5px solid rgba(${RISK_LEVELS.low.glow}, 0.20)`,
             }}
           >
-            <Icon name="info" size={11} color={RISK_LEVELS.low.color} strokeWidth={1.8} />
-            How is this calculated?
-          </button>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <Eyebrow>Vegetation factor</Eyebrow>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontFamily: ae.fontMono,
+                    fontSize: 10.5,
+                    color: ae.textMute,
+                    letterSpacing: '0.14em',
+                    textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                  }}
+                >
+                  Source · {seasonLabel}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div
+                  style={{
+                    fontFamily: ae.fontDisplay,
+                    fontSize: 28,
+                    fontWeight: 800,
+                    color: RISK_LEVELS.low.color,
+                    letterSpacing: '-0.02em',
+                    fontVariantNumeric: 'tabular-nums',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×{season.toFixed(2)}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontFamily: ae.fontMono,
+                    fontSize: 9.5,
+                    color: ae.textMute,
+                    letterSpacing: '0.14em',
+                    textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                  }}
+                >
+                  Applied to weighted sum
+                </div>
+              </div>
+            </div>
+            {vegetationDetail ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  fontFamily: ae.fontBody,
+                  fontSize: 12.5,
+                  color: ae.textDim,
+                  lineHeight: 1.45,
+                }}
+              >
+                {vegetationDetail}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Existing methodology link — kept in its existing single-link
+           *  position so it covers VPD/Wind/Drought + the vegetation factor
+           *  (the ExplainerModal documents all four). */}
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => setExplainerOpen(true)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: `rgba(${RISK_LEVELS.low.glow}, 0.08)`,
+                border: `0.5px solid rgba(${RISK_LEVELS.low.glow}, 0.22)`,
+                color: RISK_LEVELS.low.color,
+                cursor: 'pointer',
+                fontFamily: ae.fontMono,
+                fontSize: 10.5,
+                fontWeight: 600,
+                letterSpacing: '0.10em',
+                textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Icon name="info" size={11} color={RISK_LEVELS.low.color} strokeWidth={1.8} />
+              How is this calculated?
+            </button>
+          </div>
         </div>
       </div>
 
