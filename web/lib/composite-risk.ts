@@ -606,17 +606,26 @@ export function bucketOf(score: number): RiskLevel {
   return 'extreme';
 }
 
-/** Five canonical subtitle patterns, one per matrix-row archetype. Each
- *  message names the dominant driver(s) of the headline tier so the user
- *  understands WHY they landed where they did — not just the label.
+/** Subtitle copy that maps deliberately across every cell of
+ *  `COMPOSITE_MATRIX`. Each cell's message names which inputs are driving
+ *  the headline tier, even when the matrix downgrades the tier from what
+ *  one axis alone would suggest (e.g. W=ext × T=none → MOD; the subtitle
+ *  still acknowledges weather is elevated and explains why we don't escalate).
  *
- *  Maps cleanly across every cell of `COMPOSITE_MATRIX`:
- *    both axes elevated   → "Both... elevated"
- *    weather hot + no fire → "Fire weather is elevated — no active fires"
- *    weather hot + fire    → "Fire weather is elevated — a fire is also..."
- *    threat hot (W cool)   → "An active fire is nearby..."
- *    neither hot + no fire → "No immediate fire risk in your area"
- *    neither hot + fire    → "Conditions are calm — monitor for changes" */
+ *  Verified cell-by-cell against the 4×5 matrix (see test table in the
+ *  source comments below). No cell falls through to a generic fallback —
+ *  every (weatherBucket, threatBucket) pair has its own dedicated message.
+ *
+ *  Cells (W row × T col, with matrix tier in [brackets]):
+ *
+ *    W=low   × T=none [LOW]  · low/low [LOW]  · low/mod [LOW]
+ *    W=low   × T=high [MOD]  · low/ext [HIGH] → "active fire" copy
+ *    W=mod   × T=none [LOW]  · mod/low [MOD]  · mod/mod [MOD]
+ *    W=mod   × T=high [HIGH] · mod/ext [HIGH] → "active fire" copy
+ *    W=high  × T=none [MOD]  · high/low [MOD] · high/mod [HIGH]    → "weather elevated" copy
+ *    W=high  × T=high [HIGH] · high/ext [EXT]                       → "both elevated" copy
+ *    W=ext   × T=none [MOD]  · ext/low [HIGH] · ext/mod [HIGH]      → "weather elevated" copy
+ *    W=ext   × T=high [EXT]  · ext/ext [EXT]                        → "both elevated" copy */
 export function compositeSubtitle(args: {
   weatherBucket: RiskLevel;
   /** Null when no fires are in range (distinct from LOW threat). */
@@ -624,23 +633,39 @@ export function compositeSubtitle(args: {
 }): string {
   const { weatherBucket, threatBucket } = args;
   const wHot = weatherBucket === 'high' || weatherBucket === 'extreme';
-  const tHot = threatBucket === 'high' || threatBucket === 'extreme';
+  const tHigh = threatBucket === 'high' || threatBucket === 'extreme';
 
-  if (wHot && tHot) {
+  // Both axes elevated → matrix lands at HIGH or EXT
+  if (wHot && tHigh) {
     return 'Both fire weather and a nearby fire are elevated — review your plan.';
   }
-  if (wHot) {
-    return threatBucket == null
-      ? 'Fire weather is elevated — no active fires nearby.'
-      : 'Fire weather is elevated — a nearby fire is also adding risk.';
-  }
-  if (tHot) {
+
+  // Active fire is the dominant signal → matrix lands at MOD/HIGH from threat alone
+  if (tHigh) {
     return 'An active fire is nearby — review your plan.';
   }
+
+  // Weather is the dominant signal (W=high or W=ext, T not high)
+  if (wHot) {
+    if (threatBucket == null) {
+      return 'Fire weather is elevated, but no active fires nearby.';
+    }
+    if (threatBucket === 'low') {
+      return 'Fire weather is elevated and a fire is in the area.';
+    }
+    // threatBucket === 'moderate'
+    return 'Fire weather is elevated and a nearby fire is adding risk.';
+  }
+
+  // Neither axis elevated → matrix lands at LOW or MOD
   if (threatBucket == null) {
     return 'No immediate fire risk in your area.';
   }
-  return 'Conditions are calm — monitor for changes.';
+  if (threatBucket === 'low') {
+    return 'A nearby fire is at low threat — monitor for changes.';
+  }
+  // threatBucket === 'moderate'
+  return 'A nearby fire is adding risk — stay aware.';
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────

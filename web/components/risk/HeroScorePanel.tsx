@@ -14,6 +14,8 @@
 import { useState } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { CalibrationLadder } from '@/components/status/CalibrationLadder';
+import { Modal } from '@/components/ui/Modal';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -24,6 +26,7 @@ import {
 } from '@/components/risk/StatePickerModal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds } from '@/lib/api';
+import { useRiskCalibration } from '@/lib/queries';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 const AMBER = '#E8B339';
@@ -58,6 +61,8 @@ export function HeroScorePanel({
 }) {
   const { ae, accent } = useAesthetic();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ladderOpen, setLadderOpen] = useState(false);
+  const calibration = useRiskCalibration();
   // Ambient chrome (border tint, top stripe, corner glow) is floored to
   // moderate when actual is low — matches the same convention used on Status
   // / Safety so low doesn't read as muted teal everywhere.
@@ -120,7 +125,7 @@ export function HeroScorePanel({
         <p
           style={{
             margin: '12px auto 0',
-            maxWidth: 380,
+            maxWidth: 460,
             fontFamily: ae.fontBody,
             fontSize: 13.5,
             lineHeight: 1.5,
@@ -128,7 +133,10 @@ export function HeroScorePanel({
             letterSpacing: '0.005em',
           }}
         >
-          Tweak conditions; get a transparent score from the same algorithm the Status tab uses.
+          Tweak conditions to see how the fire-weather score moves. This is the{' '}
+          <strong style={{ color: ae.text }}>environment axis</strong> of the
+          Personal Threat composite on Status — combined there with active-fire
+          proximity to produce the headline tier.
         </p>
       </div>
 
@@ -312,6 +320,37 @@ export function HeroScorePanel({
                 </span>
               </div>
 
+              {/* "See across all states" trigger — opens the calibration
+               *  ladder modal driven by the current slider-driven score.
+               *  Reuses the same CalibrationLadder component the Status
+               *  hero uses; reinforces the calibration story for users
+               *  experimenting with the what-if sliders. */}
+              <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setLadderOpen(true)}
+                  aria-label="See this score across all 17 fitted states"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: 0,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: ae.textMute,
+                    fontFamily: ae.fontMono,
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  See this score across all states
+                  <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
+                </button>
+              </div>
+
               {/* Risk Level pill — keeps actual level color so "Low" stays green */}
               <div style={{ marginTop: 22, display: 'flex', justifyContent: 'center' }}>
                 <div
@@ -366,6 +405,57 @@ export function HeroScorePanel({
         value={region}
         onChange={onRegionChange}
       />
+
+      {/* Calibration ladder — uses the picked region as the user's state.
+       *  When region is null (Global), the ladder's per-row tier-at-score
+       *  column still works but no row gets the "your state" highlight;
+       *  the user can still see how their slider score buckets across all
+       *  17 states. */}
+      <Modal
+        open={ladderOpen}
+        onClose={() => setLadderOpen(false)}
+        eyebrow="Calibration"
+        title="This score across all 17 states"
+        maxWidth={620}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontFamily: ae.fontBody,
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            color: ae.textDim,
+          }}
+        >
+          Your slider-driven score is{' '}
+          <strong style={{ color: ae.text, fontFamily: ae.fontMono }}>
+            {score.toFixed(2)}
+          </strong>
+          . Below, that same number is bucketed against each fitted state&apos;s historical
+          fire-day distribution — the right-side column shows which tier your score would land
+          in for that state.
+        </p>
+        <div style={{ marginTop: 18 }}>
+          {calibration.isLoading || !calibration.data ? (
+            <p
+              style={{
+                margin: 0,
+                fontFamily: ae.fontBody,
+                fontSize: 13,
+                color: ae.textMute,
+              }}
+            >
+              Loading calibration data…
+            </p>
+          ) : (
+            <CalibrationLadder
+              data={calibration.data}
+              userState={region}
+              userScore={score}
+            />
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
