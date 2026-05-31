@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
+import { formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 import {
   bucketOf,
   compositeFromBuckets,
@@ -799,6 +800,7 @@ function FrameTile({
   windKph: number | null;
   v4Score: number | null;
 }) {
+  const units = useUnits();
   return (
     <div
       style={{
@@ -833,11 +835,11 @@ function FrameTile({
         }}
       >
         <span style={{ color: ae.textMute }}>Temp</span>
-        <span style={{ color: ae.text }}>{tempC != null ? `${Math.round(tempC)}°C` : '—'}</span>
+        <span style={{ color: ae.text }}>{tempC != null ? formatTemp(tempC, units.temp, 0) : '—'}</span>
         <span style={{ color: ae.textMute }}>RH</span>
         <span style={{ color: ae.text }}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</span>
         <span style={{ color: ae.textMute }}>Wind</span>
-        <span style={{ color: ae.text }}>{windKph != null ? `${Math.round(windKph)} kph` : '—'}</span>
+        <span style={{ color: ae.text }}>{windKph != null ? formatSpeed(windKph, units.speed, 0) : '—'}</span>
         <span style={{ color: ae.textMute }}>V4 score</span>
         <span style={{ color: ae.text, fontWeight: 700 }}>{v4Score != null ? v4Score.toFixed(2) : '—'}</span>
       </div>

@@ -10,6 +10,9 @@ import { Icon } from '@/components/Icon';
 import { StripePattern } from '@/components/ui/StripePattern';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { ActiveDisaster } from '@/lib/api';
+import { matchIncidentByFemaTitle } from '@/lib/fema-match';
+import { useNamedIncidentsNear } from '@/lib/queries';
+import { useUserLocation } from '@/lib/use-location';
 
 const AMBER = '#E8B339';
 const AMBER_RGB = '232, 179, 57';
@@ -18,10 +21,28 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
   const { ae } = useAesthetic();
   const router = useRouter();
 
-  // "Show on Map" hands the user off to /map with a query hint so MapScreen
-  // can auto-select the closest incident (mirrors mobile's IntentProvider flow).
+  // Gate the Show-on-Map button on whether the map will actually find the
+  // FEMA-declared incident. We run the SAME query MapScreen runs (100mi /
+  // 30-limit) so the cache entry is shared — when the user clicks through,
+  // the map gets the data instantly and its own match check agrees with
+  // ours. Without this gate, the button always showed but clicking it
+  // either selected a random nearby fire (the old bug) or selected nothing
+  // (after the bug fix) — both of which left the user confused.
+  const loc = useUserLocation();
+  const incidentsQ = useNamedIncidentsNear(loc.coords, 100, 30);
+  const incidents = incidentsQ.data ?? [];
+  const matched = matchIncidentByFemaTitle(disaster.title, incidents);
+  // Hide the button while the query is in flight too — pops in once we
+  // confirm there's something to select. Avoids flash-of-button-then-no-op.
+  const canShowOnMap = !incidentsQ.isLoading && matched !== null;
+
   const showOnMap = () => {
-    router.push(`/map?from=fema&disaster=${disaster.declaration_type}-${disaster.disaster_number}`);
+    const qs = new URLSearchParams({
+      from: 'fema',
+      disaster: `${disaster.declaration_type}-${disaster.disaster_number}`,
+      title: disaster.title,
+    });
+    router.push(`/map?${qs.toString()}`);
   };
   return (
     <div
@@ -145,30 +166,32 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
             flexShrink: 0,
           }}
         >
-          <button
-            type="button"
-            onClick={showOnMap}
-            style={{
-              height: 40,
-              padding: '0 18px',
-              borderRadius: 10,
-              background: `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.18), rgba(${AMBER_RGB}, 0.06))`,
-              border: `0.5px solid rgba(${AMBER_RGB}, 0.40)`,
-              color: AMBER,
-              fontFamily: ae.fontMono,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.16em',
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              cursor: 'pointer',
-            }}
-          >
-            <Icon name="pin" size={12} color={AMBER} strokeWidth={1.8} /> Show on Map
-          </button>
+          {canShowOnMap ? (
+            <button
+              type="button"
+              onClick={showOnMap}
+              style={{
+                height: 40,
+                padding: '0 18px',
+                borderRadius: 10,
+                background: `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.18), rgba(${AMBER_RGB}, 0.06))`,
+                border: `0.5px solid rgba(${AMBER_RGB}, 0.40)`,
+                color: AMBER,
+                fontFamily: ae.fontMono,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.16em',
+                textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                cursor: 'pointer',
+              }}
+            >
+              <Icon name="pin" size={12} color={AMBER} strokeWidth={1.8} /> Show on Map
+            </button>
+          ) : null}
           {disaster.url ? (
             <a
               href={disaster.url}
