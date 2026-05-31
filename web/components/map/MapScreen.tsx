@@ -15,6 +15,7 @@ import { IncidentsRail } from '@/components/map/IncidentsRail';
 import type { MapSelection } from '@/components/map/MapImpl';
 import { severityOf } from '@/components/status/ClosestFiresList';
 import { useAesthetic } from '@/lib/aesthetic';
+import { matchIncidentByFemaTitle } from '@/lib/fema-match';
 import { useFiresAroundMe, useNamedIncidentsNear } from '@/lib/queries';
 import type { RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
@@ -25,11 +26,12 @@ import { useUnits, type DistanceUnit } from '@/lib/use-units';
 const MAX_FIRMS_MARKERS = 120;
 // Named incidents: backend returns up to `INCIDENT_LIMIT` within
 // `INCIDENT_RADIUS_MI`. Mobile uses (100, 30) and the map should match so
-// drilling out of Bronson, FL shows the same set. The rail then caps its
-// scrolling list at RAIL_VISIBLE so it doesn't get unwieldy on dense days.
+// drilling out of Bronson, FL shows the same set. The rail renders every
+// returned incident in distance order so a map pin click always corresponds
+// to a card in the list (previously the rail was capped at 20 and the
+// selected-but-out-of-view incident was spliced in out of order).
 const INCIDENT_RADIUS_MI = 100;
 const INCIDENT_LIMIT = 30;
-const RAIL_VISIBLE = 20;
 
 // Behind dynamic({ ssr: false }) — leaflet touches window at import time.
 const MapImpl = dynamic(() => import('./MapImpl').then((m) => m.MapImpl), {
@@ -98,14 +100,20 @@ export function MapScreen() {
   );
 
   // Intent handoff from Safety's "Show on Map" — when ?from=fema is present,
-  // auto-select the closest named incident once data lands. Mirrors mobile's
-  // IntentProvider flow. Handled exactly once per query-param change.
+  // try to auto-select the named incident that matches the FEMA disaster's
+  // title (e.g. "FM-5605 Canyon Fire" → an incident named "Canyon"). If
+  // there's no plausible match we DON'T auto-select — better to open the map
+  // with nothing selected than to mislabel a random nearby fire as the FEMA
+  // incident, which was the prior behavior. Handled exactly once per
+  // query-param change.
   const intentHandledRef = useRef(false);
   useEffect(() => {
     if (intentHandledRef.current) return;
     if (searchParams.get('from') !== 'fema') return;
     if (fires.length === 0) return;
-    setSelection({ kind: 'incident', id: fires[0].id });
+    const title = searchParams.get('title');
+    const match = title ? matchIncidentByFemaTitle(title, fires) : null;
+    if (match) setSelection({ kind: 'incident', id: match.id });
     intentHandledRef.current = true;
   }, [fires, searchParams]);
 
@@ -276,7 +284,6 @@ export function MapScreen() {
         satelliteCount={satellites.length}
         userCoords={loc.coords}
         radiusMi={INCIDENT_RADIUS_MI}
-        listLimit={RAIL_VISIBLE}
       />
     </div>
   );

@@ -369,7 +369,7 @@ export function FireDetailScreen() {
               }}
             >
               {nearby.data
-                ? `${nearby.data.features.length} thermal detections in the surrounding 8 miles over the last 7 days. Larger cluster = larger active fire footprint.`
+                ? `${nearby.data.features.length} thermal detections in the surrounding ${formatDistance(8, units.distance, 0)} over the last 7 days. Larger cluster = larger active fire footprint.`
                 : 'Loading nearby detections…'}
             </p>
           </IncPanel>
@@ -741,7 +741,7 @@ function buildDescription(
     ? `Reported by ${matched.agency ?? 'the responsible agency'}${
         matched.started ? ` on ${formatDate(matched.started)}` : ''
       }.`
-    : 'All metrics below are computed from real-time data — no named-incident match was found within 10 miles.';
+    : `All metrics below are computed from real-time data — no named-incident match was found within ${formatDistance(10, distanceUnit, 0)}.`;
   return `${lead} ${tail}`;
 }
 
@@ -1261,7 +1261,7 @@ function DistanceViz({
         }}
       >
         <span>You</span>
-        <span>{bearing ? `${bearing} bearing · 120 mi range` : '120 mi range'}</span>
+        <span>{bearing ? `${bearing} bearing · ${formatDistance(120, unit, 0)} range` : `${formatDistance(120, unit, 0)} range`}</span>
       </div>
     </div>
   );
