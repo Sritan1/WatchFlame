@@ -13,7 +13,7 @@
 // inside cards (per design spec).
 
 import Link from 'next/link';
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { FireFieldsExplainerModal } from '@/components/map/FireFieldsExplainerModal';
@@ -21,7 +21,7 @@ import type { MapSelection } from '@/components/map/MapImpl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
-import { distanceMiles } from '@/lib/composite-risk';
+import { distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
@@ -35,7 +35,6 @@ export function IncidentsRail({
   satelliteCount = 0,
   userCoords,
   radiusMi = 30,
-  listLimit = 20,
 }: {
   fires: NamedIncident[];
   selection: MapSelection | null;
@@ -50,10 +49,6 @@ export function IncidentsRail({
   userCoords: LatLon;
   /** Search radius shown in the subtitle ("Within N mi of …"). */
   radiusMi?: number;
-  /** Cap on how many incidents appear in the scrolling list. The header
-   *  still shows the full count, and the map renders every incident — only
-   *  the rail list is sliced to stay readable on dense days. */
-  listLimit?: number;
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
@@ -63,19 +58,21 @@ export function IncidentsRail({
   const selectedRisk = selectedSev ? getRisk(selectedSev, accent) : null;
   const [explainerOpen, setExplainerOpen] = useState(false);
 
-  // Backend already sorts by distance, so the first N are the closest N. If
-  // the selected incident is past the cap, splice it in so the user can still
-  // see its row when they click a pin on the map.
-  const visibleList = (() => {
-    if (fires.length <= listLimit) return fires;
-    const head = fires.slice(0, listLimit);
-    if (selectedIncidentId && !head.some((f) => f.id === selectedIncidentId)) {
-      const sel = fires.find((f) => f.id === selectedIncidentId);
-      if (sel) return [...head.slice(0, listLimit - 1), sel];
-    }
-    return head;
-  })();
-  const truncated = fires.length > visibleList.length;
+  // Auto-scroll the selected card into view inside the rail. Fires whenever
+  // the selected incident changes — including selections originated by map
+  // pin clicks, where the card may be off-screen below the fold. `block:
+  // 'nearest'` makes this a no-op when the card is already visible, so
+  // clicking a card the user can already see doesn't yank the scroll.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!selectedIncidentId) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector<HTMLElement>(
+      `[data-incident-id="${CSS.escape(selectedIncidentId)}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedIncidentId]);
 
   return (
     <aside
@@ -328,11 +325,7 @@ export function IncidentsRail({
               {fires.length > 0 ? (
                 <>
                   <span style={{ opacity: 0.45 }}>·</span>
-                  <span>
-                    {truncated
-                      ? `closest ${visibleList.length} of ${fires.length}`
-                      : 'sorted by distance'}
-                  </span>
+                  <span>sorted by distance</span>
                 </>
               ) : null}
             </div>
@@ -375,6 +368,7 @@ export function IncidentsRail({
 
       {/* ── List ───────────────────────────────────────────────────── */}
       <div
+        ref={scrollContainerRef}
         className="inc-rail-scroll"
         style={{
           flex: 1,
@@ -428,7 +422,7 @@ export function IncidentsRail({
               </div>
             ))
           : null}
-        {visibleList.map((f, i) => {
+        {fires.map((f, i) => {
           const sev = severityOf(f);
           const fr = getRisk(sev, accent);
           const isSel = selectedIncidentId === f.id;
@@ -480,12 +474,62 @@ export function IncidentsRail({
           accentColor="#ff7a3a"
           accentGlow="255, 122, 58"
           detailHref={buildFirmsDetailHref(selection.feature)}
+          stats={buildSatelliteStats(selection.feature)}
         />
       ) : null}
 
       <FireFieldsExplainerModal open={explainerOpen} onClose={() => setExplainerOpen(false)} />
     </aside>
   );
+}
+
+/** Three at-a-glance stats for a FIRMS satellite pixel, formatted for the
+ *  rail's detail footer. Mirrors the IncidentCard's Dist/Size/Cont strip so
+ *  the satellite footer reads with the same rhythm as a named-incident
+ *  footer — gives the user something concrete before they click through. */
+function buildSatelliteStats(feature: FireFeature): FooterStat[] {
+  const p = feature.properties;
+  return [
+    {
+      label: 'Bright',
+      value: p.brightness != null ? Math.round(p.brightness).toString() : '—',
+      unit: p.brightness != null ? 'K' : undefined,
+    },
+    {
+      label: 'Conf',
+      value: confidenceLabel(p.confidence),
+    },
+    {
+      label: 'Detected',
+      value: firmsAgeShort(firmsAgeHours(p.acq_date, p.acq_time)),
+    },
+  ];
+}
+
+/** FIRMS confidence is reported either as one of L/N/H (MODIS) or a 0-100
+ *  integer (VIIRS). Normalize both to a short word; "—" when missing. */
+function confidenceLabel(c: string | null): string {
+  if (c == null) return '—';
+  const v = c.trim().toUpperCase();
+  if (v === 'L') return 'Low';
+  if (v === 'N') return 'Nominal';
+  if (v === 'H') return 'High';
+  const n = Number(v);
+  if (Number.isFinite(n)) {
+    if (n >= 80) return 'High';
+    if (n >= 30) return 'Nominal';
+    return 'Low';
+  }
+  return '—';
+}
+
+/** Compact "20m" / "3h" / "2d" formatter for the footer stats strip — short
+ *  enough to fit alongside Brightness + Confidence without wrapping. */
+function firmsAgeShort(ageHr: number | null): string {
+  if (ageHr == null) return '—';
+  if (ageHr < 1) return `${Math.max(1, Math.round(ageHr * 60))}m`;
+  if (ageHr < 24) return `${Math.round(ageHr)}h`;
+  return `${Math.round(ageHr / 24)}d`;
 }
 
 /** Build the /fire-detail URL for a FIRMS satellite pixel. Passes through
@@ -552,6 +596,7 @@ function IncidentCardImpl({
       onMouseEnter={onEnter}
       onMouseMove={onMove}
       data-selected={isSelected ? 'true' : 'false'}
+      data-incident-id={fire.id}
       className={`inc-card${isSelected ? ' inc-card-sel' : ''}`}
       style={{
         ['--ic-color' as string]: risk.color,
@@ -832,6 +877,10 @@ const IncidentCard = memo(IncidentCardImpl, (prev, next) =>
  *  again. The same data is still visible in the card list above, so this
  *  footer just confirms "what's selected" and provides the route-through
  *  to the full detail page. */
+/** Optional stat tile rendered in the footer's mid-strip. Same shape as the
+ *  IncidentCard's Dist/Size/Cont tiles so the visual rhythm carries over. */
+export type FooterStat = { label: string; value: string; unit?: string };
+
 function DetailFooter({
   label,
   name,
@@ -839,6 +888,7 @@ function DetailFooter({
   accentColor,
   accentGlow,
   detailHref,
+  stats,
 }: {
   label: string;
   name: string;
@@ -846,6 +896,11 @@ function DetailFooter({
   accentColor: string;
   accentGlow: string;
   detailHref: string;
+  /** Optional 3-up stat strip rendered between the summary row and the
+   *  CTA. Used for satellite pixels where the rail has no card with the
+   *  Brightness/Confidence/Detected info — gives the footer enough
+   *  substance to stand on its own. */
+  stats?: FooterStat[];
 }) {
   const { ae } = useAesthetic();
   return (
@@ -939,6 +994,31 @@ function DetailFooter({
           {distanceLabel}
         </span>
       </div>
+
+      {stats && stats.length > 0 ? (
+        <div
+          style={{
+            marginBottom: 12,
+            display: 'grid',
+            gridTemplateColumns: `repeat(${stats.length}, 1fr)`,
+            padding: '10px 2px',
+            background: 'rgba(255,255,255,0.02)',
+            border: `0.5px solid ${ae.line}`,
+            borderRadius: 8,
+          }}
+        >
+          {stats.map((s, i) => (
+            <Stat
+              key={s.label}
+              ae={ae}
+              label={s.label}
+              value={s.value}
+              unit={s.unit}
+              dividerLeft={i > 0}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <Link
         href={detailHref}

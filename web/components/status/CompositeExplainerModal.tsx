@@ -133,7 +133,7 @@ export function CompositeExplainerModal({
                       : ''
                   }`
                 : `Satellite detection ${formatDistance(driver.distanceMi, distanceUnit, 1)} away`
-              : 'No active fires within 50 mi of your location'
+              : `No active fires within ${formatDistance(50, distanceUnit, 0)} of your location`
           }
         />
       </div>

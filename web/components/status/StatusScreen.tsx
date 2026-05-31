@@ -543,10 +543,10 @@ export function StatusScreen() {
             color={isAlarming ? r.color : undefined}
             right={
               threatDriver?.kind === 'incident'
-                ? `${threatDriver.incident.source === 'calfire' ? 'CAL FIRE' : 'NIFC WFIGS'} · within 50 mi`
+                ? `${threatDriver.incident.source === 'calfire' ? 'CAL FIRE' : 'NIFC WFIGS'} · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
                 : threatDriver?.kind === 'firms'
-                  ? 'NASA FIRMS · within 50 mi'
-                  : 'No active fires within 50 mi'
+                  ? `NASA FIRMS · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
+                  : `No active fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
             }
           >
             Threat Source
