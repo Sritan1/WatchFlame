@@ -13,6 +13,8 @@ import { Icon, type IconName } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
 import { CompositeExplainerModal } from '@/components/status/CompositeExplainerModal';
 import { ConfidenceBreakdownModal, ConfidenceChip } from '@/components/status/ConfidenceChip';
+import { PhaseSpaceModal } from '@/components/status/PhaseSpaceModal';
+import { TrajectoryChip } from '@/components/status/TrajectoryChip';
 import { LocalKbdiCard } from '@/components/status/LocalKbdiCard';
 import { LocalNdviCard } from '@/components/status/LocalNdviCard';
 import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
@@ -47,6 +49,7 @@ import {
   useFiresAroundMe,
   useNamedIncidentsNear,
   useRiskFromWeather,
+  useTrajectory,
   useWeather,
 } from '@/lib/queries';
 import { floorLow, getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
@@ -109,6 +112,13 @@ export function StatusScreen() {
   const [calibOpen, setCalibOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   const [confidenceOpen, setConfidenceOpen] = useState(false);
+  const [phaseSpaceOpen, setPhaseSpaceOpen] = useState(false);
+
+  // Trajectory (Tier 2 #7) — short-term forecast projection. Drives the
+  // Trajectory chip below the subtitle and the projection arrow in the
+  // phase-space modal. Backed by /trajectory which hits Open-Meteo
+  // Forecast (separate endpoint + quota from the Archive used for KBDI).
+  const trajectory = useTrajectory(loc.coords);
 
   // ── Composite score ─────────────────────────────────────────────────────
   // Two independent inputs:
@@ -360,16 +370,31 @@ export function StatusScreen() {
                 </div>
               )}
 
-              {/* Confidence chip — sits on its own row directly under the
-                  subtitle, AQI-style. The chip itself is a tight pill
-                  ("HIGH/MEDIUM/LOW CONFIDENCE"); the bottleneck signal
-                  (e.g. "NDVI 6d old") lives only in the breakdown modal
-                  triggered on click. Hidden during initial load when no
-                  meaningful confidence can be computed yet. */}
-              <div style={{ marginTop: 14, animationDelay: '600ms' }} className="ember-fade-up">
+              {/* Confidence + Trajectory chips — own row directly under the
+                  subtitle, AQI-style. Confidence reads data quality
+                  ("HIGH / MEDIUM / LOW CONFIDENCE") and opens a per-signal
+                  breakdown. Trajectory reads direction over the next 6 hr
+                  ("RISING / STEADY / FALLING") and opens the phase-space
+                  modal where the projected position + driver context live. */}
+              <div
+                style={{
+                  marginTop: 14,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 10,
+                  animationDelay: '600ms',
+                }}
+                className="ember-fade-up"
+              >
                 <ConfidenceChip
                   confidence={confidence}
                   onOpen={() => setConfidenceOpen(true)}
+                />
+                <TrajectoryChip
+                  trajectory={trajectory.data}
+                  isLoading={trajectory.isLoading}
+                  onOpen={() => setPhaseSpaceOpen(true)}
                 />
               </div>
 
@@ -620,6 +645,16 @@ export function StatusScreen() {
         open={confidenceOpen}
         onClose={() => setConfidenceOpen(false)}
         confidence={confidence}
+      />
+
+      <PhaseSpaceModal
+        open={phaseSpaceOpen}
+        onClose={() => setPhaseSpaceOpen(false)}
+        threatSignal={compositeReady ? threatSignal : null}
+        weatherBucket={weatherBucket}
+        threatBucket={threatBucket}
+        trajectory={trajectory.data}
+        regionalThresholds={risk.data?.regional_thresholds ?? null}
       />
     </>
   );

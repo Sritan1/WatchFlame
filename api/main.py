@@ -16,6 +16,7 @@ from .routes import (  # noqa: E402  (must come after load_dotenv)
     incidents,
     risk,
     shelters,
+    trajectory,
     weather,
 )
 
@@ -57,3 +58,4 @@ app.include_router(geocode.router)
 app.include_router(shelters.router)
 app.include_router(incidents.router)
 app.include_router(disasters.router)
+app.include_router(trajectory.router)

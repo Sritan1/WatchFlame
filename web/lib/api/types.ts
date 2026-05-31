@@ -104,6 +104,35 @@ export interface CalibrationInfo {
   states: Record<string, StateCalibration>;
 }
 
+// ─── Trajectory (Tier 2 #7) ────────────────────────────────────────────────
+// Short-term forward-looking signal — projects the V4 score 6 hours forward
+// using Open-Meteo hourly forecast data and surfaces a tier:
+//   - 'rising'  → conditions deteriorating; V4 score up > 10%
+//   - 'steady'  → conditions stable; V4 score within ±10%
+//   - 'falling' → conditions improving; V4 score down > 10%
+// Backend logic in api/core/trajectory.py + api/routes/trajectory.py.
+
+export type TrajectoryTier = 'rising' | 'steady' | 'falling';
+
+export interface TrajectoryFrame {
+  label: string;            // "now" or "+6 hr"
+  iso_time: string;         // local-time ISO string from the forecast API
+  temperature_c: number;
+  humidity_pct: number;
+  wind_kph: number;
+  precipitation_mm: number;
+  v4_score: number;         // compute_risk output for this frame
+}
+
+export interface TrajectoryResponse {
+  tier: TrajectoryTier;
+  delta_pct: number;        // signed % change in v4_score (positive = rising)
+  horizon_hours: number;
+  now: TrajectoryFrame;
+  projected: TrajectoryFrame;
+  dominant_driver: 'vpd' | 'wind' | 'humidity';
+}
+
 export interface WeatherResponse {
   temperature: number;
   humidity: number;

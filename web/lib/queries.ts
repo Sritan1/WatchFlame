@@ -75,6 +75,25 @@ export function useRiskFromWeather(
   });
 }
 
+/** Short-term forward-looking trajectory for the user's location. Projects
+ *  the V4 fire-weather score 6 hours forward using Open-Meteo's hourly
+ *  Forecast endpoint and returns one of three tiers (rising / steady /
+ *  falling) plus per-frame weather + dominant driver. Drives the Status
+ *  trajectory chip and the 2D phase-space arrow.
+ *
+ *  10 min staleTime — the forecast itself updates hourly upstream and
+ *  the operationally interesting signal (next 6 hr) doesn't shift faster
+ *  than that. Returns `null` cleanly on upstream failure (matches the
+ *  backend's graceful-degrade contract). */
+export function useTrajectory(loc: LatLon | undefined) {
+  return useQuery({
+    queryKey: ['trajectory', loc?.lat, loc?.lon],
+    queryFn: () => api.trajectory(loc!.lat, loc!.lon),
+    enabled: !!loc,
+    staleTime: 10 * 60_000,
+  });
+}
+
 /** Per-state calibration thresholds + metadata for the Status calibration
  *  ladder. Backed by `/risk/calibration` which is essentially static —
  *  values change only when scripts/build_regional_thresholds.py re-runs,
