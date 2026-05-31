@@ -12,6 +12,7 @@ import type {
   RiskRequest,
   RiskResponse,
   Shelter,
+  TrajectoryResponse,
   WeatherResponse,
 } from './types';
 
@@ -390,11 +391,41 @@ const MOCK_CALIBRATION: CalibrationInfo = {
   },
 };
 
+// Mock trajectory — defaults to a 'rising' scenario consistent with
+// Berkeley's mock weather (slowly heating + drying through the afternoon).
+// Toggle MOCK_TRAJECTORY_TIER below if you need a different demo state.
+const MOCK_TRAJECTORY: TrajectoryResponse = {
+  tier: 'rising',
+  delta_pct: 18.4,
+  horizon_hours: 6,
+  now: {
+    label: 'now',
+    iso_time: '2026-05-30T12:00',
+    temperature_c: 24.0,
+    humidity_pct: 45.0,
+    wind_kph: 12.0,
+    precipitation_mm: 0.0,
+    v4_score: 0.34,
+  },
+  projected: {
+    label: '+6 hr',
+    iso_time: '2026-05-30T18:00',
+    temperature_c: 30.0,
+    humidity_pct: 25.0,
+    wind_kph: 22.0,
+    precipitation_mm: 0.0,
+    v4_score: 0.40,
+  },
+  dominant_driver: 'vpd',
+};
+
 export const mockApi = {
   health: () => delay({ ok: true }),
   fires: (_opts?: { days?: number; bbox?: string }) => delay(MOCK_FIRES),
   risk: (body: RiskRequest) => delay(computeMockRisk(body), 320),
   riskCalibration: () => delay(MOCK_CALIBRATION, 120),
+  trajectory: (_lat: number, _lon: number): Promise<TrajectoryResponse | null> =>
+    delay(MOCK_TRAJECTORY, 280),
   weather: (_lat: number, _lon: number) => delay(MOCK_WEATHER),
   geocode: (query: string): Promise<GeocodeHit[]> => {
     const q = query.trim().toLowerCase();
