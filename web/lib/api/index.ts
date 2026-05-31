@@ -15,6 +15,7 @@ import type {
   RiskRequest,
   RiskResponse,
   Shelter,
+  TrajectoryResponse,
   WeatherResponse,
 } from './types';
 import { mockApi } from './mocks';
@@ -64,6 +65,8 @@ const realApi = {
     ),
   disastersNear: (lat: number, lon: number) =>
     request<DisastersNearResponse>(`/disasters/near?lat=${lat}&lon=${lon}`),
+  trajectory: (lat: number, lon: number) =>
+    request<TrajectoryResponse | null>(`/trajectory?lat=${lat}&lon=${lon}`),
 };
 
 export const api = usingMocks ? mockApi : realApi;
