@@ -310,7 +310,6 @@ export function RiskScreen() {
     wind: 'Sustained wind drives spread rate and makes containment harder.',
     drought: 'Soil moisture deficit primes fuels for rapid ignition.',
   }[dominant];
-  const dominantPct = (contrib[dominant] / Math.max(0.001, score)) * 100;
 
   // `sr` drives the ambient accent across the inputs grid (slider track, glow
   // ring, section eyebrow). Floor 'low' to 'moderate' so the whole page stays
@@ -401,15 +400,13 @@ export function RiskScreen() {
           Inputs · Adjust to Compare
         </SectionEyebrow>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
-            gap: 20,
-          }}
-        >
-          {/* Sliders + vegetation panel */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* Three stacked rows — 3-up numeric sliders, 2-up qualitative panels,
+         *  then a full-width Dominant Driver hero. Replaces the prior
+         *  1.4fr/1fr split that crammed the dominant-driver card into a
+         *  sticky side rail. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Row 1: three numeric sliders side-by-side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             {/* Slider state is stored in °C/mph (backend's expected units).
              *  Display-only conversion: when units.temp === 'F' the slider's
              *  value, min, max are converted to °F and reads of onChange are
@@ -453,26 +450,11 @@ export function RiskScreen() {
               onChange={(v) => setWind(units.speed === 'mph' ? v / 0.621371 : v)}
               isLoading={inputsLoading}
             />
-            <DroughtPanel
-              mode={droughtMode}
-              onModeChange={setDroughtMode}
-              kbdi={kbdi}
-              onKbdiChange={setKbdi}
-              daysSinceRain={daysSinceRain}
-              onDaysChange={setDaysSinceRain}
-              color={sr.color}
-              glowRgb={sr.glow}
-              isLoading={inputsLoading}
-              footer={
-                !inputsLoading && localKbdiFailed && !kbdiUserSet ? (
-                  <WarningInline
-                    bold="Couldn't fetch your area's drought signal."
-                    rest="Open-Meteo Archive didn't respond, so Reset to my area can't fill this with your real value. Slide it manually for a what-if."
-                  />
-                ) : null
-              }
-            />
+          </div>
 
+          {/* Row 2: vegetation (left) + drought (right) — order matches the
+           *  reference. Both have segmented mode toggles + amber callouts. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <VegetationPanel
               mode={vegMode}
               onModeChange={setVegMode}
@@ -492,12 +474,34 @@ export function RiskScreen() {
                 ) : null
               }
             />
+            <DroughtPanel
+              mode={droughtMode}
+              onModeChange={setDroughtMode}
+              kbdi={kbdi}
+              onKbdiChange={setKbdi}
+              daysSinceRain={daysSinceRain}
+              onDaysChange={setDaysSinceRain}
+              color={sr.color}
+              glowRgb={sr.glow}
+              isLoading={inputsLoading}
+              footer={
+                !inputsLoading && localKbdiFailed && !kbdiUserSet ? (
+                  <WarningInline
+                    bold="Couldn't fetch your area's drought signal."
+                    rest="Open-Meteo Archive didn't respond, so Reset to my area can't fill this with your real value. Slide it manually for a what-if."
+                  />
+                ) : null
+              }
+            />
           </div>
 
+          {/* Row 3: full-width Dominant Driver hero with VPD/Wind/Drought
+           *  share strip on the right. */}
           <InsightsRail
             dominantLabel={dominantLabel}
-            dominantContributionPct={dominantPct}
             dominantDescription={dominantDescription}
+            shares={{ vpd: factors.vpd, wind: factors.wind, drought: factors.drought }}
+            isLoading={inputsLoading}
           />
         </div>
       </PageSection>

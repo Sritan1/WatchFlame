@@ -715,10 +715,10 @@ export function isFirmsStale(
 
 /** Hours elapsed since a FIRMS acquisition. Returns null when the date
  *  can't be parsed (defensive — real FIRMS rows always have valid dates). */
-function firmsAgeHours(
+export function firmsAgeHours(
   acqDate: string | null,
   acqTime: string | null,
-  nowMs: number,
+  nowMs: number = Date.now(),
 ): number | null {
   if (!acqDate) return null;
   const time = (acqTime ?? '0000').padStart(4, '0');

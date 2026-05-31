@@ -1,6 +1,6 @@
 'use client';
 
-// Vegetation Signal panel — bottom of the inputs grid (spans 2 cols).
+// Vegetation Signal panel — left half of the inputs row pair with Drought.
 // "Season proxy" mode shows the 4 season buttons with their multipliers.
 // "Vegetation (NDVI)" mode swaps in an NDVI anomaly slider [-0.30..+0.30].
 
@@ -60,7 +60,6 @@ export function VegetationPanel({
     <div
       className="ember-card ember-card-hover"
       style={{
-        gridColumn: '1 / span 2',
         position: 'relative',
         overflow: 'hidden',
         background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
