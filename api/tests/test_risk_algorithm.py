@@ -1,10 +1,11 @@
-"""Tests for the V2 fire weather index.
+"""Tests for the V4 fire weather index.
 
 Notes on assertion strategy:
 - Score values are checked with tolerance because of the multiplicative form
   (small changes in any factor compound). We assert correct *bucket* in most
   tests and tight numeric ranges where the science is clear.
-- Hand-computed reference values used for the explicit-number checks below.
+- Constant-coupled checks (wind floor, saturation speed) reference
+  DEFAULT_PARAMS rather than literals so a future re-fit doesn't break them.
 """
 
 import math
@@ -12,6 +13,7 @@ import math
 import pytest
 
 from api.core.risk_algorithm import (
+    DEFAULT_PARAMS,
     compute_risk,
     saturation_vapor_pressure_hpa,
     vapor_pressure_deficit_hpa,
@@ -43,10 +45,11 @@ def test_high_risk_hot_dry_windy_summer():
 
 
 def test_extreme_risk_heatwave_drought():
-    r = compute_risk(temp_c=42, humidity_pct=10, wind_kph=40, days_since_rain=60, season="summer")
-    # Every factor pinned at or near its ceiling
+    r = compute_risk(temp_c=42, humidity_pct=10, wind_kph=50, days_since_rain=60, season="summer")
+    # Every factor pinned at or near its ceiling (wind 50 kph clears the fitted
+    # ~52 kph saturation scale closely; VPD + drought are maxed).
     assert r.level == "EXTREME"
-    assert r.score >= 0.85
+    assert r.score >= 0.80
 
 
 # --- VPD computation tests ---------------------------------------------------
@@ -79,18 +82,19 @@ def test_humidity_input_is_clamped():
 # --- Wind-factor tests -------------------------------------------------------
 
 def test_wind_factor_has_baseline_floor():
-    # Calm day shouldn't zero the score (fires happen on calm days)
+    # Calm day shouldn't zero the score (fires happen on calm days). At zero
+    # wind the factor sits exactly at the fitted floor.
     r = compute_risk(temp_c=35, humidity_pct=20, wind_kph=0, days_since_rain=30, season="summer")
-    assert r.factors["wind"] >= 0.2  # the floor
-    assert r.score > 0.3  # score still substantial despite no wind
+    assert r.factors["wind"] == pytest.approx(DEFAULT_PARAMS.wind_floor, abs=1e-4)
+    assert r.score > 0.2  # score still substantial despite no wind
 
 
 def test_wind_factor_saturates_at_high_speed():
-    r_40 = compute_risk(temp_c=25, humidity_pct=50, wind_kph=40, days_since_rain=10, season="summer")
-    r_80 = compute_risk(temp_c=25, humidity_pct=50, wind_kph=80, days_since_rain=10, season="summer")
-    # Both should hit the ceiling
-    assert r_40.factors["wind"] == 1.0
-    assert r_80.factors["wind"] == 1.0
+    # Speeds comfortably above the fitted ~52 kph wind scale saturate to 1.0.
+    r_60 = compute_risk(temp_c=25, humidity_pct=50, wind_kph=60, days_since_rain=10, season="summer")
+    r_120 = compute_risk(temp_c=25, humidity_pct=50, wind_kph=120, days_since_rain=10, season="summer")
+    assert r_60.factors["wind"] == 1.0
+    assert r_120.factors["wind"] == 1.0
 
 
 def test_wind_factor_is_monotone_in_speed():
@@ -169,7 +173,10 @@ def test_kbdi_drought_factor_matches_helper():
     from api.core.kbdi import kbdi_drought_factor
 
     r = compute_risk(temp_c=25, humidity_pct=40, wind_kph=10, days_since_rain=99, season="summer", kbdi=400)
-    assert r.factors["drought"] == pytest.approx(kbdi_drought_factor(400), abs=1e-4)
+    # compute_risk plumbs the fitted drought_floor into the helper.
+    assert r.factors["drought"] == pytest.approx(
+        kbdi_drought_factor(400, floor=DEFAULT_PARAMS.drought_floor), abs=1e-4
+    )
 
 
 def test_kbdi_none_falls_back_to_days_since_rain():

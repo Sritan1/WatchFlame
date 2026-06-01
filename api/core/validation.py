@@ -48,10 +48,19 @@ def load_fires_sample(
     min_size_acres: float = 0.0,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Load a random sample of fires from the Kaggle SQLite for analysis.
+    """Load a deterministic sample of fires from the Kaggle SQLite for analysis.
 
-    Returns a DataFrame with columns: fire_year, doy, month, season, state,
-    fire_size, size_class, lat, lon, cause.
+    Returns a DataFrame with columns: objectid, fire_year, doy, month, season,
+    state, fire_size, size_class, lat, lon, cause.
+
+    Determinism matters: the Open-Meteo weather cache is keyed by
+    (lat, lon, fire_date, window) — see openmeteo._key — so a sample that
+    changes across runs forces a re-fetch of every fire's window and never
+    benefits from the cache. SQLite's `ORDER BY RANDOM()` ignores Python
+    seeds, so we instead pull a stable-ordered window (by OBJECTID, the table
+    PK) and down-sample it with pandas using `seed`. Identical inputs across
+    runs then yield identical fire selections. This mirrors the approach
+    proven in scripts/build_regional_thresholds.load_state_pool.
     """
     if not sqlite_path.exists():
         raise FileNotFoundError(
@@ -62,10 +71,15 @@ def load_fires_sample(
 
     import sqlite3
 
+    # Pull more rows than we need (stable-ordered) so the pandas down-sample
+    # has a real pool to draw from. 4× headroom matches load_state_pool.
+    pool_limit = int(n) * 4
+
     con = sqlite3.connect(str(sqlite_path))
     try:
         query = f"""
         SELECT
+            OBJECTID         AS objectid,
             FIRE_YEAR        AS fire_year,
             DISCOVERY_DOY    AS doy,
             STAT_CAUSE_DESCR AS cause,
@@ -79,12 +93,17 @@ def load_fires_sample(
           AND DISCOVERY_DOY IS NOT NULL
           AND LATITUDE IS NOT NULL
           AND LONGITUDE IS NOT NULL
-        ORDER BY RANDOM()
-        LIMIT {int(n)}
+        ORDER BY OBJECTID
+        LIMIT {pool_limit}
         """
         df = pd.read_sql(query, con)
     finally:
         con.close()
+
+    # Deterministic down-sample so the pool isn't biased to the lowest
+    # OBJECTIDs (which cluster by year + agency in FPA-FOD).
+    take = min(int(n), len(df))
+    df = df.sample(n=take, random_state=seed).reset_index(drop=True)
 
     df["season"] = df["doy"].apply(doy_to_season)
     df["month"] = df.apply(lambda r: doy_to_month(r["doy"], r["fire_year"]), axis=1)
