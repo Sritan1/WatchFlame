@@ -98,33 +98,38 @@ W=ext           MOD        HIGH       HIGH       EXT        EXT
 
 ---
 
-## 7. The threat formula treats distance and size as OR-combined
+## 7. Threat = distance × size, multiplicative with Hill saturation
 
-**Decision.** Per-fire threat is computed as `base = 1 − (1 − dist) × (1 − size)`, where each factor lives in [0, 1]. Probabilistic OR — either factor approaching 1.0 pulls the result toward 1.0 even when the other is small.
-
-**Why.** Intent was "a very close fire OR a very large fire is a threat, regardless of the other." Distance decay alone misses a 5,000-acre wildfire 30 mi away; size alone misses a 50-acre flare-up 0.1 mi from the user. OR-combination encodes "either condition alone is sufficient."
-
-**Cost.** Saturates too aggressively. With `size = clamp((acres − 50) / 4,950)`, a 5,000-acre fire at 30 mi produces `size = 1.0`, which OR-combines with `dist = exp(−30/21) = 0.24` to give `base = 1.0` — regardless of containment. That's not credible. A 5,000-acre fire 30 mi away is a smoke and ember-shower risk, not a run-now situation.
-
-**Where it could go.** Multiplicative combination with Hill saturation on size:
+**Decision.** Per-fire threat multiplies a distance factor by a size factor (it was previously OR-combined):
 
 ```
-threat = exp(−d/τ) × (acres / (acres + K))^p
+base = exp(−d/τ)·taper(d) × [floor + (1 − floor)·acres/(acres + K)]
 ```
 
-A 5,000-acre fire at 30 mi then gets roughly `0.24 × 0.95 ≈ 0.23`, properly small. Multiplicative form encodes the right physics — a fire is threatening if it is *both* close AND large — and the Hill saturation removes the hard ceiling at 5,000 acres so a 50,000-ac megafire keeps differentiating.
+with τ = 21 mi, floor = 0.70, K = 300 ac. A fire is threatening only if it is *both* close AND large. A FIRMS pixel (size unknown) takes size-factor 1.0, so it stays distance-only — preserving the satellite path's long-standing behavior. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+
+**Why.** The earlier form OR-combined the two factors (`base = 1 − (1 − dist)(1 − size)`), which let *either* one saturate the score on its own. With `size = clamp((acres − 50)/4,950)`, a 5,000-acre fire 30 mi away produced `size = 1.0` → `base = 1.0` (EXTREME) regardless of distance — not credible; that's a smoke/ember risk, not run-now. Multiplicative combination encodes the right physics: the same fire now scores `exp(−30/21) × ~0.98 ≈ 0.24` (LOW). Hill saturation on size has no hard ceiling, so a 50,000-ac megafire still separates from a merely-large fire.
+
+**Cost.** Size now matters at every range, so a known *small* fire reads lower than before even when close (a 50-ac fire 0.5 mi away is HIGH, not EXT). The `[floor, 1]` size band (0.70–1.0) keeps distance the dominant axis so the de-escalation stays modest, but it is deliberate and visible — overall threat reads gentler across the board, correcting the old formula's over-alarming.
+
+**Where it could go.** Replace the FIRMS size-factor (a flat 1.0) with a typical-detection prior; weight by structures-threatened, not just acreage.
 
 ---
 
-## 8. Hard 50 mi cutoff on threat eligibility
+## 8. Smoothed threat cliffs (distance, containment, staleness, wind)
 
-**Decision.** Fires beyond `THREAT_RADIUS_MI = 50` are excluded from the threat aggregation. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+**Decision.** The four operational boundaries in the per-fire threat are now continuous transitions instead of hard steps. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts):
 
-**Why.** With distance decay `exp(−d/21)`, a fire at 50 mi contributes `< 0.10` to the OR — below the level that meaningfully shifts the user's bucket. The cutoff also matches operational evacuation-zone thinking: 50 mi is roughly the outer ring of regional smoke advisories and the upper end of where most counties would issue evacuation guidance. Cutting off there keeps the per-render aggregation loop tight.
+- **50 mi eligibility** — the distance factor tapers smoothly to 0 between 46 and 50 mi (smoothstep), so a fire crossing the boundary fades out rather than dropping off a cliff. Fires past 50 mi are still skipped for loop tightness, but contribute ~0 by then anyway.
+- **75% containment** — a logistic ramp from ×1.0 (uncontained) toward ×0.6, centered at 75%, instead of a step at exactly 75%.
+- **24 hr FIRMS staleness** — a logistic ramp from ×1.0 (fresh) toward ×0.6, centered at 24 hr. The per-fire function now takes the detection's *age in hours* rather than a stale boolean.
+- **±30° wind cone** — the wind bump scales as `WIND_BUMP × cos(angle)`: +0.15 blowing toward, 0 at crosswind, −0.15 away. No cone edges.
 
-**Cost.** Hard cliff at exactly 50 mi. A fire at 49.9 mi is in; at 50.1 mi is out. The user's status changes catastrophically based on whether the fire moved 1/4 mile — exactly the kind of discontinuous behavior that erodes trust in scores. Same shape of bug appears at three other operational boundaries in the threat formula (75% containment, 24 hr FIRMS staleness, ±30° wind cone).
+**Why.** A fire at 49.9 vs 50.1 mi, or 74% vs 76% contained, used to flip the user's status discontinuously — the kind of knife-edge that erodes trust in a score. It's the same artifact the V4 *fire-weather* index already removed for wind via a power law; this brings the *threat* side to parity.
 
-**Where it could go.** Drop the cutoff entirely; let the exponential decay handle attenuation naturally. The cost is `O(n)` per render where `n` includes all fires in the upstream feed instead of the 50 mi subset, but in practice the upstream is already bbox-filtered to ~250 mi anyway. All four cliffs should be smoothed in the same pass — once the smoothing rule is written, the change is mechanical.
+**Cost.** The smooth ramps engage a little earlier (a 60%-contained fire gets a small damp; a 12 hr-old detection a slight one) — arguably more honest, but it does lower some mid-range threats. The ramp widths are hand-chosen, not fit: unlike fire weather, there's no labeled personal-threat outcome dataset to calibrate against.
+
+**Where it could go.** Fit the ramp widths and the size floor/K against a labeled proximity-outcome set if one becomes available; until then they're defensible defaults.
 
 ---
 
