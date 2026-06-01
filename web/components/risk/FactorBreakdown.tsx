@@ -1,8 +1,8 @@
 'use client';
 
 // Right panel of the Risk hero: weighted bars for each factor + season multiplier card.
-// Weights are constant (VPD 50%, Wind 30%, Drought 20%); the factor values come
-// from the live RiskResponse.factors.
+// Weights come from the fitted V4 exponents (V4_WEIGHT_PCT, mirroring the
+// backend); the factor values come from the live RiskResponse.factors.
 
 import { useState } from 'react';
 
@@ -12,6 +12,7 @@ import { IndexBadge } from '@/components/ui/IndexBadge';
 import { ExplainerModal } from '@/components/risk/ExplainerModal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
+import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 
 interface FactorRow {
   label: string;
@@ -49,9 +50,9 @@ export function FactorBreakdown({
   const [explainerOpen, setExplainerOpen] = useState(false);
 
   const rows: FactorRow[] = [
-    { label: 'Vapor Pressure Deficit', weight: 50, factor: vpd,     color: '#FF7A3A', glowRgb: '255, 122, 58', caption: caption.vpd },
-    { label: 'Wind',                   weight: 30, factor: wind,    color: '#4FA8FF', glowRgb: '79, 168, 255', caption: caption.wind },
-    { label: 'Drought',                weight: 20, factor: drought, color: '#E8B339', glowRgb: '232, 179, 57', caption: caption.drought },
+    { label: 'Vapor Pressure Deficit', weight: V4_WEIGHT_PCT.vpd,     factor: vpd,     color: '#FF7A3A', glowRgb: '255, 122, 58', caption: caption.vpd },
+    { label: 'Wind',                   weight: V4_WEIGHT_PCT.wind,    factor: wind,    color: '#4FA8FF', glowRgb: '79, 168, 255', caption: caption.wind },
+    { label: 'Drought',                weight: V4_WEIGHT_PCT.drought, factor: drought, color: '#E8B339', glowRgb: '232, 179, 57', caption: caption.drought },
   ];
 
   return (
@@ -158,8 +159,8 @@ export function FactorBreakdown({
         {/* Vegetation factor — lifted above the "How is this calculated?"
          *  button so NDVI gets the visual weight its operational importance
          *  deserves. Mathematically the multiplier sits outside the weighted
-         *  sum (raw = vpd^0.5 × wind^0.3 × drought^0.2; score = vegFactor ×
-         *  raw), so it doesn't get a percentage-bar treatment — but it does
+         *  sum (raw = vpd^a × wind^b × drought^c with fitted a/b/c; score =
+         *  vegFactor × raw), so it doesn't get a percentage-bar treatment — but it does
          *  get its own card-within-a-card with the source named explicitly
          *  ("NDVI" vs "Summer"/etc) and an inline context line. */}
         <div

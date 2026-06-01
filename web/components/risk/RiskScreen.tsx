@@ -32,9 +32,11 @@ import { useRiskForInputs, useRiskFromWeather, useWeather } from '@/lib/queries'
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { useUnits } from '@/lib/use-units';
+import { V4_WEIGHTS } from '@/lib/v4-weights';
 
 // Defaults match the reference Risk Forecast screenshot so the
-// computed score lands at ~0.44 with FL calibration ("Risk Level: Extreme").
+// computed score lands at ~0.33 with FL calibration ("Risk Level: Extreme" —
+// FL's fitted EXT cutoff is ~0.32).
 // Wind default is in **km/h** because the backend's `wind_speed` field
 // (api/routes/risk.py) is documented as km/h, and weather.wind_speed from
 // /weather is returned in km/h. 15 kph ≈ 9.3 mph — matches mobile's default
@@ -286,17 +288,18 @@ export function RiskScreen() {
 
   // Fall back to a synthesized computation when the request is still in flight
   // so the hero never shows "—" or blanks during typing.
-  const score = risk.data?.risk_score ?? 0.44;
+  const score = risk.data?.risk_score ?? 0.33;
   const level: RiskLevel = risk.data
     ? (risk.data.regional_level ? dangerToRisk(risk.data.regional_level) : dangerToRisk(risk.data.danger_level))
     : 'extreme';
-  const factors = risk.data?.factors ?? { vpd: 0.69, wind: 0.30, drought: 0.59, season: 0.80 };
+  const factors = risk.data?.factors ?? { vpd: 0.77, wind: 0.19, drought: 0.64, season: 0.80 };
 
-  // Dominant driver — pick the largest WEIGHTED contribution.
+  // Dominant driver — pick the largest WEIGHTED contribution. Weights mirror
+  // the fitted V4 exponents (api/core/risk_algorithm.py RiskParams).
   const contrib = {
-    vpd: factors.vpd * 0.5,
-    wind: factors.wind * 0.3,
-    drought: factors.drought * 0.2,
+    vpd: factors.vpd * V4_WEIGHTS.vpd,
+    wind: factors.wind * V4_WEIGHTS.wind,
+    drought: factors.drought * V4_WEIGHTS.drought,
   };
   const dominant: 'vpd' | 'wind' | 'drought' = ((['vpd', 'wind', 'drought'] as const) as ('vpd' | 'wind' | 'drought')[])
     .reduce<'vpd' | 'wind' | 'drought'>((acc, k) => (contrib[k] > contrib[acc] ? k : acc), 'vpd');

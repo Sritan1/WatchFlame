@@ -1,6 +1,6 @@
 {
   "version": "v4",
-  "fitted_at": "2026-05-17",
+  "fitted_at": "2026-05-31",
   "algorithm_version": "v4-ndvi-anomaly-baseline-neutral",
   "drought_input": "kbdi",
   "vegetation_input": "ndvi-anomaly-baseline-neutral",
@@ -30,16 +30,16 @@
         -119.6089
       ],
       "thresholds": {
-        "low": 0.366,
-        "moderate": 0.457,
-        "high": 0.4984,
-        "extreme": 0.5129
+        "low": 0.2523,
+        "moderate": 0.2872,
+        "high": 0.3327,
+        "extreme": 0.3867
       },
       "score_summary": {
-        "min": 0.0711,
-        "median": 0.366,
-        "mean": 0.3573,
-        "max": 0.5739
+        "min": 0.062,
+        "median": 0.2523,
+        "mean": 0.2489,
+        "max": 0.4491
       }
     },
     "OR": {
@@ -55,16 +55,16 @@
         -120.4686
       ],
       "thresholds": {
-        "low": 0.3389,
-        "moderate": 0.3898,
-        "high": 0.4485,
-        "extreme": 0.5061
+        "low": 0.2376,
+        "moderate": 0.285,
+        "high": 0.3391,
+        "extreme": 0.3761
       },
       "score_summary": {
-        "min": 0.0881,
-        "median": 0.3389,
-        "mean": 0.3263,
-        "max": 0.5184
+        "min": 0.0765,
+        "median": 0.2376,
+        "mean": 0.2385,
+        "max": 0.4073
       }
     },
     "WA": {
@@ -80,16 +80,16 @@
         -120.1172
       ],
       "thresholds": {
-        "low": 0.2985,
-        "moderate": 0.4019,
-        "high": 0.4621,
-        "extreme": 0.5141
+        "low": 0.215,
+        "moderate": 0.2898,
+        "high": 0.3536,
+        "extreme": 0.407
       },
       "score_summary": {
-        "min": 0.069,
-        "median": 0.2985,
-        "mean": 0.308,
-        "max": 0.6579
+        "min": 0.0691,
+        "median": 0.215,
+        "mean": 0.2295,
+        "max": 0.5933
       }
     },
     "ID": {
@@ -105,16 +105,16 @@
         -114.9665
       ],
       "thresholds": {
-        "low": 0.3319,
-        "moderate": 0.4307,
-        "high": 0.5044,
-        "extreme": 0.5289
+        "low": 0.2364,
+        "moderate": 0.3268,
+        "high": 0.3911,
+        "extreme": 0.4551
       },
       "score_summary": {
-        "min": 0.0735,
-        "median": 0.3319,
-        "mean": 0.3423,
-        "max": 0.5691
+        "min": 0.0514,
+        "median": 0.2364,
+        "mean": 0.2556,
+        "max": 0.4873
       }
     },
     "MT": {
@@ -130,16 +130,16 @@
         -111.6566
       ],
       "thresholds": {
-        "low": 0.2917,
-        "moderate": 0.3848,
-        "high": 0.4366,
-        "extreme": 0.5458
+        "low": 0.2164,
+        "moderate": 0.3024,
+        "high": 0.3727,
+        "extreme": 0.4869
       },
       "score_summary": {
-        "min": 0.1011,
-        "median": 0.2917,
-        "mean": 0.3089,
-        "max": 0.6058
+        "min": 0.0947,
+        "median": 0.2164,
+        "mean": 0.2448,
+        "max": 0.5197
       }
     },
     "UT": {
@@ -155,16 +155,16 @@
         -111.9284
       ],
       "thresholds": {
-        "low": 0.4251,
-        "moderate": 0.4918,
-        "high": 0.5187,
-        "extreme": 0.5726
+        "low": 0.3244,
+        "moderate": 0.3839,
+        "high": 0.4386,
+        "extreme": 0.4934
       },
       "score_summary": {
-        "min": 0.1025,
-        "median": 0.4251,
-        "mean": 0.4059,
-        "max": 0.5947
+        "min": 0.0697,
+        "median": 0.3244,
+        "mean": 0.3177,
+        "max": 0.5793
       }
     },
     "AZ": {
@@ -180,16 +180,16 @@
         -111.1303
       ],
       "thresholds": {
-        "low": 0.4042,
-        "moderate": 0.4986,
-        "high": 0.569,
-        "extreme": 0.593
+        "low": 0.3089,
+        "moderate": 0.3698,
+        "high": 0.4113,
+        "extreme": 0.4506
       },
       "score_summary": {
-        "min": 0.1489,
-        "median": 0.4042,
-        "mean": 0.3982,
-        "max": 0.6236
+        "min": 0.1259,
+        "median": 0.3089,
+        "mean": 0.3011,
+        "max": 0.4888
       }
     },
     "NM": {
@@ -205,16 +205,16 @@
         -106.6831
       ],
       "thresholds": {
-        "low": 0.3399,
-        "moderate": 0.4621,
-        "high": 0.5894,
-        "extreme": 0.6386
+        "low": 0.2754,
+        "moderate": 0.3897,
+        "high": 0.4957,
+        "extreme": 0.5741
       },
       "score_summary": {
-        "min": 0.125,
-        "median": 0.3399,
-        "mean": 0.3694,
-        "max": 0.7042
+        "min": 0.0987,
+        "median": 0.2754,
+        "mean": 0.3066,
+        "max": 0.654
       }
     },
     "CO": {
@@ -230,16 +230,16 @@
         -107.547
       ],
       "thresholds": {
-        "low": 0.3588,
-        "moderate": 0.446,
-        "high": 0.5003,
-        "extreme": 0.5471
+        "low": 0.2875,
+        "moderate": 0.3421,
+        "high": 0.4172,
+        "extreme": 0.4885
       },
       "score_summary": {
-        "min": 0.0826,
-        "median": 0.3588,
-        "mean": 0.3546,
-        "max": 0.585
+        "min": 0.0732,
+        "median": 0.2875,
+        "mean": 0.2886,
+        "max": 0.5227
       }
     },
     "TX": {
@@ -255,16 +255,16 @@
         -96.1856
       ],
       "thresholds": {
-        "low": 0.2864,
-        "moderate": 0.3905,
-        "high": 0.4619,
-        "extreme": 0.5196
+        "low": 0.2342,
+        "moderate": 0.293,
+        "high": 0.3687,
+        "extreme": 0.438
       },
       "score_summary": {
-        "min": 0.1449,
-        "median": 0.2864,
-        "mean": 0.3053,
-        "max": 0.5654
+        "min": 0.1032,
+        "median": 0.2342,
+        "mean": 0.2457,
+        "max": 0.5387
       }
     },
     "WY": {
@@ -280,16 +280,16 @@
         -107.726
       ],
       "thresholds": {
-        "low": 0.3248,
-        "moderate": 0.425,
-        "high": 0.5335,
-        "extreme": 0.5826
+        "low": 0.2658,
+        "moderate": 0.3666,
+        "high": 0.4752,
+        "extreme": 0.5235
       },
       "score_summary": {
-        "min": 0.0943,
-        "median": 0.3248,
-        "mean": 0.3401,
-        "max": 0.6569
+        "min": 0.0926,
+        "median": 0.2658,
+        "mean": 0.2917,
+        "max": 0.6256
       }
     },
     "NV": {
@@ -305,16 +305,16 @@
         -116.7347
       ],
       "thresholds": {
-        "low": 0.4234,
-        "moderate": 0.4856,
-        "high": 0.5309,
-        "extreme": 0.5651
+        "low": 0.3108,
+        "moderate": 0.366,
+        "high": 0.4235,
+        "extreme": 0.452
       },
       "score_summary": {
-        "min": 0.0638,
-        "median": 0.4234,
-        "mean": 0.4058,
-        "max": 0.5854
+        "min": 0.0699,
+        "median": 0.3108,
+        "mean": 0.3071,
+        "max": 0.5031
       }
     },
     "OK": {
@@ -330,16 +330,16 @@
         -95.875
       ],
       "thresholds": {
-        "low": 0.2528,
-        "moderate": 0.3568,
-        "high": 0.4397,
-        "extreme": 0.5354
+        "low": 0.2252,
+        "moderate": 0.2931,
+        "high": 0.3652,
+        "extreme": 0.4045
       },
       "score_summary": {
-        "min": 0.0751,
-        "median": 0.2528,
-        "mean": 0.2766,
-        "max": 0.6191
+        "min": 0.0736,
+        "median": 0.2252,
+        "mean": 0.2392,
+        "max": 0.4768
       }
     },
     "FL": {
@@ -355,16 +355,16 @@
         -81.8689
       ],
       "thresholds": {
-        "low": 0.2655,
-        "moderate": 0.3296,
-        "high": 0.3757,
-        "extreme": 0.4178
+        "low": 0.2024,
+        "moderate": 0.2517,
+        "high": 0.3008,
+        "extreme": 0.3227
       },
       "score_summary": {
-        "min": 0.0921,
-        "median": 0.2655,
-        "mean": 0.278,
-        "max": 0.4338
+        "min": 0.0801,
+        "median": 0.2024,
+        "mean": 0.2116,
+        "max": 0.3656
       }
     },
     "GA": {
@@ -380,16 +380,16 @@
         -83.5343
       ],
       "thresholds": {
-        "low": 0.2181,
-        "moderate": 0.2877,
-        "high": 0.3498,
-        "extreme": 0.4167
+        "low": 0.1808,
+        "moderate": 0.2186,
+        "high": 0.277,
+        "extreme": 0.3125
       },
       "score_summary": {
-        "min": 0.0999,
-        "median": 0.2181,
-        "mean": 0.2345,
-        "max": 0.5209
+        "min": 0.0866,
+        "median": 0.1808,
+        "mean": 0.1932,
+        "max": 0.4057
       }
     },
     "NC": {
@@ -405,16 +405,16 @@
         -79.7995
       ],
       "thresholds": {
-        "low": 0.2054,
-        "moderate": 0.274,
-        "high": 0.3436,
-        "extreme": 0.4145
+        "low": 0.1895,
+        "moderate": 0.2298,
+        "high": 0.2862,
+        "extreme": 0.3122
       },
       "score_summary": {
-        "min": 0.097,
-        "median": 0.2054,
-        "mean": 0.2257,
-        "max": 0.442
+        "min": 0.086,
+        "median": 0.1895,
+        "mean": 0.1964,
+        "max": 0.3249
       }
     },
     "SC": {
@@ -430,16 +430,16 @@
         -80.7792
       ],
       "thresholds": {
-        "low": 0.233,
-        "moderate": 0.3062,
-        "high": 0.3724,
-        "extreme": 0.4644
+        "low": 0.2017,
+        "moderate": 0.2405,
+        "high": 0.2838,
+        "extreme": 0.344
       },
       "score_summary": {
-        "min": 0.1231,
-        "median": 0.233,
-        "mean": 0.2561,
-        "max": 0.5247
+        "min": 0.1052,
+        "median": 0.2017,
+        "mean": 0.2106,
+        "max": 0.3726
       }
     }
   }

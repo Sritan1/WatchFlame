@@ -13,7 +13,8 @@
 // EXT [0.75, 1]). The composite is a simple weighted average that
 // guarantees:
 //   - Weather alone caps at 0.45 (deep MOD) → no false alarms when nothing
-//     is actually burning. Bronson, FL on an EXT-for-FL day lands ~0.41.
+//     is actually burning. A worst-case fire-weather day for a calm state
+//     (e.g. an EXT-for-FL day) still lands in deep MOD on the composite.
 //   - Threat alone caps at 0.55 (HIGH bottom) → a close fire on a calm day
 //     reaches "High Alert" but never crosses to EXT without dangerous
 //     weather corroborating.
@@ -119,10 +120,10 @@ const GLOBAL_FALLBACK_THRESHOLDS: RegionalThresholds = {
  *                                     `t.extreme` = 97th percentile here)
  *    raw ≥ t.extreme   → EXT
  *
- *  This is the key calibration step. Without it, Bronson's worst-day score
- *  would normalize to ~0.42 (raw / score_max) and the composite would
- *  collapse Bronson to LOW even on a deep-EXT-for-FL day. With it, Bronson
- *  lands at ~0.92 (deep EXT band), and the formula then downgrades the
+ *  This is the key calibration step. Without it, a humid state's worst-day
+ *  score would normalize to a low fraction of score_max and the composite
+ *  would collapse it to LOW even on a deep-EXT-for-that-state day. With it,
+ *  that same day lands in the EXT band, and the formula then downgrades the
  *  composite cleanly to MOD because no fires are present. */
 export function normalizeWeather(
   rawScore: number,
