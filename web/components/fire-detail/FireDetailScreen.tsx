@@ -28,7 +28,7 @@ import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import {
   bearingTo,
   distanceMiles,
-  isFirmsStale,
+  firmsAgeHours,
   personalThreatBucket,
 } from '@/lib/composite-risk';
 import {
@@ -215,8 +215,8 @@ export function FireDetailScreen() {
   // Only FIRMS-only flows (no matched incident) participate in the
   // stale-pixel dampener; reuse the shared helper so the threshold is in
   // one place.
-  const isStale = useMemo(
-    () => (matched ? false : isFirmsStale(acqDate, acqTime)),
+  const firmsAge = useMemo(
+    () => (matched ? null : firmsAgeHours(acqDate, acqTime)),
     [matched, acqDate, acqTime],
   );
 
@@ -232,7 +232,7 @@ export function FireDetailScreen() {
             distanceMi: distFromMe,
             acres: matchedAcres,
             containedPct: matchedContainedPct,
-            isStaleFirms: isStale,
+            firmsAgeHours: firmsAge,
             windDeg: userWindDeg,
             windSpeedKph: userWindSpeedKph,
             bearingToFireDeg: bearingDegFromMe,
@@ -242,7 +242,7 @@ export function FireDetailScreen() {
       bearingDegFromMe,
       matchedAcres,
       matchedContainedPct,
-      isStale,
+      firmsAge,
       userWindDeg,
       userWindSpeedKph,
     ],

@@ -41,40 +41,55 @@ export const COMPOSITE_WEIGHTS = { weather: 0.45, threat: 0.55 } as const;
  *  `threatLevelFor` bands within rounding. */
 const DISTANCE_DECAY_MI = 21;
 
-/** Fires below this acreage don't add to the size term. */
-const SIZE_FLOOR_ACRES = 50;
-/** Fires at or above this acreage produce the maximum size contribution.
- *  Raised from 1000 → 5000 so that "operationally large in CA" doesn't
- *  saturate the formula. With the old cap, ANY 1000+ ac fire pegged
- *  threat to 1.0 regardless of distance (since size_score=1.0 made the
- *  OR-aggregation ignore distance entirely). 5000 acres is a more honest
- *  threshold for "megafire that's threatening even from 30+ mi". */
-const SIZE_CEILING_ACRES = 5000;
+/** Per-fire threat is distance × size, combined MULTIPLICATIVELY (not the old
+ *  probabilistic-OR `1 − (1−dist)(1−size)`). Size is a Hill-saturating
+ *  multiplier in [SIZE_WEIGHT_FLOOR, 1]: a known-but-small fire still reads as
+ *  a real fire at close range (the floor), while a larger fire approaches the
+ *  full distance-driven threat. The key fix: a large fire FAR away no longer
+ *  pegs threat to 1.0 — distance always attenuates. See docs/DECISIONS.md §7.
+ *
+ *  A FIRMS pixel (acres unknown) gets size multiplier 1.0, preserving the
+ *  distance-only behavior the satellite path has always had. */
+const SIZE_WEIGHT_FLOOR = 0.7;
+/** Hill half-saturation point (acres): sizeMult = floor + (1−floor)·acres/(acres+K).
+ *  K=300 → a 300-ac fire is halfway up the size ramp, a 1,000-ac fire ~93%,
+ *  and the curve keeps differentiating past 5,000 ac (no hard ceiling) so
+ *  megafires still separate from merely-large fires. */
+const SIZE_HILL_K_ACRES = 300;
 
-/** ±this many degrees from "wind blowing toward me" counts as alignment. */
+/** ±this many degrees from "wind blowing toward me" counts as alignment —
+ *  used only by `computeWindAlignment` for the toward/away/crosswind LABEL.
+ *  The threat bump itself now varies smoothly as cos(angle), no cone step. */
 const WIND_CONE_DEG = 30;
 /** Below this wind speed (kph) we treat wind direction as noise. */
 const WIND_CALM_KPH = 5;
-/** Additive bump applied when wind aligns toward/away from user. */
+/** Peak additive bump when wind blows directly toward (or −away from) the user.
+ *  Scaled by cos(angle) so it eases to 0 at crosswind — no hard cone edges. */
 const WIND_BUMP = 0.15;
 
-/** FIRMS hits older than this are dampened (likely transient anomalies). */
+/** FIRMS staleness dampener. Threat ramps smoothly from ×1.0 (fresh) toward
+ *  ×STALE_DAMPENER as a detection ages, centered at STALE_FIRMS_HOURS with a
+ *  STALE_RAMP_HOURS logistic transition width — no hard 24 h cliff. */
 const STALE_FIRMS_HOURS = 24;
-/** Multiplier applied to stale FIRMS threat. */
 const STALE_DAMPENER = 0.6;
+const STALE_RAMP_HOURS = 6;
 
-/** Named-incident containment percentage at or above which we treat the
- *  fire as "mostly defeated" and dampen its threat contribution. 75% is
- *  the operational threshold most agencies use as "containment is holding". */
+/** Containment dampener. Threat ramps smoothly from ×1.0 (uncontained) toward
+ *  ×CONTAINED_DAMPENER as a named incident's containment rises, centered at
+ *  CONTAINED_PCT_THRESHOLD (the operational "containment is holding" mark)
+ *  with a CONTAINED_RAMP_PCT width — no hard 75% cliff. */
 const CONTAINED_PCT_THRESHOLD = 75;
-/** Multiplier applied to threat when the named incident is ≥ 75% contained.
- *  Same magnitude as STALE_DAMPENER — a contained fire and a stale satellite
- *  hit are similar "this is probably not actively threatening" signals. */
 const CONTAINED_DAMPENER = 0.6;
+const CONTAINED_RAMP_PCT = 8;
 
-/** Fires beyond this distance contribute < 0.10 to threat regardless of
- *  size, so we skip them to keep the aggregation loop tight. */
+/** Outer eligibility radius. Fires beyond this are skipped (keeps the
+ *  aggregation loop tight); the distance factor tapers smoothly to 0 as it
+ *  approaches this boundary so there's no cliff at exactly 50 mi. */
 export const THREAT_RADIUS_MI = 50;
+/** Distance at which the smooth edge taper begins. Inside it, the natural
+ *  exp-decay stands; from here to THREAT_RADIUS_MI the contribution eases to
+ *  0. See docs/DECISIONS.md §8. */
+const TAPER_START_MI = 46;
 
 /** When the highest-threat fire is a FIRMS pixel, look for a named incident
  *  within this radius. If one exists, surface IT as the threat source
@@ -171,23 +186,86 @@ function isThresholdsValid(t: RegionalThresholds): boolean {
   );
 }
 
+// ─── Smooth threat-factor primitives ──────────────────────────────────────
+//
+// The per-fire threat used to have four hard cliffs — a fire crossing 50 mi,
+// 75% containment, 24 h FIRMS staleness, or the ±30° wind cone flipped the
+// score discontinuously. These helpers replace each step with a continuous
+// transition so the threat moves smoothly as conditions change. See
+// docs/DECISIONS.md §8.
+
+/** Smoothstep (Hermite) 0→1 over a clamped [0, 1] input. */
+function smoothstep01(t: number): number {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+}
+
+/** Standard logistic 0→1, midpoint at x=0. */
+function logistic(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+/** Distance contribution: exponential decay, tapered smoothly to 0 as the
+ *  distance approaches THREAT_RADIUS_MI so there's no cliff at the 50 mi
+ *  eligibility boundary (it's already ~0 by then). */
+function distanceFactor(distanceMi: number): number {
+  const decay = Math.exp(-distanceMi / DISTANCE_DECAY_MI);
+  if (distanceMi <= TAPER_START_MI) return decay;
+  if (distanceMi >= THREAT_RADIUS_MI) return 0;
+  const t = (distanceMi - TAPER_START_MI) / (THREAT_RADIUS_MI - TAPER_START_MI);
+  return decay * (1 - smoothstep01(t));
+}
+
+/** Size multiplier in [SIZE_WEIGHT_FLOOR, 1] via Hill saturation. `acres == null`
+ *  (FIRMS pixel, size unknown) → 1.0, preserving the distance-only behavior
+ *  the satellite path has always had. */
+function sizeMultiplier(acres: number | null): number {
+  if (acres == null) return 1;
+  const a = Math.max(0, acres);
+  const hill = a / (a + SIZE_HILL_K_ACRES);
+  return SIZE_WEIGHT_FLOOR + (1 - SIZE_WEIGHT_FLOOR) * hill;
+}
+
+/** Smooth staleness dampener from a FIRMS detection's age (hours). `null`
+ *  (named incident, or an unparseable date) → 1.0 (no damp). Eases from 1.0
+ *  toward STALE_DAMPENER, centered at STALE_FIRMS_HOURS. */
+function stalenessDampener(ageHours: number | null): number {
+  if (ageHours == null) return 1;
+  return (
+    1 - (1 - STALE_DAMPENER) * logistic((ageHours - STALE_FIRMS_HOURS) / STALE_RAMP_HOURS)
+  );
+}
+
+/** Smooth containment dampener from a named incident's contained %. `null` →
+ *  1.0. Eases from 1.0 toward CONTAINED_DAMPENER, centered at the threshold. */
+function containmentDampener(containedPct: number | null | undefined): number {
+  if (containedPct == null) return 1;
+  return (
+    1 -
+    (1 - CONTAINED_DAMPENER) *
+      logistic((containedPct - CONTAINED_PCT_THRESHOLD) / CONTAINED_RAMP_PCT)
+  );
+}
+
 /** Compute the threat factor for a single fire. Inputs are already
  *  per-fire — see `aggregateThreat` for the multi-fire case.
  *
  *  Pipeline:
- *    distance → exponential decay (closer = more)
- *    size     → linear ramp from 50ac to 5000ac (SIZE_CEILING_ACRES)
- *    OR-combine the two (either factor alone can pull the result to 1)
- *    wind alignment bump (additive ±0.15, only when wind is non-calm)
- *    stale-FIRMS dampener (multiplicative ×0.6)
+ *    base = distanceFactor(d) × sizeMultiplier(acres)   — multiplicative:
+ *           threatening only if BOTH close AND large; a far megafire no
+ *           longer pegs to 1.0. FIRMS pixels (no acres) stay distance-only.
+ *    + wind alignment bump (WIND_BUMP × cos(angle), smooth, calm-gated)
+ *    × smooth staleness dampener (from FIRMS age)
+ *    × smooth containment dampener (from contained %)
  *
  *  Returns a value in [0, 1]. */
 export function fireThreatFactor(args: {
   distanceMi: number;
   /** Null when only a satellite pixel was matched (FIRMS hits have no acres). */
   acres: number | null;
-  /** True when this is a FIRMS-only detection and its `acq_date` is > 24h old. */
-  isStaleFirms: boolean;
+  /** Age in hours of a FIRMS detection; `null` for named incidents or when the
+   *  acquisition date can't be parsed. Drives the smooth staleness dampener. */
+  firmsAgeHours: number | null;
   /** Wind FROM direction in degrees (meteorological convention). Null = unknown. */
   windDeg: number | null;
   /** Bearing from user → fire in degrees (0 = N, 90 = E). */
@@ -195,52 +273,40 @@ export function fireThreatFactor(args: {
   /** Wind speed in kph. Null or < WIND_CALM_KPH disables the wind bump. */
   windSpeedKph: number | null;
   /** Named-incident containment percentage. Null for FIRMS hits or when the
-   *  agency hasn't reported it. When >= CONTAINED_PCT_THRESHOLD the threat
-   *  is dampened (operationally "the fire is mostly defeated"). */
+   *  agency hasn't reported it. Higher containment smoothly dampens threat. */
   containedPct?: number | null;
 }): number {
   const {
     distanceMi,
     acres,
-    isStaleFirms,
+    firmsAgeHours,
     windDeg,
     bearingToFireDeg,
     windSpeedKph,
     containedPct,
   } = args;
-  const dist = Math.exp(-distanceMi / DISTANCE_DECAY_MI);
-  const sizeRaw =
-    acres == null
-      ? 0
-      : (acres - SIZE_FLOOR_ACRES) / (SIZE_CEILING_ACRES - SIZE_FLOOR_ACRES);
-  const size = clamp01(sizeRaw);
-  // OR-aggregation: P(A or B) = 1 - P(not A) × P(not B). Each factor can
-  // independently pull the result toward 1. Distance and size now both
-  // peak at meaningful thresholds (0 mi / 5000 ac) instead of saturating
-  // on every 1000-ac named incident in the feed.
-  const base = 1 - (1 - dist) * (1 - size);
 
+  // Multiplicative base — distance always attenuates (a far large fire can't
+  // peg the score on size alone), and the edge taper removes the 50 mi cliff.
+  const base = distanceFactor(distanceMi) * sizeMultiplier(acres);
+
+  // Wind alignment: smooth cosine of the angle between wind-from and the
+  // bearing to the fire — +WIND_BUMP blowing toward, −WIND_BUMP away, 0 at
+  // crosswind. Replaces the old ±30° cone step. Gated off when calm.
   let windBump = 0;
-  if (
-    windDeg != null &&
-    windSpeedKph != null &&
-    windSpeedKph >= WIND_CALM_KPH
-  ) {
+  if (windDeg != null && windSpeedKph != null && windSpeedKph >= WIND_CALM_KPH) {
     const delta = angularDiff(windDeg, bearingToFireDeg);
-    if (delta < WIND_CONE_DEG) windBump = +WIND_BUMP;
-    else if (delta > 180 - WIND_CONE_DEG) windBump = -WIND_BUMP;
+    windBump = WIND_BUMP * Math.cos((delta * Math.PI) / 180);
   }
 
-  // Both dampeners are multiplicative and stack. A stale FIRMS hit will
-  // never carry containment data; a named incident will never be stale.
-  // So in practice exactly one (or neither) applies — but allow both for
-  // future-proofing if the data shapes ever overlap.
-  const staleDampener = isStaleFirms ? STALE_DAMPENER : 1.0;
-  const containmentDampener =
-    containedPct != null && containedPct >= CONTAINED_PCT_THRESHOLD
-      ? CONTAINED_DAMPENER
-      : 1.0;
-  return clamp01((base + windBump) * staleDampener * containmentDampener);
+  // Dampeners are multiplicative and stack. In practice a fire is either a
+  // FIRMS pixel (has age, no containment) or a named incident (has
+  // containment, no age), so exactly one (or neither) is < 1.
+  return clamp01(
+    (base + windBump) *
+      stalenessDampener(firmsAgeHours) *
+      containmentDampener(containedPct),
+  );
 }
 
 /** Aggregate threat across every nearby fire — take the max single-fire
@@ -271,7 +337,7 @@ export function aggregateThreat(args: {
     const t = fireThreatFactor({
       distanceMi: inc.distance_mi,
       acres: inc.acres,
-      isStaleFirms: false,
+      firmsAgeHours: null,
       windDeg,
       bearingToFireDeg: bearingTo(userLoc, { lat: inc.lat, lon: inc.lon }),
       windSpeedKph,
@@ -287,7 +353,7 @@ export function aggregateThreat(args: {
     const t = fireThreatFactor({
       distanceMi: d,
       acres: null,
-      isStaleFirms: isFirmsStale(f.properties.acq_date, f.properties.acq_time, nowMs),
+      firmsAgeHours: firmsAgeHours(f.properties.acq_date, f.properties.acq_time, nowMs),
       windDeg,
       bearingToFireDeg: bearingTo(userLoc, fireLoc),
       windSpeedKph,
@@ -371,7 +437,9 @@ export function personalThreatBucket(args: {
   distanceMi: number;
   acres: number | null;
   containedPct: number | null;
-  isStaleFirms: boolean;
+  /** Age in hours of a FIRMS detection; `null` for named incidents or unknown
+   *  age. Replaces the prior boolean so staleness dampens smoothly. */
+  firmsAgeHours: number | null;
   windDeg: number | null;
   windSpeedKph: number | null;
   bearingToFireDeg: number;
@@ -380,7 +448,7 @@ export function personalThreatBucket(args: {
     fireThreatFactor({
       distanceMi: args.distanceMi,
       acres: args.acres,
-      isStaleFirms: args.isStaleFirms,
+      firmsAgeHours: args.firmsAgeHours,
       windDeg: args.windDeg,
       bearingToFireDeg: args.bearingToFireDeg,
       windSpeedKph: args.windSpeedKph,
@@ -457,7 +525,7 @@ export function findThreatDriver(args: {
     const t = fireThreatFactor({
       distanceMi: inc.distance_mi,
       acres: inc.acres,
-      isStaleFirms: false,
+      firmsAgeHours: null,
       windDeg,
       bearingToFireDeg: bearing,
       windSpeedKph,
@@ -473,11 +541,12 @@ export function findThreatDriver(args: {
     const d = distanceMiles(userLoc, fireLoc);
     if (d > THREAT_RADIUS_MI) continue;
     const bearing = bearingTo(userLoc, fireLoc);
-    const isStale = isFirmsStale(f.properties.acq_date, f.properties.acq_time, nowMs);
+    const ageHr = firmsAgeHours(f.properties.acq_date, f.properties.acq_time, nowMs);
+    const isStale = ageHr != null && ageHr > STALE_FIRMS_HOURS;
     const t = fireThreatFactor({
       distanceMi: d,
       acres: null,
-      isStaleFirms: isStale,
+      firmsAgeHours: ageHr,
       windDeg,
       bearingToFireDeg: bearing,
       windSpeedKph,
