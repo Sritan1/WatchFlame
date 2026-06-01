@@ -171,21 +171,24 @@ The composite logic lives in [`web/lib/composite-risk.ts`](web/lib/composite-ris
 
 ### Validation
 
-The V4 algorithm is hindcast against a stratified 500-fire sample from the USDA Fire Program Analysis Fire-Occurrence Database (FPA-FOD, 1992–2015), with real day-of-fire weather pulled from the Open-Meteo Archive and real KBDI computed per fire from a 365-day precipitation + temperature window.
+The V4 algorithm is hindcast against a stratified 500-fire sample from the USDA Fire Program Analysis Fire-Occurrence Database (FPA-FOD, 1992–2015), with real day-of-fire weather pulled from the Open-Meteo Archive and real KBDI computed per fire from a 365-day precipitation + temperature window. The sample is frozen to `data/hindcast_features.csv`, so the whole pipeline — fitting, benchmarking, chart regen — runs offline and reproducibly.
 
-![V4 algorithm validated against 500 historical fires — Spearman 0.23, non-overlapping 95% CIs between smallest and largest fire-size buckets](docs/v4_validation.png)
+![V4 algorithm validated against ~500 historical fires — Spearman 0.31, monotonic increase in mean score with fire size, non-overlapping 95% CIs between smallest and largest buckets](docs/v4_validation.png)
 
-**Headline results (N=500, 100% real KBDI):**
+**The constants are fit, not hand-picked.** The multiplicative exponents, VPD/wind saturation scales, and floors live in a `RiskParams` dataclass and were fit to maximize Spearman ρ(score, log fire size) on a 70/30 **train split**, with the honest number reported on the **held-out test split** — see [scripts/fit_v4_params.py](scripts/fit_v4_params.py).
 
-- **Mean predicted V4 score discriminates fire size**: 0.433 for >1,000-ac fires vs 0.316 for <1-ac fires, with **non-overlapping 95% confidence intervals** between the two extremes (small upper bound 0.346; very-large lower bound 0.398). The algorithm assigns materially higher risk to days that produced large fires than to days that produced small ones, even though it doesn't know the fire occurred.
-- **Spearman ρ = +0.23** between `log(fire size)` and predicted V4 score across the full sample — modest but real positive correlation. The V4 score is a fire-weather index, not a fire-size predictor; this is the upper bound of what a well-calibrated environmental severity score should achieve on a sample dominated by ignition-cause variance.
-- **Sample shape**: stratified by FPA-FOD size class (125 fires each from <1 ac / 1-100 ac / 100-1,000 ac / >1,000 ac), deterministic `seed=7`. Reproduce via [scripts/validate_v4_chart.py](scripts/validate_v4_chart.py).
+**Headline results (N=498, 100% real KBDI):**
 
-**Honest read of the middle buckets**: the 1-100 ac bucket (mean 0.276) sits *slightly below* the <1 ac bucket (mean 0.316), breaking strict monotonicity. The most likely explanation is the 1-100 ac range being dominated by human-caused fires (debris burning, equipment ignitions) that happen on otherwise-mild weather days. The two extreme buckets are cleanly separated, which is the load-bearing claim for a fire-weather index. Sampling 125 fires per bucket isn't enormous; the middle buckets carry visible noise.
+- **Spearman ρ = +0.32 on the held-out test split** (+0.31 across the full sample), up from +0.26 under the original hand-picked constants. Modest but real — the V4 score is a fire-weather index, not a fire-size predictor; on a sample this size, ignition-cause variance dominates fire size.
+- **Beats published operational indices on the same fires**: fitted V4 (test ρ +0.32) edges out the Hot-Dry-Windy Index (+0.30, Srock et al. 2018) and the Fosberg FFWI (+0.28) — and unlike either raw index, V4 carries the per-state calibration layer on top.
+- **Mean predicted score increases monotonically with fire size**: 0.265 (<1 ac) → 0.274 (1-100 ac) → 0.329 (100-1,000 ac) → 0.386 (>1,000 ac), with **non-overlapping 95% confidence intervals between the two extremes** (small upper bound 0.287; very-large lower bound 0.361). The algorithm assigns materially higher fire-weather severity to days that produced large fires than to days that produced small ones — without knowing a fire occurred.
+- **Sample shape**: stratified by FPA-FOD size class (125 fires each from <1 / 1-100 / 100-1,000 / >1,000 ac), deterministic `seed=7`. Reproduce via [scripts/freeze_hindcast_dataset.py](scripts/freeze_hindcast_dataset.py) → [scripts/validate_v4_chart.py](scripts/validate_v4_chart.py).
 
-**Earlier baselines for context**:
-- [notebooks/validation.ipynb](notebooks/validation.ipynb) — 50,000-fire monthly aggregate using seasonal climate normals (no real per-fire weather). Spearman ρ ≈ 0.18.
-- [notebooks/validation_v2.ipynb](notebooks/validation_v2.ipynb) — same 500-fire sample using real weather but the V2 days-since-rain drought proxy (no KBDI integrator). Spearman ρ ≈ 0.27, very-large mean 0.459. The V4 numbers are slightly different because KBDI replaces the cruder drought proxy — better-grounded science, near-equivalent discrimination.
+![Fitted V4 vs published fire-weather indices on the same held-out test fires — Spearman ρ: V4 fitted +0.32, Hot-Dry-Windy +0.30, Fosberg FFWI +0.28, V4 original constants +0.26](docs/v4_benchmark.png)
+
+**Honest notes**:
+- The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03 — fire **size** is dominated by spread (wind) and evaporative demand (VPD), while drought governs ignition more than final size. The exponent was floored at 0.12 to keep the KBDI integrator load-bearing, at a cost of only +0.006 ρ. The tradeoff is argued in [docs/DECISIONS.md §2](docs/DECISIONS.md).
+- 125 fires per bucket isn't enormous, so the small gap between the two middle buckets is within noise. The two extreme buckets are cleanly separated, which is the load-bearing claim for a fire-weather index.
 
 ### Honest gaps
 

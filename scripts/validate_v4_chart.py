@@ -1,14 +1,15 @@
 """Generate notebooks/figures/v4_validation.png + print current-V4 metrics.
 
-Hindcasts the current V4 fire-weather algorithm (multiplicative VPD × wind ×
-KBDI × season) against a deterministic stratified 500-fire sample from the
-USDA FPA-FOD dataset, using real per-fire weather + KBDI pulled from
-Open-Meteo Archive.
+Hindcasts the production V4 fire-weather algorithm (multiplicative VPD × wind ×
+KBDI × vegetation, with constants fit in scripts/fit_v4_params.py) against the
+frozen 500-fire FPA-FOD hindcast set (data/hindcast_features.csv, built by
+scripts/freeze_hindcast_dataset.py from real per-fire Open-Meteo weather + KBDI).
 
-This is the production fire-weather path: same `compute_risk` the live `/risk`
-endpoint runs. NDVI anomaly substitution isn't applied (historical Sentinel-2
-replay across all sample years isn't tractable); the season multiplier is used
-in its place, matching what live users see when their NDVI fetch fails.
+Reading the frozen CSV makes this fully offline and reproducible — no
+Open-Meteo calls, no sample drift. Scores come from the same `compute_risk`
+the live `/risk` endpoint runs (NDVI substitution isn't applied — historical
+Sentinel-2 replay isn't tractable — so the calendar season multiplier stands
+in, matching the live fallback when an NDVI fetch fails).
 
 Outputs:
   - notebooks/figures/v4_validation.png (chart for README)
@@ -27,17 +28,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from api.core.openmeteo import _load_cache, _save_cache, enrich_iter_kbdi
 from api.core.risk_algorithm import compute_risk
-from api.core.validation import (
-    bucket_fire_size,
-    build_fire_date,
-    doy_to_season,
-    load_fires_sample,
-    stratified_sample,
-)
 
-SEED = 7
+CSV_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
 BUCKETS = ["small", "medium", "large", "very_large"]
 LABELS = {
     "small": "<1 ac",
@@ -49,44 +42,21 @@ COLORS = ["#7ee787", "#fbbf24", "#fb923c", "#ef4444"]
 
 
 def main() -> None:
-    # 1. Stratified 500-fire sample (125 per bucket, deterministic).
-    print("loading FPA-FOD pool…")
-    pool = load_fires_sample(n=80_000, seed=SEED)
-    pool["size_bucket"] = pool["fire_size"].apply(bucket_fire_size)
-    sample = stratified_sample(
-        pool,
-        per_bucket={b: 125 for b in BUCKETS},
-        seed=SEED,
-    )
-    sample["fire_date"] = sample.apply(build_fire_date, axis=1)
-    sample["season"] = sample["doy"].apply(doy_to_season)
-    print(f"  sampled {len(sample)} fires")
-    print(sample["size_bucket"].value_counts().to_string())
-
-    # 2. Enrich with real per-fire weather + KBDI. Uses 365-day windows so
-    #    the KBDI integrator has enough warmup. Pulls from the local cache
-    #    first; only hits Open-Meteo for misses.
-    print("\nenriching with weather + KBDI (cache-first)…")
-    cache = _load_cache()
-    cache_size_before = len(cache)
-    rows = sample.to_dict(orient="records")
-
-    def progress(n: int) -> None:
-        print(f"  enriched {n}/{len(rows)}")
-
-    enriched = enrich_iter_kbdi(rows, cache=cache, on_progress=progress)
-    _save_cache(cache)
-    print(f"  cache: {cache_size_before:,} -> {len(cache):,} entries")
-
-    ew = pd.DataFrame(enriched).dropna(
+    # 1. Load the frozen feature set (offline; no API, no sample drift).
+    if not CSV_PATH.exists():
+        raise SystemExit(
+            f"{CSV_PATH} not found — run scripts/freeze_hindcast_dataset.py first."
+        )
+    ew = pd.read_csv(CSV_PATH).dropna(
         subset=["temperature_c", "humidity_pct", "wind_kph", "days_since_rain"]
     )
-    n_with_kbdi = ew["kbdi"].notna().sum()
-    print(f"  weather-complete: {len(ew)}/{len(rows)}; with KBDI: {n_with_kbdi}")
+    n_with_kbdi = int(ew["kbdi"].notna().sum())
+    print(f"loaded {len(ew)} fires from {CSV_PATH.name}; with real KBDI: {n_with_kbdi}")
+    print(ew["size_bucket"].value_counts().reindex(BUCKETS).to_string())
 
-    # 3. Run current V4 compute_risk. Use real KBDI where available; fall
-    #    back to days_since_rain otherwise (this IS the live behavior when
-    #    Open-Meteo Archive fails — the algorithm's documented fallback).
+    # 2. Score with the production V4 path (fitted constants via DEFAULT_PARAMS).
+    #    Real KBDI where available; days_since_rain fallback otherwise — the
+    #    documented live behavior when Open-Meteo Archive is unavailable.
     def per_row_score(r: pd.Series) -> float:
         kbdi_val = r["kbdi"] if pd.notna(r["kbdi"]) else None
         out = compute_risk(
