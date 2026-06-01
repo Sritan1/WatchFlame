@@ -6,6 +6,7 @@
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
+import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 
 export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { ae } = useAesthetic();
@@ -15,7 +16,9 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         The risk score is the <strong style={{ color: ae.text }}>fire-weather</strong> half of
         the picture — a rule-based, weighted index of the local environment. No machine learning.
         Three meteorological factors combine multiplicatively, then a vegetation signal scales
-        the result. Reproducible from the same public data the National Weather Service uses.
+        the result. The weights below were <strong style={{ color: ae.text }}>fit against ~500
+        historical fires</strong>, not hand-picked. Reproducible from the same public data the
+        National Weather Service uses.
       </p>
       <p style={{ ...textBody(ae), marginTop: 10 }}>
         On the <strong style={{ color: ae.text }}>Status</strong> page this score is one of two
@@ -29,20 +32,20 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         <Bullet
           ae={ae}
           color="#FF7A3A"
-          k="Vapor Pressure Deficit · 50% weight"
+          k={`Vapor Pressure Deficit · ${V4_WEIGHT_PCT.vpd}% weight`}
           v="Combines temperature and humidity into a single measure of how aggressively the air pulls moisture from fuels. Hot + dry = high VPD = primed to burn."
         />
         <Bullet
           ae={ae}
           color="#4FA8FF"
-          k="Wind · 30% weight"
-          v="Sustained 10-minute average wind speed. Faster wind drives spread and makes containment harder. Capped at a 30 mph plateau."
+          k={`Wind · ${V4_WEIGHT_PCT.wind}% weight`}
+          v="Sustained 10-minute average wind speed. Faster wind drives spread and makes containment harder. Capped at a ~32 mph plateau. The fit gives wind nearly as much weight as VPD — fire size is spread-driven."
         />
         <Bullet
           ae={ae}
           color="#E8B339"
-          k="Drought (KBDI) · 20% weight"
-          v="Keetch-Byram Drought Index, 0–800. Tracks soil-moisture deficit. Higher values mean fuels stay drier between rain events."
+          k={`Drought (KBDI) · ${V4_WEIGHT_PCT.drought}% weight`}
+          v="Keetch-Byram Drought Index, 0–800. Tracks soil-moisture deficit. Higher values mean fuels stay drier between rain events. The lower weight reflects that drought governs ignition more than final fire size."
         />
       </Section>
 

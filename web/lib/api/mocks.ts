@@ -85,9 +85,9 @@ const MOCK_FIRES: FireCollection = {
   })),
 };
 
-// temp=27 + humidity=42 + wind=14 + season=spring + drought=7d
-// yields risk score ~0.48 → MODERATE, matching the reference "Smoke Advisory"
-// hero. Tweak inputs if you want a different default state for screenshots.
+// temp=27 + humidity=42 + wind=14 + season=spring + drought=7d yields a
+// mid-range fire-weather score → MODERATE-ish, matching the reference
+// "Smoke Advisory" hero. Tweak inputs for a different default screenshot state.
 const MOCK_WEATHER: WeatherResponse = {
   temperature: 27,
   humidity: 42,
@@ -251,15 +251,17 @@ function syntheticNdviAnomaly(lat: number, lon: number): number {
   return -0.02;
 }
 
-// V4 calibration constants — mirror api/core/risk_algorithm.py.
-const VPD_SCALE_HPA = 40.0;
-const WIND_SCALE_KPH = 40.0;
+// V4 calibration constants — mirror api/core/risk_algorithm.py RiskParams
+// (DEFAULT_PARAMS), fit against a 500-fire FPA-FOD hindcast
+// (scripts/fit_v4_params.py). Keep in sync with the backend if re-fit.
+const VPD_SCALE_HPA = 40.32;
+const WIND_SCALE_KPH = 52.31;
 const DROUGHT_TAU_DAYS = 15.0;
-const WIND_FLOOR = 0.2;
-const DROUGHT_FLOOR = 0.1;
-const EXP_VPD = 0.5;
-const EXP_WIND = 0.3;
-const EXP_DROUGHT = 0.2;
+const WIND_FLOOR = 0.0458;
+const DROUGHT_FLOOR = 0.2786;
+const EXP_VPD = 0.4534;
+const EXP_WIND = 0.4262;
+const EXP_DROUGHT = 0.1204;
 
 const SEASON_MULT: Record<RiskRequest['season'], number> = {
   winter: 0.4,
@@ -272,23 +274,23 @@ const SEASON_MULT: Record<RiskRequest['season'], number> = {
  *  api/data/regional_thresholds.json (real backend returns exact percentile
  *  cutoffs from FPA-FOD fitting). These are demo-ballpark only. */
 const REGIONAL_THRESHOLDS: Record<string, NonNullable<RiskResponse['regional_thresholds']>> = {
-  CA: { low: 0.30, moderate: 0.39, high: 0.52, extreme: 0.68, score_max: 0.82 },
-  FL: { low: 0.18, moderate: 0.25, high: 0.34, extreme: 0.45, score_max: 0.62 },
-  AZ: { low: 0.34, moderate: 0.44, high: 0.55, extreme: 0.70, score_max: 0.85 },
-  CO: { low: 0.26, moderate: 0.34, high: 0.46, extreme: 0.60, score_max: 0.76 },
-  NM: { low: 0.32, moderate: 0.42, high: 0.54, extreme: 0.68, score_max: 0.82 },
-  NV: { low: 0.33, moderate: 0.43, high: 0.55, extreme: 0.69, score_max: 0.84 },
-  MT: { low: 0.24, moderate: 0.32, high: 0.43, extreme: 0.57, score_max: 0.72 },
-  ID: { low: 0.25, moderate: 0.33, high: 0.45, extreme: 0.59, score_max: 0.74 },
-  WY: { low: 0.27, moderate: 0.35, high: 0.46, extreme: 0.60, score_max: 0.75 },
-  UT: { low: 0.29, moderate: 0.38, high: 0.50, extreme: 0.64, score_max: 0.79 },
-  OK: { low: 0.22, moderate: 0.29, high: 0.40, extreme: 0.53, score_max: 0.68 },
-  TX: { low: 0.23, moderate: 0.31, high: 0.42, extreme: 0.55, score_max: 0.70 },
-  GA: { low: 0.20, moderate: 0.27, high: 0.36, extreme: 0.48, score_max: 0.64 },
-  NC: { low: 0.21, moderate: 0.28, high: 0.38, extreme: 0.50, score_max: 0.65 },
-  SC: { low: 0.22, moderate: 0.29, high: 0.39, extreme: 0.51, score_max: 0.67 },
-  OR: { low: 0.24, moderate: 0.32, high: 0.43, extreme: 0.57, score_max: 0.72 },
-  WA: { low: 0.23, moderate: 0.31, high: 0.42, extreme: 0.55, score_max: 0.70 },
+  CA: { low: 0.25, moderate: 0.29, high: 0.33, extreme: 0.39, score_max: 0.45 },
+  FL: { low: 0.20, moderate: 0.25, high: 0.30, extreme: 0.32, score_max: 0.37 },
+  AZ: { low: 0.31, moderate: 0.37, high: 0.41, extreme: 0.45, score_max: 0.49 },
+  CO: { low: 0.29, moderate: 0.34, high: 0.42, extreme: 0.49, score_max: 0.52 },
+  NM: { low: 0.28, moderate: 0.39, high: 0.50, extreme: 0.57, score_max: 0.65 },
+  NV: { low: 0.31, moderate: 0.37, high: 0.42, extreme: 0.45, score_max: 0.50 },
+  MT: { low: 0.22, moderate: 0.30, high: 0.37, extreme: 0.49, score_max: 0.52 },
+  ID: { low: 0.24, moderate: 0.33, high: 0.39, extreme: 0.46, score_max: 0.49 },
+  WY: { low: 0.27, moderate: 0.37, high: 0.48, extreme: 0.52, score_max: 0.63 },
+  UT: { low: 0.32, moderate: 0.38, high: 0.44, extreme: 0.49, score_max: 0.58 },
+  OK: { low: 0.23, moderate: 0.29, high: 0.37, extreme: 0.40, score_max: 0.48 },
+  TX: { low: 0.23, moderate: 0.29, high: 0.37, extreme: 0.44, score_max: 0.54 },
+  GA: { low: 0.18, moderate: 0.22, high: 0.28, extreme: 0.31, score_max: 0.41 },
+  NC: { low: 0.19, moderate: 0.23, high: 0.29, extreme: 0.31, score_max: 0.32 },
+  SC: { low: 0.20, moderate: 0.24, high: 0.28, extreme: 0.34, score_max: 0.37 },
+  OR: { low: 0.24, moderate: 0.28, high: 0.34, extreme: 0.38, score_max: 0.41 },
+  WA: { low: 0.21, moderate: 0.29, high: 0.35, extreme: 0.41, score_max: 0.59 },
 };
 
 function regionalBucket(
@@ -374,20 +376,20 @@ function computeMockRisk(req: RiskRequest): RiskResponse {
 // a backend. Trimmed to the four fields the UI actually reads.
 const MOCK_CALIBRATION: CalibrationInfo = {
   version: 'v4',
-  fitted_at: '2026-05-17',
+  fitted_at: '2026-05-31',
   algorithm_version: 'v4-mock',
   states_calibrated: ['AZ', 'CA', 'CO', 'FL', 'GA', 'NC', 'NV', 'WA'],
   global_thresholds: { low: 0.3, moderate: 0.6, high: 0.8, extreme: 0.8 },
   states: {
     CA: { n_fires: 100, bbox: [-124, 32, -114, 42], centroid: [37, -120],
-          thresholds: { low: 0.37, moderate: 0.46, high: 0.50, extreme: 0.51 },
-          score_summary: { min: 0.07, median: 0.37, mean: 0.36, max: 0.57 } },
+          thresholds: { low: 0.25, moderate: 0.29, high: 0.33, extreme: 0.39 },
+          score_summary: { min: 0.06, median: 0.25, mean: 0.25, max: 0.45 } },
     FL: { n_fires: 100, bbox: [-87, 24, -80, 31], centroid: [28, -83],
-          thresholds: { low: 0.27, moderate: 0.33, high: 0.39, extreme: 0.42 },
-          score_summary: { min: 0.10, median: 0.27, mean: 0.28, max: 0.45 } },
+          thresholds: { low: 0.20, moderate: 0.25, high: 0.30, extreme: 0.32 },
+          score_summary: { min: 0.08, median: 0.20, mean: 0.21, max: 0.37 } },
     AZ: { n_fires: 100, bbox: [-115, 31, -109, 37], centroid: [34, -112],
-          thresholds: { low: 0.40, moderate: 0.50, high: 0.55, extreme: 0.59 },
-          score_summary: { min: 0.15, median: 0.40, mean: 0.40, max: 0.62 } },
+          thresholds: { low: 0.31, moderate: 0.37, high: 0.41, extreme: 0.45 },
+          score_summary: { min: 0.13, median: 0.31, mean: 0.30, max: 0.49 } },
   },
 };
 

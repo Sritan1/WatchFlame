@@ -1,39 +1,45 @@
-"""Fire weather index — V2 (multiplicative VPD-based).
+"""Fire weather index — V4 (multiplicative VPD × wind × KBDI × vegetation).
 
-Inputs: temperature (°C), relative humidity (%), wind (km/h), days_since_rain, season.
+Inputs: temperature (°C), relative humidity (%), wind (km/h), days_since_rain,
+season, and optionally KBDI (drought) + NDVI anomaly (vegetation stress).
 Output: a 0–1 fire weather severity score plus a four-bucket danger level.
 
-Compared to V1 (additive 5-factor weighted sum), V2:
+The structure is multiplicative — "hot AND dry AND windy AND drought-stressed":
+any single near-zero factor pulls the whole score down. Modeled on the form of
+the Fosberg Fire Weather Index (Goodrick 2002):
 
-1. **Replaces separate temp + humidity factors with Vapor Pressure Deficit (VPD)** —
-   the quantity used in modern operational fire weather products (NOAA HRRR-Smoke,
-   Hot-Dry-Windy Index, Srock et al. 2018). VPD captures the actual physical driver
-   of fuel drying: how much evaporative pull the air exerts on plant material.
+    raw   = vpd_f^a · wind_f^b · drought_f^c          (a + b + c = 1)
+    score = vegetation_multiplier · raw
 
-   VPD (hPa) = e_s(T) · (1 − RH/100)
-   e_s(T)    = 6.1078 · exp(17.27·T / (T + 237.3))      (Tetens / Magnus form)
+The factors:
 
-2. **Wind as a power law** (U^1.5) instead of a 4-step ladder. Real fire spread
-   scales roughly with wind^1–2 (Rothermel 1972). The power-law form eliminates
-   threshold artifacts where 19 vs 20 kph caused a sudden score jump.
+1. **VPD** — Vapor Pressure Deficit, the evaporative pull the air exerts on
+   fuel (NOAA HRRR-Smoke, Hot-Dry-Windy Index, Srock et al. 2018):
+       VPD (hPa) = e_s(T) · (1 − RH/100)
+       e_s(T)    = 6.1078 · exp(17.27·T / (T + 237.3))      (Tetens / Magnus)
 
-3. **Multiplicative combination** with log-space exponents that sum to 1.0:
-       raw = vpd_factor^0.5 · wind_factor^0.3 · drought_factor^0.2
-   This captures the well-established "hot AND dry AND windy" non-linearity:
-   any single near-zero factor pulls the whole score down. Modeled on the
-   structure of the Fosberg Fire Weather Index (Goodrick 2002).
+2. **Wind** as a power law (U^1.5) — fire spread scales ~wind^1–2 (Rothermel
+   1972). Continuous, so there are no threshold artifacts.
 
-4. **Exponential drought response** matching fine-fuel drying physics. Fine fuels
-   (grass, leaves) approach equilibrium dryness in days, not months — V1's
-   `min(days/60, 1)` saturated far too slowly.
+3. **Drought** — preferentially the Keetch-Byram Drought Index (KBDI) when
+   available (see kbdi.py), the operational USFS drought integrator; falls back
+   to an exponential days-since-rain response for the slider-driven calculator.
 
-5. **Wind and drought have a baseline floor** (0.2 and 0.1 respectively). Fires
-   happen on calm days and after rain — pure multiplication would incorrectly
-   collapse the score to 0. The floor preserves the multiplicative pull-down
-   behavior without erasing risk under any single quiet condition.
+4. **Vegetation multiplier** — the NDVI anomaly factor (ndvi.py) when a live
+   Sentinel-2 read is available, else the calendar season multiplier.
 
-Bucket boundaries (LOW < 0.3, MODERATE < 0.6, HIGH < 0.8, EXTREME ≥ 0.8) are
-unchanged from V1 so danger-level UX stays consistent.
+**Constants are fit, not hand-picked.** The exponents (a, b, c), VPD/wind
+saturation scales, and floors live in `RiskParams` and were fit against a
+500-fire FPA-FOD hindcast to maximize Spearman ρ(score, log fire size) on a
+held-out test split — ρ improved from ~0.26 to ~0.32, edging out raw HDW and
+Fosberg on the same fires. The vegetation/NDVI factor and calendar season
+multipliers are held fixed (the hindcast can't replay historical NDVI, and
+season is a selection proxy, not a weather driver). See
+scripts/fit_v4_params.py and docs/DECISIONS.md.
+
+Raw 0–1 scores are re-bucketed per US state from fire-day score percentiles
+(regional_calibration.py); the global LOW<0.3 / MOD<0.6 / EXT≥0.8 cutoffs are
+only the fallback for uncalibrated locations.
 """
 
 from dataclasses import dataclass
@@ -57,22 +63,50 @@ _SEASON_MULT: dict[Season, float] = {
     "fall":   0.9,
 }
 
-# Calibration constants. Defensible defaults; tune against regional fire
-# history if shipping to specific geographies.
-_VPD_SCALE_HPA = 40.0       # 40 hPa ≈ extreme (e.g., 35°C/15% RH ≈ 48 hPa, saturates)
-_WIND_SCALE_KPH = 40.0      # 40 kph saturates the wind contribution
-_DROUGHT_TAU_DAYS = 15.0    # fine-fuel drying e-folding time
+# Fine-fuel drying e-folding time for the days_since_rain fallback drought
+# path. Held fixed (not fit): the hindcast fits against real KBDI, so this
+# constant is barely exercised. See scripts/fit_v4_params.py.
+_DROUGHT_TAU_DAYS = 15.0
 
-# Multiplicative exponents (log-space weights). Must sum to 1.0 to keep
-# the raw score in [0, 1] when each factor is in [0, 1].
-_EXP_VPD = 0.5
-_EXP_WIND = 0.3
-_EXP_DROUGHT = 0.2
 
-# Lower bounds prevent score collapse on a calm or post-rain day —
-# fires still happen under those conditions.
-_WIND_FLOOR = 0.2
-_DROUGHT_FLOOR = 0.1
+@dataclass(frozen=True)
+class RiskParams:
+    """Tunable calibration constants for the V4 fire-weather index.
+
+    Defaults are the values fit against a 500-fire FPA-FOD hindcast
+    (Spearman ρ on a held-out test split — see scripts/fit_v4_params.py).
+    Pulling them into a dataclass lets the fitting harness sweep candidates
+    while every production caller gets the fitted defaults via DEFAULT_PARAMS.
+
+    Only the weather-driver constants live here. The vegetation/NDVI factor
+    and the calendar season multipliers are held fixed (the hindcast can't
+    exercise them — no historical Sentinel-2 replay, and season is a
+    selection proxy not a weather driver), so they stay as module constants.
+
+    The three exponents are log-space weights and should sum to 1.0 to keep
+    the raw score in [0, 1] when each factor is in [0, 1].
+    """
+
+    # Multiplicative exponents (sum to 1.0). Wind and VPD carry the most
+    # weight — the fit found fire SIZE is dominated by spread (wind) and
+    # evaporative demand (VPD); drought was floored at 0.12 to keep KBDI
+    # load-bearing (the unconstrained fit drove it to ~0.03 for only +0.006 ρ).
+    exp_vpd: float = 0.4534
+    exp_wind: float = 0.4262
+    exp_drought: float = 0.1204
+    # Saturation scales.
+    vpd_scale_hpa: float = 40.32    # ~35°C/15% RH ≈ 48 hPa saturates
+    wind_scale_kph: float = 52.31   # wind saturates later than V4's original 40
+    # Lower bounds — prevent score collapse on a calm or post-rain day
+    # (fires still happen under those conditions).
+    wind_floor: float = 0.0458
+    drought_floor: float = 0.2786
+
+
+# The production parameter set. Every caller that doesn't pass `params`
+# explicitly scores with these — so adopting a new fit is a one-line change
+# to these defaults.
+DEFAULT_PARAMS = RiskParams()
 
 
 @dataclass
@@ -97,20 +131,22 @@ def vapor_pressure_deficit_hpa(t_c: float, rh_pct: float) -> float:
     return saturation_vapor_pressure_hpa(t_c) * (1.0 - rh / 100.0)
 
 
-def _vpd_factor(t_c: float, rh_pct: float) -> float:
-    return _clamp(vapor_pressure_deficit_hpa(t_c, rh_pct) / _VPD_SCALE_HPA)
+def _vpd_factor(t_c: float, rh_pct: float, params: RiskParams = DEFAULT_PARAMS) -> float:
+    return _clamp(vapor_pressure_deficit_hpa(t_c, rh_pct) / params.vpd_scale_hpa)
 
 
-def _wind_factor(wind_kph: float) -> float:
+def _wind_factor(wind_kph: float, params: RiskParams = DEFAULT_PARAMS) -> float:
     u = max(0.0, wind_kph)
-    base = (u / _WIND_SCALE_KPH) ** 1.5
-    return _clamp(_WIND_FLOOR + (1.0 - _WIND_FLOOR) * base, _WIND_FLOOR, 1.0)
+    base = (u / params.wind_scale_kph) ** 1.5
+    floor = params.wind_floor
+    return _clamp(floor + (1.0 - floor) * base, floor, 1.0)
 
 
-def _drought_factor(days_since_rain: int) -> float:
+def _drought_factor(days_since_rain: int, params: RiskParams = DEFAULT_PARAMS) -> float:
     d = max(0, days_since_rain)
     base = 1.0 - exp(-d / _DROUGHT_TAU_DAYS)
-    return _clamp(_DROUGHT_FLOOR + (1.0 - _DROUGHT_FLOOR) * base, _DROUGHT_FLOOR, 1.0)
+    floor = params.drought_floor
+    return _clamp(floor + (1.0 - floor) * base, floor, 1.0)
 
 
 def _season_multiplier(season: Season) -> float:
@@ -135,6 +171,7 @@ def compute_risk(
     season: Season,
     kbdi: float | None = None,
     ndvi_anomaly: float | None = None,
+    params: RiskParams = DEFAULT_PARAMS,
 ) -> RiskResult:
     """Compute the V2 fire weather index.
 
@@ -153,12 +190,12 @@ def compute_risk(
     to `season_mult(season)`. The dict returned under "season" still holds
     whatever multiplier was used, so callers don't need to branch.
     """
-    vpd_f = _vpd_factor(temp_c, humidity_pct)
-    wind_f = _wind_factor(wind_kph)
+    vpd_f = _vpd_factor(temp_c, humidity_pct, params)
+    wind_f = _wind_factor(wind_kph, params)
     if kbdi is not None:
-        drought_f = kbdi_drought_factor(kbdi, floor=_DROUGHT_FLOOR)
+        drought_f = kbdi_drought_factor(kbdi, floor=params.drought_floor)
     else:
-        drought_f = _drought_factor(days_since_rain)
+        drought_f = _drought_factor(days_since_rain, params)
     # NDVI takes precedence over calendar season when available — it's a
     # measured signal, not a guess. The slot in `factors` is still named
     # "season" because that's its role in the formula (the seasonal/
@@ -169,7 +206,7 @@ def compute_risk(
     else:
         seasonal_m = _season_multiplier(season)
 
-    raw = (vpd_f ** _EXP_VPD) * (wind_f ** _EXP_WIND) * (drought_f ** _EXP_DROUGHT)
+    raw = (vpd_f ** params.exp_vpd) * (wind_f ** params.exp_wind) * (drought_f ** params.exp_drought)
     score = _clamp(seasonal_m * raw)
 
     factors = {
