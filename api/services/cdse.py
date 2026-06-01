@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from datetime import date
 from typing import Any
 
 import httpx
@@ -337,12 +338,18 @@ async def fetch_ndvi_climatology(
         end_year = year if month < 12 else year + 1
         from_iso = f"{year}-{month:02d}-01T00:00:00Z"
         to_iso = f"{end_year}-{end_month:02d}-01T00:00:00Z"
+        # The aggregation interval MUST fit within the query window, or the
+        # Statistical API returns zero intervals (no data). Months are 28-31
+        # days, so a hardcoded 31 silently drops every 30-day month (Apr/Jun/
+        # Sep/Nov) and February — manifesting as "vegetation unavailable" for
+        # the whole month. Match the interval to the month's actual length.
+        window_days = (date(end_year, end_month, 1) - date(year, month, 1)).days
         payload = _build_payload(
             lat=lat,
             lon=lon,
             from_iso=from_iso,
             to_iso=to_iso,
-            aggregation_days=31,
+            aggregation_days=window_days,
             max_cloud=60,
         )
         js = await _post_statistics(payload)
