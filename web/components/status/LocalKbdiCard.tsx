@@ -185,20 +185,22 @@ export function LocalKbdiCard({
                 background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
-            <p
+            {/* Caption skeleton — mirrors the two-line description footprint
+             *  (incl. its top divider) so the text doesn't flash in fully
+             *  while the number + bar are still loading. */}
+            <div
               style={{
                 margin: '20px 0 0',
                 paddingTop: 16,
                 borderTop: `0.5px solid ${ae.line}`,
-                fontFamily: ae.fontBody,
-                fontSize: 13,
-                lineHeight: 1.5,
-                color: ae.textDim,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 7,
               }}
             >
-              Keetch-Byram Drought Index — fitted from a year of local weather. Replaces the
-              days-since-rain proxy when your location is known.
-            </p>
+              <div style={{ height: 10, width: '100%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 10, width: '62%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
+            </div>
           </>
         ) : (
           <>

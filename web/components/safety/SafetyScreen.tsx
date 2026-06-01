@@ -18,7 +18,7 @@ import {
   bearingTo,
   bucketOf,
   distanceMiles,
-  isFirmsStale,
+  firmsAgeHours,
   normalizeWeather,
   personalThreatBucket,
 } from '@/lib/composite-risk';
@@ -106,17 +106,17 @@ export function SafetyScreen() {
     ? normalizeBearing(bearingTo(loc.coords, closestCoords))
     : 0;
 
-  // Stale-FIRMS dampener — only applies when the winning fire is a FIRMS
-  // pixel (no named incident) and its acq_date is older than the shared
-  // STALE_FIRMS_HOURS threshold. Reuses the helper from composite-risk so
-  // the threshold lives in one place.
-  const closestIsStaleFirms =
+  // FIRMS detection age (hours) — drives the smooth staleness dampener inside
+  // personalThreatBucket. Only meaningful when the winning fire is a FIRMS
+  // pixel (no named incident); null for incidents (no staleness damp). Reuses
+  // the shared helper so the age math lives in one place.
+  const closestFirmsAgeHours =
     !closestIsIncident && nearestSatHit
-      ? isFirmsStale(
+      ? firmsAgeHours(
           nearestSatHit.feature.properties.acq_date,
           nearestSatHit.feature.properties.acq_time,
         )
-      : false;
+      : null;
 
   // Severity for the closest detection. Uses the SHARED personalThreatBucket
   // so the value matches Status's Active Fire Threat and Fire Detail's
@@ -130,7 +130,7 @@ export function SafetyScreen() {
           acres: closestIsIncident && nearestIncident ? nearestIncident.acres : null,
           containedPct:
             closestIsIncident && nearestIncident ? nearestIncident.contained_pct : null,
-          isStaleFirms: closestIsStaleFirms,
+          firmsAgeHours: closestFirmsAgeHours,
           windDeg: weather.data?.wind_deg ?? null,
           windSpeedKph: weather.data?.wind_speed ?? null,
           bearingToFireDeg: nearestBearing,
