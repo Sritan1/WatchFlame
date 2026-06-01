@@ -18,19 +18,23 @@ For the full mathematical formulation see the [risk algorithm section in the REA
 
 ---
 
-## 2. Multiplicative VPD × wind × drought
+## 2. Multiplicative VPD × wind × drought, with fitted exponents
 
 **Decision.** The fire-weather raw score is the multiplicative product of three factors with log-space exponents that sum to 1.0:
 
 ```
-raw = vpd_factor^0.5 × wind_factor^0.3 × drought_factor^0.2
+raw = vpd_factor^0.45 × wind_factor^0.43 × drought_factor^0.12
 ```
 
-See [api/core/risk_algorithm.py](../api/core/risk_algorithm.py).
+The exponents, the VPD/wind saturation scales, and the floors are **fit, not hand-picked** — they live in a `RiskParams` dataclass in [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) and were fit against a 500-fire FPA-FOD hindcast ([scripts/fit_v4_params.py](../scripts/fit_v4_params.py)).
 
-**Why.** Multiplicative combination captures the well-established "hot AND dry AND windy" non-linearity — any single mild input pulls the whole score down. This mirrors the structure of the Fosberg Fire Weather Index (Goodrick 2002), the Hot-Dry-Windy Index (Srock et al. 2018), and the Australian McArthur FFDI. Linear/weighted-sum combination (V1's original approach) effectively treats high wind as a substitute for high VPD, which the physics doesn't support — a high wind without dry air doesn't make a wet day combustible.
+**Why multiplicative.** Multiplicative combination captures the well-established "hot AND dry AND windy" non-linearity — any single mild input pulls the whole score down. This mirrors the structure of the Fosberg Fire Weather Index (Goodrick 2002), the Hot-Dry-Windy Index (Srock et al. 2018), and the Australian McArthur FFDI. Linear/weighted-sum combination (V1's original approach) effectively treats high wind as a substitute for high VPD, which the physics doesn't support — a high wind without dry air doesn't make a wet day combustible.
 
-**Cost.** Multiplicative formulas collapse to zero on any one calm/wet input. Mitigated with empirical floors on wind (0.2) and drought (0.1) — fires still happen on calm days and after rain, and the floors prevent the formula from declaring otherwise.
+**Why fit.** The original exponents (0.5 / 0.3 / 0.2) were "defensible defaults." Fitting them against real fire outcomes turns a guess into a measurement: a coordinate search maximizing Spearman ρ(score, log fire size) on a 70/30 train split lifts the held-out **test ρ from +0.26 to +0.32**, which **edges out the raw Hot-Dry-Windy Index (+0.30) and Fosberg FFWI (+0.28) on the same fires**. Only the weather-driver constants are fit; the NDVI/vegetation factor and the calendar season multipliers are held fixed (the hindcast can't replay historical Sentinel-2, and season is a sampling proxy, not a weather driver).
+
+**The honest part — drought was floored on purpose.** The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03, nearly eliminating it. That's a real empirical signal: fire **size** is dominated by spread (wind) and evaporative demand (VPD), whereas drought governs *ignition* more than final size, and the hindcast correlates against size. But a ~0.03 drought weight would make the KBDI integrator (a genuine engineering investment) cosmetic and shift the index to effectively VPD × wind. So the exponents are constrained to a 0.12 floor, keeping all three factors load-bearing — at a cost of only **+0.006 ρ** versus the degenerate solution. The fit landing exactly on that floor is the tell that the data wanted it lower; this is a deliberate science-vs-overfit tradeoff, not an accident.
+
+**Cost.** Multiplicative formulas collapse to zero on any one calm/wet input. Mitigated with fitted floors on wind (~0.05) and drought (~0.28) — fires still happen on calm days and after rain, and the floors prevent the formula from declaring otherwise. Re-fitting requires re-running the per-state calibration (§3), since its percentile cutoffs are derived from the score distribution the constants produce.
 
 ---
 
@@ -65,7 +69,7 @@ See [api/core/risk_algorithm.py](../api/core/risk_algorithm.py).
 1. **Explainability.** Any user can trace a score back to its inputs through the formula. The Risk Calculator screen literally lets them move the inputs and watch the output change.
 2. **No training drift.** The formula is stable across years. A model trained on 2015 fire data would already be stale.
 3. **No labeling problem.** Fire occurrence is sparse, confounded by ignition source (lightning vs human), and the "would there have been a fire if conditions were like X" counterfactual is unanswerable from the data.
-4. **Fast iteration.** Tunables are named constants, not retrained models. Changing the V4 wind exponent from 0.3 to 0.35 is a one-line edit; the equivalent in a learned model requires re-training, validation, and deployment.
+4. **Fast iteration.** Tunables are named fields on a `RiskParams` dataclass, not retrained models. Re-fitting them (§2) is a coordinate search over a frozen CSV that runs in seconds offline; the equivalent in a learned model requires re-training, validation, and deployment.
 5. **Deployment simplicity.** No model serving, no versioning, no inference latency. Stateless functions in a Python module.
 
 NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for variants of these reasons.
