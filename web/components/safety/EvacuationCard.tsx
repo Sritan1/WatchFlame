@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { ShelterInfoModal } from '@/components/safety/ShelterInfoModal';
+import { OtherOpenShelters, ShelterDetailTile } from '@/components/safety/ShelterStatus';
 import { Button } from '@/components/ui/Button';
 import { CompassRose, cardinal8, cardinalOf } from '@/components/ui/CompassRose';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
@@ -52,7 +53,7 @@ export function EvacuationCard({
   riskLevel,
   mode,
   onModeChange,
-  nearestShelter,
+  shelters,
   fireLoading,
   sheltersLoading,
 }: {
@@ -64,7 +65,10 @@ export function EvacuationCard({
   riskLevel: RiskLevel;
   mode: EvacMode;
   onModeChange: (m: EvacMode) => void;
-  nearestShelter: Shelter | null;
+  /** Nearby shelters, sorted activated-first then by distance (from
+   *  /shelters). The first is the nearest target; activated ones get the
+   *  confirmed/live treatment. */
+  shelters: Shelter[] | undefined;
   /** Fires/incidents query is in flight — show skeletons in 'away' mode. */
   fireLoading?: boolean;
   /** Shelters query is in flight — show skeletons in 'shelter' mode. */
@@ -75,6 +79,14 @@ export function EvacuationCard({
   const r = getRisk(riskLevel, accent);
   const [shelterInfoOpen, setShelterInfoOpen] = useState(false);
 
+  // Nearest shelter is the compass target; activated shelters sort first, so
+  // when any are open the target is the nearest open one. `otherOpen` powers a
+  // compact list of the remaining open shelters beneath the detail tile.
+  const nearestShelter = shelters?.[0] ?? null;
+  const otherOpen = (shelters ?? []).filter(
+    (s) => s.activated && s.id !== nearestShelter?.id,
+  );
+
   // Body (compass + headline + subtext + CTA) shows skeletons when the data
   // for the current mode is still in flight. Chrome (eyebrow + toggle +
   // caveat) stays interactive so the user can flip modes during the load.
@@ -82,9 +94,15 @@ export function EvacuationCard({
   // null but we're NOT loading — the existing fallback (silently using the
   // away-from-fire compass/heading in shelter mode) takes over.
   const isBodyLoading =
-    mode === 'shelter'
-      ? sheltersLoading ?? false
-      : (fireLoading ?? false) || fireBearingDeg == null || fireDistanceMi == null;
+    mode === 'shelter' ? sheltersLoading ?? false : fireLoading ?? false;
+
+  // "Away" mode with no nearby fire (the query resolved, nothing in range) —
+  // show a calm all-clear state instead of a misleading compass or a perpetual
+  // skeleton. The card still renders so the Nearest Shelter mode stays reachable.
+  const noFire =
+    mode === 'away' &&
+    !(fireLoading ?? false) &&
+    (fireBearingDeg == null || fireDistanceMi == null);
 
   // Opposite of fire bearing — where to run to. Default to 0 when fire data
   // hasn't arrived; the skeleton hides this anyway.
@@ -111,7 +129,7 @@ export function EvacuationCard({
     : cardinal8(escapeBearing);
 
   const subtext = mode === 'shelter' && nearestShelter
-    ? `${nearestShelter.activated ? 'OPEN · ' : ''}${nearestShelter.name} · ${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel}`
+    ? `${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel} away`
     : fireDistanceMi != null
       ? `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
       : '';
@@ -226,6 +244,12 @@ export function EvacuationCard({
                 <Skeleton width={'80%'} height={11} rounded="sm" />
               </div>
             </>
+          ) : noFire ? (
+            <NoFirePanel
+              ae={ae}
+              hasShelters={nearestShelter != null}
+              onFindShelter={() => onModeChange('shelter')}
+            />
           ) : (
             <>
               <CompassRose
@@ -265,6 +289,15 @@ export function EvacuationCard({
           )}
         </div>
 
+        {/* Shelter detail — confirmed/live vs potential, integrated into the
+            shelter flow. Only in shelter mode once shelter data has resolved. */}
+        {mode === 'shelter' && !isBodyLoading && nearestShelter ? (
+          <>
+            <ShelterDetailTile shelter={nearestShelter} ae={ae} />
+            <OtherOpenShelters shelters={otherOpen} origin={origin} ae={ae} />
+          </>
+        ) : null}
+
         {/* Caveat */}
         <div
           style={{
@@ -284,30 +317,134 @@ export function EvacuationCard({
           >
             {mode === 'shelter'
               ? 'Distances are straight-line. Google Maps figures out actual roads. Always follow official guidance.'
-              : `Suggestion only — targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`}
+              : noFire
+                ? 'No evacuation route needed right now — conditions can change, so check back if a fire develops nearby.'
+                : `Suggestion only — targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`}
           </p>
         </div>
 
-        {/* CTA — skeleton while loading; disabled to prevent a misrouted click. */}
-        <div style={{ marginTop: 18 }}>
-          {isBodyLoading ? (
-            <Skeleton width={'100%'} height={44} rounded="md" />
-          ) : (
-            <Button
-              variant="primary"
-              icon="external"
-              color={r.color}
-              full
-              onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
-            >
-              Get Directions
-            </Button>
-          )}
-        </div>
+        {/* CTA — skeleton while loading; hidden in the all-clear (no-fire)
+            state since there's no destination to route to. */}
+        {!noFire ? (
+          <div style={{ marginTop: 18 }}>
+            {isBodyLoading ? (
+              <Skeleton width={'100%'} height={44} rounded="md" />
+            ) : (
+              <Button
+                variant="primary"
+                icon="external"
+                color={r.color}
+                full
+                onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
+              >
+                Get Directions
+              </Button>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <ShelterInfoModal open={shelterInfoOpen} onClose={() => setShelterInfoOpen(false)} />
     </div>
+  );
+}
+
+/** Calm all-clear state for "Away From Fire" when nothing is burning nearby.
+ *  Mirrors the compass + text layout so the card stays visually consistent,
+ *  and offers a path into the shelter view. */
+function NoFirePanel({
+  ae,
+  hasShelters,
+  onFindShelter,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  hasShelters: boolean;
+  onFindShelter: () => void;
+}) {
+  const C = '#3FB68B';
+  const RGB = '63, 182, 139';
+  return (
+    <>
+      <div
+        style={{
+          position: 'relative',
+          width: 130,
+          height: 130,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: `1.5px solid rgba(${RGB}, 0.35)`,
+            boxShadow: `0 0 30px rgba(${RGB}, 0.16), inset 0 0 26px rgba(${RGB}, 0.07)`,
+          }}
+        />
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M5 12.5 L10 17.5 L19 7"
+            stroke={C}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ filter: `drop-shadow(0 0 6px ${C})` }}
+          />
+        </svg>
+      </div>
+      <div>
+        <div
+          style={{
+            fontFamily: ae.fontDisplay,
+            fontSize: 30,
+            fontWeight: ae.titleWeight,
+            letterSpacing: '-0.02em',
+            color: ae.text,
+            lineHeight: 1.05,
+          }}
+        >
+          No fire nearby
+        </div>
+        <div
+          style={{
+            marginTop: 8,
+            fontFamily: ae.fontMono,
+            fontSize: 11.5,
+            color: ae.textDim,
+            letterSpacing: '0.04em',
+            lineHeight: 1.4,
+          }}
+        >
+          You&apos;re not in a current evacuation path.
+        </div>
+        {hasShelters ? (
+          <button
+            type="button"
+            onClick={onFindShelter}
+            style={{
+              marginTop: 12,
+              padding: 0,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: C,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            Find a nearby shelter →
+          </button>
+        ) : null}
+      </div>
+    </>
   );
 }
 

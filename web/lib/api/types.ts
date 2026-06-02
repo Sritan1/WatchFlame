@@ -173,7 +173,10 @@ export interface Shelter {
   pet_friendly?: boolean | null;
   ada_accessible?: boolean | null;
   managing_org?: string | null;
+  // FEMA NSS record timestamps (not our fetch time): updated_at = last status
+  // report (reporting_period, often absent); opened_at = when it opened.
   updated_at?: string | null;
+  opened_at?: string | null;
 }
 
 export interface ActiveDisaster {

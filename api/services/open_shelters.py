@@ -77,7 +77,13 @@ class OpenShelter:
     pet_friendly: bool | None
     ada_accessible: bool | None
     managing_org: str | None
+    # Both timestamps are FEMA NSS record fields (NOT our fetch time):
+    #   updated_at = when NSS last reported this shelter's status (reporting_period)
+    #   opened_at  = when the shelter opened (shelter_open_date)
+    # The UI labels them "Updated"/"Opened" accordingly; reporting_period is
+    # often null in practice, so opened_at is the usual freshness signal.
     updated_at: str | None      # ISO8601 UTC
+    opened_at: str | None       # ISO8601 UTC
 
 
 def _mock_enabled() -> bool:
@@ -195,8 +201,8 @@ def _map_feature(feat: dict[str, Any]) -> OpenShelter | None:
         pet_friendly=_pet_friendly(a.get("pet_accommodations_code")),
         ada_accessible=ada,
         managing_org=(a.get("org_organization_name") or None),
-        updated_at=_epoch_ms_to_iso(a.get("reporting_period"))
-        or _epoch_ms_to_iso(a.get("shelter_open_date")),
+        updated_at=_epoch_ms_to_iso(a.get("reporting_period")),
+        opened_at=_epoch_ms_to_iso(a.get("shelter_open_date")),
     )
 
 
@@ -279,6 +285,7 @@ def _fixtures(lat: float, lon: float) -> list[OpenShelter]:
             ada_accessible=True,
             managing_org="American Red Cross",
             updated_at=ago(12),
+            opened_at=ago(60 * 30),
         ),
         OpenShelter(
             id="nss-1002",
@@ -293,6 +300,7 @@ def _fixtures(lat: float, lon: float) -> list[OpenShelter]:
             ada_accessible=True,
             managing_org="County Emergency Management",
             updated_at=ago(47),
+            opened_at=ago(60 * 54),
         ),
         OpenShelter(
             id="nss-1003",
@@ -307,6 +315,7 @@ def _fixtures(lat: float, lon: float) -> list[OpenShelter]:
             ada_accessible=True,
             managing_org="State Emergency Management",
             updated_at=ago(95),
+            opened_at=None,
         ),
     ]
 
