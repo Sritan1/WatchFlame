@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { AdvisoryRow } from '@/components/safety/AdvisoryRow';
 import { ChecklistCard } from '@/components/safety/ChecklistCard';
 import { EvacuationCard, type EvacMode } from '@/components/safety/EvacuationCard';
+import { OpenSheltersCard } from '@/components/safety/OpenSheltersCard';
 import { FemaBanner } from '@/components/safety/FemaBanner';
 import { cardinal8 } from '@/components/ui/CompassRose';
 import { PageSection } from '@/components/ui/PageSection';
@@ -242,6 +243,13 @@ export function SafetyScreen() {
               sheltersLoading={shelters.isLoading}
             />
           ) : null}
+
+          {/* Tier-1 activated shelters — self-hides when none are open. */}
+          <OpenSheltersCard
+            shelters={shelters.data}
+            origin={loc.coords}
+            isLoading={shelters.isLoading}
+          />
         </div>
       </div>
     </PageSection>

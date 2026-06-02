@@ -15,8 +15,14 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Modal open={open} onClose={onClose} eyebrow="Shelters" title="About these shelter locations" maxWidth={560}>
       <p style={textBody(ae)}>
-        The shelters shown are <strong style={{ color: ae.text }}>potential</strong> evacuation
-        points, not confirmed Red Cross sites. They&apos;re drawn from community-tagged{' '}
+        When shelters are reported <strong style={{ color: ae.text }}>open</strong> by emergency
+        management or the Red Cross, they appear at the top under <strong style={{ color: ae.text }}>Open
+        Shelters</strong> with live status and capacity. Everything else is a{' '}
+        <strong style={{ color: ae.text }}>candidate</strong> — a potential evacuation point, not a
+        confirmed open site.
+      </p>
+      <p style={{ ...textBody(ae), marginTop: 10 }}>
+        Candidates are drawn from community-tagged{' '}
         <a
           href="https://www.openstreetmap.org/"
           target="_blank"
@@ -66,9 +72,10 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
             Call ahead during a real emergency
           </div>
           <p style={{ ...textBody(ae), marginTop: 4 }}>
-            None of these are guaranteed to be open or accepting evacuees. Many will only
-            activate after a county-level emergency declaration. Always confirm by phone or
-            with your local emergency-management office before driving there.
+            Candidate facilities aren&apos;t guaranteed to be open or accepting evacuees — confirm
+            by phone or with your local emergency-management office before driving there. Shelters
+            open on local EM and Red Cross decisions, often without any federal disaster
+            declaration.
           </p>
         </div>
       </div>
