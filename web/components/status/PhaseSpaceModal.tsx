@@ -1,34 +1,35 @@
 'use client';
 
 // Fire-weather trajectory plot — opens from the Trajectory chip on Status.
-// X axis = fire-weather (V4 score); Y axis = TIME (now at the bottom, +6 hr at
-// the top). The vertical background bands are the COMPOSITE tier the user
-// would be in at each weather level GIVEN their current active-fire threat
-// (COMPOSITE_MATRIX row at the current threat bucket) — so a nearby fire
-// visibly shifts the danger bands left, and the hour-by-hour forecast curve
-// crossing a band edge is the moment your headline tier would change.
+// X axis = TIME (now at left → +horizon at right); Y axis = fire-weather (V4)
+// score (0 bottom → 1 top). The background is a canvas-rendered "risk strata"
+// field: a continuous vertical thermal gradient where each fire-weather tier
+// (LOW/MOD/HIGH/EXT) owns a color and the calibrated thresholds are the
+// *centers* of soft transition zones, with glowing seams + atmospheric bloom.
+// It reads like stacked thermal strata rather than tiled bands.
 //
-// Why this is net-new vs the "Why this score?" matrix grid: the matrix shows
-// categorical cells; here you get a CONTINUOUS position evolving over time.
-// The active-fire-threat axis used to be the Y axis but never moved across the
-// 6-hour horizon (active fires aren't forecast), so time is the honest second
-// axis and threat is folded into the band colors instead.
+// IMPORTANT — the strata is DYNAMIC: every threshold (the feather centers, the
+// seam positions, the dashed boundary lines, the y-axis ticks/badges) is driven
+// by `regionalThresholds` (the user's per-state calibration). Change location /
+// calibration and the whole field re-layers to match. Adapted from a canvas
+// reference; rendering is static (no animation loop) for performance, with an
+// offscreen cache so hover stays cheap.
 //
-// Option B for the OWM/Open-Meteo "now" mismatch: the curve is anchored to the
-// orb's current Status score (currentWeatherScore, from OpenWeatherMap) by
-// scaling the Open-Meteo series so its first point lands there. Multiplicative
-// scaling preserves the % deltas, so the curve stays consistent with the
-// trajectory tier + delta. When the Status score is unavailable we fall back
-// to the raw Open-Meteo series unchanged.
+// The composite/active-fire-threat story is preserved in the summary below the
+// plot (tier-crossing callout + headline), not in the band colors.
+//
+// Option B for the OWM/Open-Meteo "now" mismatch: the curve + scores are
+// anchored to the orb's Status score (multiplicative, preserves % deltas), and
+// the "Now" tile shows the Status (OpenWeatherMap) temp/RH/wind.
 
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds, TrajectoryResponse, TrajectoryTier } from '@/lib/api';
 import { formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 import { bucketOf, compositeFromBuckets, normalizeWeather } from '@/lib/composite-risk';
-import { RISK_LEVELS, type RiskLevel } from '@/lib/theme';
+import { type RiskLevel } from '@/lib/theme';
 
 const TIER_TONE: Record<TrajectoryTier, { color: string; rgb: string; label: string }> = {
   rising:  { color: '#FF7A3A', rgb: '255, 122, 58',  label: 'Rising' },
@@ -43,15 +44,100 @@ const TIER_SHORT: Record<RiskLevel, string> = {
   extreme: 'EXT',
 };
 
-const W_TIERS: readonly RiskLevel[] = ['low', 'moderate', 'high', 'extreme'];
-
-// Plot inset — left has room for the two-row weather-axis labels (numeric
-// ticks + tier badges) and the rotated axis title; bottom has room for the
-// time ticks + title.
-const PLOT_INSET = { top: 26, right: 30, bottom: 52, left: 84 };
+// ── Risk-strata rendering constants (the "classic" thermal palette, depth 0.6,
+//    softness 0.036 — the reference settings we standardized on). ────────────
+type RGB = readonly number[];
+// Distinct, saturated thermal nodes so all four tiers read clearly. The
+// previous MOD was an olive [168,168,52] that bled into both the green LOW
+// and the orange HIGH; a clean golden-yellow plus a punchier orange give each
+// tier its own identity while the feathered transitions keep it a gradient.
+const STRATA = {
+  low: [42, 168, 102] as RGB,    // emerald green
+  mod: [240, 206, 60] as RGB,    // golden yellow
+  high: [243, 118, 34] as RGB,   // vivid orange
+  ext: [220, 46, 48] as RGB,     // red
+  extDeep: [112, 24, 46] as RGB, // deep crimson falloff
+  glow: [255, 188, 98] as RGB,
+  seam: [255, 212, 132] as RGB,
+};
+const BASE_INK: RGB = [12, 10, 9];
+const DEPTH = 0.6;
+const SOFTNESS = 0.046;
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+function mix(a: RGB, b: RGB, t: number): RGB {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+function smoothstep(e0: number, e1: number, x: number): number {
+  if (e0 === e1) return x < e0 ? 0 : 1;
+  let t = (x - e0) / (e1 - e0);
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return t * t * (3 - 2 * t);
+}
+function saturate(c: RGB, k: number): RGB {
+  const g = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  return [g + (c[0] - g) * k, g + (c[1] - g) * k, g + (c[2] - g) * k];
+}
+const rgbStr = (c: RGB) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+
+interface Bounds {
+  low: number;
+  moderate: number;
+  extreme: number;
+}
+
+/** Continuous strata color at a fire-weather score, feathering each tier color
+ *  into the next across the user's calibrated thresholds. */
+function strataColor(score: number, b: Bounds, f: number): RGB {
+  let c: RGB = STRATA.low;
+  c = mix(c, STRATA.mod, smoothstep(b.low - f, b.low + f, score));
+  c = mix(c, STRATA.high, smoothstep(b.moderate - f, b.moderate + f, score));
+  c = mix(c, STRATA.ext, smoothstep(b.extreme - f, b.extreme + f, score));
+  // deepen the upper-extreme region into crimson for cinematic falloff
+  c = mix(c, STRATA.extDeep, smoothstep(b.extreme + 0.03, 1.0, score) * 0.82);
+  // settle the very floor so the low tier has depth too
+  c = mix(c, mix(c, BASE_INK, 0.4), smoothstep(0.12, 0.0, score));
+  return saturate(c, 1.24);
+}
+
+function buildNoise(): HTMLCanvasElement {
+  const n = document.createElement('canvas');
+  n.width = n.height = 140;
+  const nctx = n.getContext('2d')!;
+  const img = nctx.createImageData(140, 140);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 118 + (Math.random() * 74 - 37);
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  nctx.putImageData(img, 0, 0);
+  return n;
+}
+
+// Catmull-Rom → bezier smoothing for the forecast curve.
+function smoothPath(ctx: CanvasRenderingContext2D, pts: [number, number][]): void {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2[0], p2[1]);
+  }
+}
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 export function PhaseSpaceModal({
@@ -66,23 +152,11 @@ export function PhaseSpaceModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Current weather tier (from Status's regional calibration). Drives the
-   *  current-composite readout + the tier-crossing callout. */
   weatherBucket: RiskLevel | null;
-  /** Current active-fire threat tier; null = no fire in range. Selects which
-   *  COMPOSITE_MATRIX row colors the background bands. */
   threatBucket: RiskLevel | null;
-  /** Forward-looking projection from /trajectory; null when upstream failed. */
   trajectory: TrajectoryResponse | null | undefined;
-  /** Per-state regional thresholds — tier-boundary gridlines on the W axis +
-   *  consistent bucketing of the projected score. Null → global fallback. */
   regionalThresholds: RegionalThresholds | null;
-  /** The raw V4 score behind the Status orb (OpenWeatherMap-derived). Used as
-   *  the anchor for the trajectory curve so NOW matches the headline number. */
   currentWeatherScore: number | null;
-  /** The user's current conditions from Status (OpenWeatherMap) — shown in the
-   *  modal's "Now" tile so temp/RH/wind match the Status cards and the anchored
-   *  NOW score (which is the OWM-derived Status score from these same inputs). */
   currentConditions: {
     temperatureC: number | null;
     humidityPct: number | null;
@@ -92,8 +166,7 @@ export function PhaseSpaceModal({
   const { ae } = useAesthetic();
 
   // ── Option B anchoring ──────────────────────────────────────────────────
-  // Scale the Open-Meteo series so frames[0] lands on the orb's Status score.
-  const frames = trajectory?.frames ?? [];
+  const frames = useMemo(() => trajectory?.frames ?? [], [trajectory]);
   const horizon = trajectory?.horizon_hours ?? (frames.length > 0 ? frames.length - 1 : 6);
   const anchorScale = useMemo(() => {
     const omNow = frames[0]?.v4_score;
@@ -104,14 +177,10 @@ export function PhaseSpaceModal({
     () => frames.map((f) => clamp01(f.v4_score * anchorScale)),
     [frames, anchorScale],
   );
-
   const anchoredNow = anchoredScores[0] ?? currentWeatherScore ?? null;
   const anchoredProjected =
     anchoredScores.length > 0 ? anchoredScores[anchoredScores.length - 1] : null;
 
-  // Projected weather tier, bucketed the SAME way Status buckets the current
-  // weather (normalize through the regional thresholds, then quartile bucket)
-  // so the current-vs-projected tier comparison is apples-to-apples.
   const projectedWeatherBucket = useMemo<RiskLevel | null>(() => {
     if (anchoredProjected == null) return null;
     return bucketOf(normalizeWeather(anchoredProjected, regionalThresholds));
@@ -137,11 +206,11 @@ export function PhaseSpaceModal({
           color: ae.textDim,
         }}
       >
-<strong style={{ color: ae.text }}>Time</strong> runs left (now) → right (+{horizon} hr); your{' '}
-        <strong style={{ color: ae.text }}>fire-weather</strong> score runs bottom → top. The
-        horizontal bands are the <strong style={{ color: ae.text }}>headline tier</strong> you&apos;d
-        be in at each weather level given your current active-fire threat — so the hour the forecast
-        curve rises into a higher band is the hour your tier would shift.
+        <strong style={{ color: ae.text }}>Time</strong> runs left (now) → right (+{horizon} hr); your{' '}
+        <strong style={{ color: ae.text }}>fire-weather</strong> score runs bottom → top. The thermal
+        strata are your location&apos;s <strong style={{ color: ae.text }}>calibrated tier
+        thresholds</strong> — the hour the forecast curve rises into a hotter band is the hour your
+        fire-weather tier would shift.
       </p>
 
       <div style={{ marginTop: 18 }}>
@@ -151,7 +220,6 @@ export function PhaseSpaceModal({
           horizon={horizon}
           currentScore={anchoredNow}
           trajectoryTier={trajectory?.tier ?? null}
-          threatBucket={threatBucket}
           regionalThresholds={regionalThresholds}
         />
       </div>
@@ -184,7 +252,9 @@ export function PhaseSpaceModal({
   );
 }
 
-// ─── The SVG plot ────────────────────────────────────────────────────────
+// ─── Canvas strata plot ────────────────────────────────────────────────────
+
+type Ae = ReturnType<typeof useAesthetic>['ae'];
 
 function TrajectoryPlot({
   ae,
@@ -192,320 +262,531 @@ function TrajectoryPlot({
   horizon,
   currentScore,
   trajectoryTier,
-  threatBucket,
   regionalThresholds,
 }: {
-  ae: ReturnType<typeof useAesthetic>['ae'];
+  ae: Ae;
   anchoredScores: number[];
   horizon: number;
   currentScore: number | null;
   trajectoryTier: TrajectoryTier | null;
-  threatBucket: RiskLevel | null;
   regionalThresholds: RegionalThresholds | null;
 }) {
-  const width = 640;
-  const height = 380;
-  const inner = {
-    x0: PLOT_INSET.left,
-    y0: PLOT_INSET.top,
-    x1: width - PLOT_INSET.right,
-    y1: height - PLOT_INSET.bottom,
-  };
-  const innerW = inner.x1 - inner.x0;
-  const innerH = inner.y1 - inner.y0;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const baseRef = useRef<HTMLCanvasElement | null>(null);   // offscreen static layer
+  const noiseRef = useRef<HTMLCanvasElement | null>(null);
+  const mouseRef = useRef<{ x: number; y: number } | null>(null);
+  const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
 
-  // X = time fraction (0 = now → left, 1 = +horizon → right).
-  // Y = weather score (0 → bottom, 1 → top).
-  const toX = (t: number) => inner.x0 + clamp01(t) * innerW;
-  const toY = (w: number) => inner.y1 - clamp01(w) * innerH;
-
-  // Weather-axis tier boundaries — calibrated per state, else global 0.3/0.6/0.8.
-  const wBounds = {
-    low: regionalThresholds?.low ?? 0.3,
-    moderate: regionalThresholds?.moderate ?? 0.6,
-    extreme: regionalThresholds?.extreme ?? 0.8,
-  };
-  const bandEdges = [0, wBounds.low, wBounds.moderate, wBounds.extreme, 1];
-
+  const bounds: Bounds = useMemo(
+    () => ({
+      low: regionalThresholds?.low ?? 0.3,
+      moderate: regionalThresholds?.moderate ?? 0.6,
+      extreme: regionalThresholds?.extreme ?? 0.8,
+    }),
+    [regionalThresholds],
+  );
   const tone = trajectoryTier ? TIER_TONE[trajectoryTier] : null;
-  const lineColor = tone?.color ?? ae.textMute;
-  const lineRgb = tone?.rgb ?? '156, 163, 175';
 
-  const hasSeries = anchoredScores.length >= 2;
-  const points = hasSeries
-    ? anchoredScores.map((s, i) => `${toX(i / horizon)},${toY(s)}`).join(' ')
-    : '';
+  // Stash the draw inputs in a ref so the resize/draw callbacks stay stable.
+  const dataRef = useRef({ anchoredScores, horizon, currentScore, bounds, tone, ae });
+  dataRef.current = { anchoredScores, horizon, currentScore, bounds, tone, ae };
 
-  // Current dot sits at the left (now) at the current weather y-position.
-  const curX = toX(0);
-  const curY = currentScore != null ? toY(currentScore) : null;
-  const lastScore = anchoredScores[anchoredScores.length - 1];
-  const projX = toX(1);
-  const projY = hasSeries ? toY(lastScore) : null;
+  if (!noiseRef.current && typeof document !== 'undefined') noiseRef.current = buildNoise();
+
+  /** Draw all static layers (everything except the hover crosshair) to the
+   *  offscreen base canvas at the current CSS size. */
+  const renderBase = useCallback(() => {
+    const { w: W, h: H, dpr } = sizeRef.current;
+    if (!W || !H) return;
+    if (!baseRef.current) baseRef.current = document.createElement('canvas');
+    const base = baseRef.current;
+    base.width = Math.round(W * dpr);
+    base.height = Math.round(H * dpr);
+    const ctx = base.getContext('2d');
+    if (!ctx) return;
+    const { anchoredScores: scores, horizon: hz, currentScore: cur, bounds: b, tone: tn } = dataRef.current;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const yOf = (s: number) => (1 - clamp01(s)) * H;
+    const xOf = (frac: number) => clamp01(frac) * W;
+    const lineColor = tn?.color ?? 'rgba(255,255,255,0.85)';
+    const lineRgb = tn?.rgb ?? '255, 255, 255';
+
+    // warm-black base
+    ctx.fillStyle = rgbStr(BASE_INK);
+    ctx.fillRect(0, 0, W, H);
+
+    // layered strata — one continuous vertical gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    const NS = 96;
+    for (let k = 0; k <= NS; k++) {
+      const off = k / NS;
+      const score = 1 - off; // canvas top = score 1
+      const c = mix(BASE_INK, strataColor(score, b, SOFTNESS), 0.93);
+      grad.addColorStop(off, rgbStr(c));
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // glowing ignition seams along each calibrated boundary
+    const threshList = [b.low, b.moderate, b.extreme];
+    const seamPeaks = [0.34, 0.45, 0.62].map((p) => p * DEPTH);
+    const sw = Math.min(0.14, Math.max(0.05, SOFTNESS * 3.0));
+    ctx.globalCompositeOperation = 'lighter';
+    threshList.forEach((t, i) => {
+      const yTop = yOf(Math.min(1, t + sw));
+      const yBot = yOf(Math.max(0, t - sw));
+      const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+      const a = seamPeaks[i];
+      g.addColorStop(0, `rgba(${STRATA.seam[0]},${STRATA.seam[1]},${STRATA.seam[2]},0)`);
+      g.addColorStop(0.5, `rgba(${STRATA.seam[0]},${STRATA.seam[1]},${STRATA.seam[2]},${a})`);
+      g.addColorStop(1, `rgba(${STRATA.seam[0]},${STRATA.seam[1]},${STRATA.seam[2]},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    });
+    ctx.globalCompositeOperation = 'source-over';
+
+    // atmospheric low-frequency bloom (static soft glows)
+    ctx.globalCompositeOperation = 'lighter';
+    const blobs = [
+      { fx: 0.2, fs: Math.min(0.98, b.extreme + 0.3), r: 0.66, a: 0.16, c: STRATA.ext },
+      { fx: 0.8, fs: Math.min(0.96, b.extreme + 0.16), r: 0.74, a: 0.14, c: STRATA.glow },
+      { fx: 0.5, fs: 0.1, r: 0.56, a: 0.16, c: STRATA.glow },
+      { fx: 0.32, fs: b.moderate, r: 0.5, a: 0.12, c: STRATA.seam },
+    ];
+    for (const blob of blobs) {
+      const gx = blob.fx * W;
+      const gy = yOf(blob.fs);
+      const rr = blob.r * Math.max(W, H);
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr);
+      const a = blob.a * DEPTH;
+      g.addColorStop(0, `rgba(${blob.c[0]},${blob.c[1]},${blob.c[2]},${a})`);
+      g.addColorStop(0.5, `rgba(${blob.c[0]},${blob.c[1]},${blob.c[2]},${a * 0.34})`);
+      g.addColorStop(1, `rgba(${blob.c[0]},${blob.c[1]},${blob.c[2]},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // core light bloom through the upper transition zone
+    const cy = yOf(b.extreme);
+    const cg = ctx.createRadialGradient(W * 0.5, cy, 0, W * 0.5, cy, Math.max(W, H) * 0.7);
+    cg.addColorStop(0, `rgba(${STRATA.glow[0]},${STRATA.glow[1]},${STRATA.glow[2]},${0.14 * DEPTH})`);
+    cg.addColorStop(0.55, `rgba(${STRATA.glow[0]},${STRATA.glow[1]},${STRATA.glow[2]},${0.04 * DEPTH})`);
+    cg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, 0, W, H);
+    // directional sheen (soft light from upper-left)
+    const sh = ctx.createLinearGradient(0, 0, W, H);
+    sh.addColorStop(0, `rgba(255,236,210,${0.05 * DEPTH})`);
+    sh.addColorStop(0.45, 'rgba(255,236,210,0)');
+    ctx.fillStyle = sh;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // fine grain for depth
+    if (noiseRef.current) {
+      ctx.globalAlpha = 0.05;
+      ctx.globalCompositeOperation = 'overlay';
+      const tile = noiseRef.current;
+      for (let x = 0; x < W; x += tile.width) {
+        for (let y = 0; y < H; y += tile.height) ctx.drawImage(tile, x, y);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
+
+    // edge vignette for premium falloff
+    const vg = ctx.createLinearGradient(0, 0, 0, H);
+    vg.addColorStop(0, 'rgba(0,0,0,0.22)');
+    vg.addColorStop(0.35, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.18)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    // vertical time gridlines
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let h = 1; h < hz; h++) {
+      const x = Math.round(xOf(h / hz)) + 0.5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+    }
+    ctx.stroke();
+
+    // calibrated threshold lines (dashed) — the data boundaries
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 5]);
+    ctx.strokeStyle = 'rgba(255,240,218,0.27)';
+    for (const t of threshList) {
+      const y = Math.round(yOf(t)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // plot border
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+    // ── forecast curve ──
+    const hasSeries = scores.length >= 2;
+    if (hasSeries) {
+      const pts: [number, number][] = scores.map((s, i) => [xOf(i / hz), yOf(s)]);
+
+      // soft area fill under the curve
+      const area = ctx.createLinearGradient(0, yOf(Math.max(...scores) + 0.05), 0, H);
+      area.addColorStop(0, 'rgba(255,255,255,0.10)');
+      area.addColorStop(1, 'rgba(255,255,255,0.0)');
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], H);
+      ctx.lineTo(pts[0][0], pts[0][1]);
+      smoothPath(ctx, pts);
+      ctx.lineTo(pts[pts.length - 1][0], H);
+      ctx.closePath();
+      ctx.fillStyle = area;
+      ctx.fill();
+
+      // curve line — white for readability over the thermal field, tier glow
+      ctx.save();
+      ctx.shadowColor = `rgba(${lineRgb}, 0.7)`;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      smoothPath(ctx, pts);
+      ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+
+      // node dots
+      for (let i = 1; i < pts.length - 1; i++) {
+        ctx.beginPath();
+        ctx.arc(pts[i][0], pts[i][1], 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fill();
+      }
+
+      // +horizon projected dot (tier-colored) + arrowhead + label
+      const last = pts[pts.length - 1];
+      const prev = pts[pts.length - 2];
+      const ang = Math.atan2(last[1] - prev[1], last[0] - prev[0]);
+      ctx.save();
+      ctx.shadowColor = `rgba(${lineRgb}, 0.8)`;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = lineColor;
+      ctx.beginPath();
+      ctx.arc(last[0], last[1], 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = lineColor;
+      ctx.beginPath();
+      ctx.moveTo(last[0] + 9 * Math.cos(ang), last[1] + 9 * Math.sin(ang));
+      ctx.lineTo(last[0] - 5 * Math.cos(ang - 0.6), last[1] - 5 * Math.sin(ang - 0.6));
+      ctx.lineTo(last[0] - 5 * Math.cos(ang + 0.6), last[1] - 5 * Math.sin(ang + 0.6));
+      ctx.closePath();
+      ctx.fill();
+      ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'right';
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = lineColor;
+      ctx.fillText(`+${hz} HR`, last[0] - 10, last[1] - 12);
+      ctx.restore();
+      ctx.textAlign = 'left';
+    }
+
+    // NOW dot — bright halo at the left edge
+    if (cur != null) {
+      const nx = xOf(0);
+      const ny = yOf(cur);
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,255,255,0.7)';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(nx, ny, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(nx, ny, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('NOW', nx + 16, ny - 12);
+      ctx.restore();
+    }
+  }, []);
+
+  /** Blit the cached base, then draw the hover crosshair + readout. */
+  const paint = useCallback(() => {
+    const canvas = canvasRef.current;
+    const base = baseRef.current;
+    if (!canvas || !base) return;
+    const ctx = canvas.getContext('2d');
+    const { w: W, h: H, dpr } = sizeRef.current;
+    if (!ctx || !W || !H) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(base, 0, 0);
+
+    const mo = mouseRef.current;
+    if (!mo) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const { bounds: b } = dataRef.current;
+    const score = clamp01(1 - mo.y / H);
+    const hourF = clamp01(mo.x / W) * horizon;
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(mo.x, 0);
+    ctx.lineTo(mo.x, H);
+    ctx.moveTo(0, mo.y);
+    ctx.lineTo(W, mo.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    let tier = 'LOW';
+    if (score >= b.extreme) tier = 'EXTREME';
+    else if (score >= b.moderate) tier = 'HIGH';
+    else if (score >= b.low) tier = 'MODERATE';
+    const lines = [`+${hourF.toFixed(1)}h  ·  ${score.toFixed(3)}`, tier];
+    ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    const cw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
+    const ch = 34;
+    let bx = mo.x + 12;
+    let by = mo.y + 12;
+    if (bx + cw > W) bx = mo.x - cw - 12;
+    if (by + ch > H) by = mo.y - ch - 12;
+    roundRect(ctx, bx, by, cw, ch, 6);
+    ctx.fillStyle = 'rgba(8,10,11,0.92)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.fill();
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText(lines[0], bx + 9, by + 11);
+    ctx.fillStyle = 'rgba(255,225,200,0.95)';
+    ctx.fillText(lines[1], bx + 9, by + 24);
+    ctx.textBaseline = 'alphabetic';
+  }, [horizon]);
+
+  const redraw = useCallback(() => {
+    renderBase();
+    paint();
+  }, [renderBase, paint]);
+
+  // Redraw whenever the data changes.
+  useEffect(() => {
+    redraw();
+  }, [redraw, anchoredScores, horizon, currentScore, bounds, tone]);
+
+  // Sizing — DPR-aware, ResizeObserver + poll fallback.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    let lastW = -1;
+    let lastH = -1;
+    const measure = () => {
+      const cw = wrap.clientWidth;
+      const ch = wrap.clientHeight;
+      if (!cw || !ch || (cw === lastW && ch === lastH)) return;
+      lastW = cw;
+      lastH = ch;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+      sizeRef.current = { w: cw, h: ch, dpr };
+      redraw();
+    };
+    measure();
+    const poll = setInterval(measure, 200);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+      ro.observe(wrap);
+    }
+    window.addEventListener('resize', measure);
+    return () => {
+      clearInterval(poll);
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [redraw]);
+
+  const onMove = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    paint();
+  };
+  const onLeave = () => {
+    mouseRef.current = null;
+    paint();
+  };
+
+  // Y-axis ticks + tier badges, positioned by the dynamic thresholds.
+  const yNums = [
+    { v: 0, lbl: '0.00' },
+    { v: bounds.low, lbl: bounds.low.toFixed(2) },
+    { v: bounds.moderate, lbl: bounds.moderate.toFixed(2) },
+    { v: bounds.extreme, lbl: bounds.extreme.toFixed(2) },
+    { v: 1, lbl: '1.00' },
+  ];
+  const yTiers = [
+    { lbl: 'EXT', c: (bounds.extreme + 1) / 2 },
+    { lbl: 'HIGH', c: (bounds.moderate + bounds.extreme) / 2 },
+    { lbl: 'MOD', c: (bounds.low + bounds.moderate) / 2 },
+    { lbl: 'LOW', c: bounds.low / 2 },
+  ];
+  const xLabels = Array.from({ length: horizon + 1 }, (_, h) => h).filter((h) => h === 0 || h % 2 === 0);
+
+  const mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
+    <div
       style={{
-        width: '100%',
-        height: 'auto',
-        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
-        borderRadius: 14,
+        display: 'grid',
+        gridTemplateColumns: '20px 50px 1fr',
+        gridTemplateRows: '1fr 22px 20px',
+        height: 384,
+        background: '#080b0c',
         border: `0.5px solid ${ae.line}`,
+        borderRadius: 14,
+        padding: '20px 22px 14px 14px',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
-      role="img"
-      aria-label="Fire-weather trajectory over the next several hours"
     >
-      <defs>
-        <marker
-          id="trajectory-arrow"
-          viewBox="0 0 10 10"
-          refX="8"
-          refY="5"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto-start-reverse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={lineColor} />
-        </marker>
-        <radialGradient id="now-halo" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="#ffffff" stopOpacity="0.55" />
-          <stop offset="55%"  stopColor="#ffffff" stopOpacity="0.10" />
-          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-
-      {/* Composite-tier background bands — each horizontal weather band
-          colored by the headline tier it maps to at the user's current threat.
-          Higher weather (= more dangerous) is higher up. */}
-      {W_TIERS.map((wTier, i) => {
-        const composite = compositeFromBuckets(wTier, threatBucket) ?? wTier;
-        const yTop = toY(bandEdges[i + 1]);
-        const yBot = toY(bandEdges[i]);
-        return (
-          <rect
-            key={`band-${wTier}`}
-            x={inner.x0}
-            y={yTop}
-            width={innerW}
-            height={yBot - yTop}
-            fill={`rgba(${RISK_LEVELS[composite].glow}, 0.13)`}
-          />
-        );
-      })}
-
-      {/* Soft top light so the plot reads as a surface, not a flat fill. */}
-      <rect
-        x={inner.x0}
-        y={inner.y0}
-        width={innerW}
-        height={innerH}
-        fill="url(#now-halo)"
-        opacity={0.04}
-      />
-
-      {/* Weather tier-boundary lines (horizontal dashed). */}
-      {[wBounds.low, wBounds.moderate, wBounds.extreme].map((b) => (
-        <line
-          key={`grid-w-${b}`}
-          x1={inner.x0}
-          y1={toY(b)}
-          x2={inner.x1}
-          y2={toY(b)}
-          stroke="rgba(255,255,255,0.12)"
-          strokeWidth="0.5"
-          strokeDasharray="2,4"
-        />
-      ))}
-
-      {/* Hour gridlines (vertical, faint) at each hour. */}
-      {Array.from({ length: horizon + 1 }, (_, h) => h).map((h) => (
-        <line
-          key={`grid-t-${h}`}
-          x1={toX(h / horizon)}
-          y1={inner.y0}
-          x2={toX(h / horizon)}
-          y2={inner.y1}
-          stroke="rgba(255,255,255,0.05)"
-          strokeWidth="0.5"
-        />
-      ))}
-
-      {/* Plot frame border. */}
-      <rect
-        x={inner.x0}
-        y={inner.y0}
-        width={innerW}
-        height={innerH}
-        fill="none"
-        stroke="rgba(255,255,255,0.08)"
-        strokeWidth="0.5"
-      />
-
-      {/* Axis labels. */}
-      <g style={{ fontFamily: ae.fontMono, fill: ae.textMute }}>
-        {/* Y numeric ticks (weather) at 0, calibrated cutoffs, 1. */}
-        {[
-          { v: 0.0, lbl: '0.00' },
-          { v: wBounds.low, lbl: wBounds.low.toFixed(2) },
-          { v: wBounds.moderate, lbl: wBounds.moderate.toFixed(2) },
-          { v: wBounds.extreme, lbl: wBounds.extreme.toFixed(2) },
-          { v: 1.0, lbl: '1.00' },
-        ].map((tick) => (
-          <text
-            key={`ytick-${tick.v}`}
-            x={inner.x0 - 8}
-            y={toY(tick.v) + 3}
-            textAnchor="end"
-            fontSize="9"
-            fontWeight={600}
-            letterSpacing="0.04em"
-            fill={ae.textDim}
-          >
-            {tick.lbl}
-          </text>
-        ))}
-
-        {/* Y tier badges centered in each weather band. */}
-        {(['LOW', 'MOD', 'HIGH', 'EXT'] as const).map((name, i) => (
-          <text
-            key={`ytier-${name}`}
-            x={inner.x0 - 34}
-            y={toY((bandEdges[i] + bandEdges[i + 1]) / 2) + 3}
-            textAnchor="end"
-            fontSize="9"
-            fontWeight={700}
-            letterSpacing="0.16em"
-            fill={ae.textMute}
-          >
-            {name}
-          </text>
-        ))}
-
-        <text
-          transform={`rotate(-90 ${inner.x0 - 64} ${(inner.y0 + inner.y1) / 2})`}
-          x={inner.x0 - 64}
-          y={(inner.y0 + inner.y1) / 2}
-          textAnchor="middle"
-          fontSize="10"
-          fontWeight={700}
-          letterSpacing="0.16em"
-          fill={ae.text}
+      {/* Y axis title (rotated) */}
+      <div style={{ gridColumn: 1, gridRow: 1, position: 'relative' }}>
+        <span
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%,-50%) rotate(-90deg)',
+            whiteSpace: 'nowrap',
+            fontFamily: mono,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.18em',
+            color: ae.text,
+            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+          }}
         >
           FIRE WEATHER (V4 SCORE)
-        </text>
+        </span>
+      </div>
 
-        {/* X time ticks — NOW at the left, every 2 hours up to +horizon. */}
-        {Array.from({ length: horizon + 1 }, (_, h) => h)
-          .filter((h) => h === 0 || h % 2 === 0)
-          .map((h) => (
-            <text
-              key={`xtick-${h}`}
-              x={toX(h / horizon)}
-              y={inner.y1 + 16}
-              textAnchor="middle"
-              fontSize="9"
-              fontWeight={h === 0 ? 800 : 600}
-              letterSpacing="0.06em"
-              fill={h === 0 ? ae.text : ae.textDim}
-            >
-              {h === 0 ? 'NOW' : `+${h}h`}
-            </text>
-          ))}
-
-        <text
-          x={(inner.x0 + inner.x1) / 2}
-          y={inner.y1 + 34}
-          textAnchor="middle"
-          fontSize="10"
-          fontWeight={700}
-          letterSpacing="0.18em"
-          fill={ae.text}
-        >
-          TIME →
-        </text>
-      </g>
-
-      {/* Forecast curve (now → +horizon). */}
-      {hasSeries && tone ? (
-        <>
-          <polyline
-            points={points}
-            fill="none"
-            stroke={lineColor}
-            strokeWidth="6"
-            strokeOpacity="0.18"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <polyline
-            points={points}
-            fill="none"
-            stroke={lineColor}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            markerEnd="url(#trajectory-arrow)"
-            style={{ filter: `drop-shadow(0 0 6px rgba(${lineRgb}, 0.6))` }}
-          />
-          {/* Hour dots along the curve (skip the endpoints — drawn below). */}
-          {anchoredScores.slice(1, -1).map((s, i) => (
-            <circle
-              key={`hourdot-${i}`}
-              cx={toX((i + 1) / horizon)}
-              cy={toY(s)}
-              r="2.5"
-              fill={lineColor}
-              fillOpacity="0.85"
-            />
-          ))}
-        </>
-      ) : null}
-
-      {/* +horizon projected dot (right edge). */}
-      {hasSeries && projY != null && tone ? (
-        <g>
-          <circle cx={projX} cy={projY} r="11" fill={`rgba(${lineRgb}, 0.10)`} stroke={lineColor} strokeOpacity="0.55" strokeWidth="1" strokeDasharray="3,2.5" />
-          <circle cx={projX} cy={projY} r="4" fill={lineColor} fillOpacity="0.9" style={{ filter: `drop-shadow(0 0 8px rgba(${lineRgb}, 0.75))` }} />
-          <text
-            x={projX - 10}
-            y={projY - 12}
-            textAnchor="end"
-            fontFamily={ae.fontMono}
-            fontSize="9.5"
-            fontWeight={700}
-            letterSpacing="0.14em"
-            fill={lineColor}
-            style={{ textShadow: `0 0 6px rgba(${lineRgb}, 0.45)` }}
+      {/* Y gutter — numeric ticks (right) + tier badges (left) */}
+      <div style={{ gridColumn: 2, gridRow: 1, position: 'relative' }}>
+        {yNums.map((t) => (
+          <span
+            key={`yn-${t.lbl}`}
+            style={{
+              position: 'absolute',
+              right: 8,
+              top: `${(1 - t.v) * 100}%`,
+              transform: 'translateY(-50%)',
+              fontFamily: mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              color: ae.textDim,
+              textShadow: '0 1px 3px rgba(0,0,0,0.75)',
+              whiteSpace: 'nowrap',
+            }}
           >
-            +{horizon} HR
-          </text>
-        </g>
-      ) : null}
-
-      {/* NOW dot (left edge) — drawn last so it sits on top. */}
-      {curY != null ? (
-        <g>
-          <circle cx={curX} cy={curY} r="26" fill="url(#now-halo)" />
-          <circle cx={curX} cy={curY} r="12" fill="none" stroke="rgba(255,255,255,0.32)" strokeWidth="0.75" />
-          <circle cx={curX} cy={curY} r="8" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.55)" strokeWidth="0.6" />
-          <circle cx={curX} cy={curY} r="5" fill="#fff" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.85))' }} />
-          <text
-            x={curX + 10}
-            y={curY - 12}
-            fontFamily={ae.fontMono}
-            fontSize="10"
-            fontWeight={800}
-            letterSpacing="0.14em"
-            fill="#fff"
-            style={{ textShadow: '0 0 8px rgba(255,255,255,0.55)' }}
+            {t.lbl}
+          </span>
+        ))}
+        {yTiers.map((t) => (
+          <span
+            key={`yt-${t.lbl}`}
+            style={{
+              position: 'absolute',
+              left: 2,
+              top: `${(1 - t.c) * 100}%`,
+              transform: 'translateY(-50%)',
+              fontFamily: mono,
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: '0.14em',
+              color: 'rgba(255,255,255,0.9)',
+              textShadow: '0 1px 4px rgba(0,0,0,0.85)',
+              whiteSpace: 'nowrap',
+            }}
           >
-            NOW
-          </text>
-        </g>
-      ) : null}
-    </svg>
+            {t.lbl}
+          </span>
+        ))}
+      </div>
+
+      {/* Canvas */}
+      <div
+        ref={wrapRef}
+        style={{ gridColumn: 3, gridRow: 1, position: 'relative', borderRadius: 6, overflow: 'hidden' }}
+      >
+        <canvas
+          ref={canvasRef}
+          onMouseMove={onMove}
+          onMouseLeave={onLeave}
+          style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair' }}
+        />
+      </div>
+
+      {/* X labels */}
+      <div style={{ gridColumn: 3, gridRow: 2, position: 'relative' }}>
+        {xLabels.map((h) => (
+          <span
+            key={`xl-${h}`}
+            style={{
+              position: 'absolute',
+              top: 7,
+              left: `${(h / horizon) * 100}%`,
+              transform: h === 0 ? 'translateX(0)' : h === horizon ? 'translateX(-100%)' : 'translateX(-50%)',
+              fontFamily: mono,
+              fontSize: 10,
+              fontWeight: h === 0 ? 800 : 600,
+              letterSpacing: '0.06em',
+              color: h === 0 ? ae.text : ae.textDim,
+              textShadow: '0 1px 3px rgba(0,0,0,0.75)',
+            }}
+          >
+            {h === 0 ? 'NOW' : `+${h}h`}
+          </span>
+        ))}
+      </div>
+
+      {/* X title */}
+      <div
+        style={{
+          gridColumn: 3,
+          gridRow: 3,
+          textAlign: 'center',
+          fontFamily: mono,
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.2em',
+          color: ae.text,
+          textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+        }}
+      >
+        TIME&nbsp;&nbsp;➝
+      </div>
+    </div>
   );
 }
 
@@ -520,7 +801,7 @@ function TrajectorySummary({
   projectedComposite,
   currentConditions,
 }: {
-  ae: ReturnType<typeof useAesthetic>['ae'];
+  ae: Ae;
   trajectory: TrajectoryResponse;
   anchoredNow: number | null;
   anchoredProjected: number | null;
@@ -628,8 +909,8 @@ function TrajectorySummary({
         </div>
       ) : null}
 
-      {/* "Now" = your current Status reading (so it matches the cards above);
-          "+horizon" = the Open-Meteo forecast it's heading toward. */}
+      {/* "Now" = your current Status reading (matches the cards); "+horizon" =
+          the Open-Meteo forecast it's heading toward. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 }}>
         <FrameTile
           ae={ae}
@@ -675,7 +956,7 @@ function FrameTile({
   windKph,
   v4Score,
 }: {
-  ae: ReturnType<typeof useAesthetic>['ae'];
+  ae: Ae;
   label: string;
   tempC: number | null;
   humidityPct: number | null;

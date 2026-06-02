@@ -70,8 +70,11 @@ web-incident.jsx
 web-incident-map.jsx
 web-status.jsx
 background-waves.jsx
+trajectory.jsx
+tweaks-panel.jsx
 styleUI.md
 handoff.md
+Trajectory.html
 Ember.html
 Risk Screen 1.png
 Risk Screen 2.png
