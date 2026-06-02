@@ -153,6 +153,8 @@ export interface GeocodeHit {
   lon: number;
 }
 
+export type ShelterStatus = 'OPEN' | 'STANDBY' | 'FULL';
+
 export interface Shelter {
   id: string;
   name: string;
@@ -161,6 +163,17 @@ export interface Shelter {
   type: string;
   distance_mi: number;
   address: string | null;
+  // Tier-1 "activated / open right now" fields. Present (non-null) only when
+  // `activated` is true — an authoritative open shelter from Emergency
+  // Management / the Red Cross. Candidate facilities carry `activated: false`.
+  activated?: boolean;
+  status?: ShelterStatus;
+  capacity?: number | null;
+  occupancy?: number | null;
+  pet_friendly?: boolean | null;
+  ada_accessible?: boolean | null;
+  managing_org?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ActiveDisaster {
