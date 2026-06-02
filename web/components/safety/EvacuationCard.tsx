@@ -111,7 +111,7 @@ export function EvacuationCard({
     : cardinal8(escapeBearing);
 
   const subtext = mode === 'shelter' && nearestShelter
-    ? `${nearestShelter.name} · ${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel}`
+    ? `${nearestShelter.activated ? 'OPEN · ' : ''}${nearestShelter.name} · ${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel}`
     : fireDistanceMi != null
       ? `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
       : '';

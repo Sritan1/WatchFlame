@@ -551,6 +551,28 @@ class _School:
         self.address = kw.get("address", "123 Main St, Anytown, CA")
 
 
+class _OpenShelter:
+    def __init__(self, **kw):
+        self.id = kw.get("id", "1001")
+        self.name = kw.get("name", "Open Shelter")
+        self.lat = kw.get("lat", 37.5)
+        self.lon = kw.get("lon", -120.0)
+        self.address = kw.get("address", "1 Main St")
+        self.status = kw.get("status", "OPEN")
+        self.capacity = kw.get("capacity", 200)
+        self.occupancy = kw.get("occupancy", 50)
+        self.pet_friendly = kw.get("pet_friendly", True)
+        self.ada_accessible = kw.get("ada_accessible", True)
+        self.managing_org = kw.get("managing_org", "American Red Cross")
+        self.updated_at = kw.get("updated_at", "2026-06-01T00:00:00+00:00")
+
+
+async def _stub_open_empty(lat, lon, radius_mi=50):
+    # Default: no activated shelters. Keeps the candidate-merge tests network-free
+    # now that the route also queries the live FEMA NSS feed.
+    return []
+
+
 def test_shelters_merges_overpass_and_nces(monkeypatch):
     async def stub_shelters(lat, lon, radius_km=80):
         return [_Shelter()]
@@ -558,6 +580,7 @@ def test_shelters_merges_overpass_and_nces(monkeypatch):
         return [_School(lat=37.6, lon=-120.05)]  # distinct location
     monkeypatch.setattr("api.routes.shelters.fetch_shelters", stub_shelters)
     monkeypatch.setattr("api.routes.shelters.fetch_schools", stub_schools)
+    monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", _stub_open_empty)
 
     r = client.get("/shelters?lat=37.5&lon=-120.0&radius_mi=50")
     assert r.status_code == 200
@@ -576,6 +599,7 @@ def test_shelters_survives_overpass_exception(monkeypatch):
         return [_School()]
     monkeypatch.setattr("api.routes.shelters.fetch_shelters", stub_shelters)
     monkeypatch.setattr("api.routes.shelters.fetch_schools", stub_schools)
+    monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", _stub_open_empty)
 
     r = client.get("/shelters?lat=37.5&lon=-120.0&radius_mi=50")
     assert r.status_code == 200
@@ -590,11 +614,34 @@ def test_shelters_dedupes_same_location(monkeypatch):
         return [_School(lat=37.500, lon=-120.000)]
     monkeypatch.setattr("api.routes.shelters.fetch_shelters", stub_shelters)
     monkeypatch.setattr("api.routes.shelters.fetch_schools", stub_schools)
+    monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", _stub_open_empty)
 
     r = client.get("/shelters?lat=37.5&lon=-120.0&radius_mi=50")
     rows = r.json()
     assert len(rows) == 1
     assert rows[0]["type"] == "Community centre"  # OSM wins
+
+
+def test_shelters_activated_sort_first(monkeypatch):
+    """An open/activated shelter sorts ahead of a closer candidate and carries
+    the tier-1 fields."""
+    async def stub_open(lat, lon, radius_mi=50):
+        return [_OpenShelter(lat=37.55, lon=-120.02)]  # ~4 mi away
+    async def stub_shelters(lat, lon, radius_km=80):
+        return [_Shelter(lat=37.5, lon=-120.0)]        # closer candidate (~0 mi)
+    async def stub_schools(lat, lon, radius_mi=50):
+        return []
+    monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", stub_open)
+    monkeypatch.setattr("api.routes.shelters.fetch_shelters", stub_shelters)
+    monkeypatch.setattr("api.routes.shelters.fetch_schools", stub_schools)
+
+    r = client.get("/shelters?lat=37.5&lon=-120.0&radius_mi=50")
+    rows = r.json()
+    assert len(rows) == 2
+    assert rows[0]["activated"] is True       # activated first despite being farther
+    assert rows[0]["status"] == "OPEN"
+    assert rows[0]["capacity"] == 200
+    assert rows[1]["activated"] is False
 
 
 # --- /disasters/near ---------------------------------------------------------

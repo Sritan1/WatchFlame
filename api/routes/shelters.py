@@ -5,6 +5,7 @@ from math import asin, cos, radians, sin, sqrt
 from fastapi import APIRouter, Query
 
 from ..services.nces import fetch_schools
+from ..services.open_shelters import fetch_open_shelters
 from ..services.overpass import fetch_shelters
 
 router = APIRouter(prefix="/shelters", tags=["shelters"])
@@ -29,28 +30,64 @@ async def get_shelters(
     radius_mi: float = Query(50.0, ge=5.0, le=125.0),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Return up to `limit` *potential* evacuation points near (lat, lon).
+    """Return up to `limit` evacuation points near (lat, lon), tiered by
+    confidence.
 
-    Two static sources are queried concurrently and merged:
-      • **OSM Overpass** — community-tagged assembly points, community centres,
-        shelters, fire stations, social facilities (US bbox).
-      • **NCES Public Schools** — authoritative US K-12 dataset; schools are
-        commonly designated as evacuation shelters by county EMs.
+    Three sources are queried concurrently and merged:
+      • **Open shelters** (tier 1, `activated: true`) — shelters reported OPEN
+        right now by Emergency Management / the Red Cross (National Shelter
+        System). Carry live status + capacity. Independent of FEMA declarations.
+        Mock-first today (see services/open_shelters.py).
+      • **OSM Overpass** (candidate) — community-tagged assembly points,
+        community centres, shelters, fire stations, social facilities (US bbox).
+      • **NCES Public Schools** (candidate) — authoritative US K-12 dataset;
+        schools are commonly designated as evacuation shelters by county EMs.
 
-    Sorted by distance, deduped roughly by location. Outside the US: empty.
-    Items are *static* potential evacuation points — not officially activated
-    shelters during a current emergency. The client labels them as such.
+    Activated shelters sort first; the rest are sorted by distance, deduped
+    roughly by location (an open shelter wins over a candidate at the same
+    site). Candidates carry `activated: false` — the client labels them as
+    *potential* evacuation points, not officially activated shelters.
     """
     radius_km = radius_mi * 1.60934
 
-    # Run both sources concurrently — failures in one shouldn't kill the other.
+    # Run all sources concurrently — a failure in one shouldn't kill the others.
+    open_task = asyncio.create_task(fetch_open_shelters(lat, lon, radius_mi=radius_mi))
     overpass_task = asyncio.create_task(fetch_shelters(lat, lon, radius_km=radius_km))
     nces_task = asyncio.create_task(fetch_schools(lat, lon, radius_mi=radius_mi))
-    overpass_res, nces_res = await asyncio.gather(
-        overpass_task, nces_task, return_exceptions=True
+    open_res, overpass_res, nces_res = await asyncio.gather(
+        open_task, overpass_task, nces_task, return_exceptions=True
     )
 
     rows: list[dict[str, object]] = []
+
+    # Tier 1 — activated/open shelters first so they win the location dedupe
+    # below and (after sorting) sit at the top of the list.
+    if isinstance(open_res, Exception):
+        logger.warning("open-shelters query failed: %s", open_res)
+    else:
+        for s in open_res:
+            d = _haversine_mi(lat, lon, s.lat, s.lon)
+            if d > radius_mi:
+                continue
+            rows.append(
+                {
+                    "id": f"open-{s.id}",
+                    "name": s.name,
+                    "lat": s.lat,
+                    "lon": s.lon,
+                    "type": s.managing_org or "Open shelter",
+                    "distance_mi": round(d, 2),
+                    "address": s.address,
+                    "activated": True,
+                    "status": s.status,
+                    "capacity": s.capacity,
+                    "occupancy": s.occupancy,
+                    "pet_friendly": s.pet_friendly,
+                    "ada_accessible": s.ada_accessible,
+                    "managing_org": s.managing_org,
+                    "updated_at": s.updated_at,
+                }
+            )
 
     if isinstance(overpass_res, Exception):
         logger.warning("overpass query failed: %s", overpass_res)
@@ -68,6 +105,7 @@ async def get_shelters(
                     "type": s.type,
                     "distance_mi": round(d, 2),
                     "address": _format_overpass_address(s.tags),
+                    "activated": False,
                 }
             )
 
@@ -87,6 +125,7 @@ async def get_shelters(
                     "type": "Public school",
                     "distance_mi": round(d, 2),
                     "address": sch.address,
+                    "activated": False,
                 }
             )
 
@@ -101,7 +140,8 @@ async def get_shelters(
         seen.add(key)
         unique.append(r)
 
-    unique.sort(key=lambda x: x["distance_mi"])  # type: ignore[arg-type, return-value]
+    # Activated (open) shelters first, then by distance.
+    unique.sort(key=lambda x: (not x.get("activated", False), x["distance_mi"]))  # type: ignore[arg-type, return-value]
     return unique[:limit]
 
 
