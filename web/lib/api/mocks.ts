@@ -419,6 +419,17 @@ const MOCK_TRAJECTORY: TrajectoryResponse = {
     v4_score: 0.40,
   },
   dominant_driver: 'vpd',
+  // Hour-by-hour series (now .. +6 hr) — a smooth rising afternoon. frames[0]
+  // matches `now`, frames[6] matches `projected`.
+  frames: [
+    { label: 'now',   iso_time: '2026-05-30T12:00', temperature_c: 24.0, humidity_pct: 45.0, wind_kph: 12.0, precipitation_mm: 0.0, v4_score: 0.34 },
+    { label: '+1 hr', iso_time: '2026-05-30T13:00', temperature_c: 25.0, humidity_pct: 42.0, wind_kph: 13.5, precipitation_mm: 0.0, v4_score: 0.35 },
+    { label: '+2 hr', iso_time: '2026-05-30T14:00', temperature_c: 26.0, humidity_pct: 39.0, wind_kph: 15.0, precipitation_mm: 0.0, v4_score: 0.36 },
+    { label: '+3 hr', iso_time: '2026-05-30T15:00', temperature_c: 27.0, humidity_pct: 36.0, wind_kph: 16.5, precipitation_mm: 0.0, v4_score: 0.37 },
+    { label: '+4 hr', iso_time: '2026-05-30T16:00', temperature_c: 28.0, humidity_pct: 32.0, wind_kph: 18.0, precipitation_mm: 0.0, v4_score: 0.38 },
+    { label: '+5 hr', iso_time: '2026-05-30T17:00', temperature_c: 29.0, humidity_pct: 28.0, wind_kph: 20.0, precipitation_mm: 0.0, v4_score: 0.39 },
+    { label: '+6 hr', iso_time: '2026-05-30T18:00', temperature_c: 30.0, humidity_pct: 25.0, wind_kph: 22.0, precipitation_mm: 0.0, v4_score: 0.40 },
+  ],
 };
 
 export const mockApi = {

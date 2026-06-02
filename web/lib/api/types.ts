@@ -115,7 +115,7 @@ export interface CalibrationInfo {
 export type TrajectoryTier = 'rising' | 'steady' | 'falling';
 
 export interface TrajectoryFrame {
-  label: string;            // "now" or "+6 hr"
+  label: string;            // "now", "+1 hr", … "+6 hr"
   iso_time: string;         // local-time ISO string from the forecast API
   temperature_c: number;
   humidity_pct: number;
@@ -131,6 +131,9 @@ export interface TrajectoryResponse {
   now: TrajectoryFrame;
   projected: TrajectoryFrame;
   dominant_driver: 'vpd' | 'wind' | 'humidity';
+  // Hour-by-hour series, now .. +horizon_hours (frames[0] === now,
+  // frames[frames.length - 1] === projected). Powers the phase-space curve.
+  frames: TrajectoryFrame[];
 }
 
 export interface WeatherResponse {
