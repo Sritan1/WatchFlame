@@ -44,6 +44,9 @@ class TrajectoryResponse(BaseModel):
     now: TrajectoryFrameOut
     projected: TrajectoryFrameOut
     dominant_driver: str
+    # Hour-by-hour series (now .. +horizon_hours). frames[0] == now and
+    # frames[-1] == projected; powers the phase-space hour-by-hour curve.
+    frames: list[TrajectoryFrameOut]
 
 
 @router.get("/trajectory", response_model=TrajectoryResponse | None)
@@ -84,27 +87,23 @@ async def get_trajectory(lat: float, lon: float) -> TrajectoryResponse | None:
     if result is None:
         return None
 
+    def _out(f) -> TrajectoryFrameOut:
+        return TrajectoryFrameOut(
+            label=f.label,
+            iso_time=f.iso_time,
+            temperature_c=f.temperature_c,
+            humidity_pct=f.humidity_pct,
+            wind_kph=f.wind_kph,
+            precipitation_mm=f.precipitation_mm,
+            v4_score=f.v4_score,
+        )
+
     return TrajectoryResponse(
         tier=result.tier,
         delta_pct=result.delta_pct,
         horizon_hours=result.horizon_hours,
-        now=TrajectoryFrameOut(
-            label=result.now.label,
-            iso_time=result.now.iso_time,
-            temperature_c=result.now.temperature_c,
-            humidity_pct=result.now.humidity_pct,
-            wind_kph=result.now.wind_kph,
-            precipitation_mm=result.now.precipitation_mm,
-            v4_score=result.now.v4_score,
-        ),
-        projected=TrajectoryFrameOut(
-            label=result.projected.label,
-            iso_time=result.projected.iso_time,
-            temperature_c=result.projected.temperature_c,
-            humidity_pct=result.projected.humidity_pct,
-            wind_kph=result.projected.wind_kph,
-            precipitation_mm=result.projected.precipitation_mm,
-            v4_score=result.projected.v4_score,
-        ),
+        now=_out(result.now),
+        projected=_out(result.projected),
         dominant_driver=result.dominant_driver,
+        frames=[_out(f) for f in result.frames],
     )

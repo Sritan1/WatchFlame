@@ -650,11 +650,16 @@ export function StatusScreen() {
       <PhaseSpaceModal
         open={phaseSpaceOpen}
         onClose={() => setPhaseSpaceOpen(false)}
-        threatSignal={compositeReady ? threatSignal : null}
         weatherBucket={weatherBucket}
         threatBucket={threatBucket}
         trajectory={trajectory.data}
         regionalThresholds={risk.data?.regional_thresholds ?? null}
+        currentWeatherScore={risk.data?.risk_score ?? null}
+        currentConditions={{
+          temperatureC: weather.data?.temperature ?? null,
+          humidityPct: weather.data?.humidity ?? null,
+          windKph: weather.data?.wind_speed ?? null,
+        }}
       />
     </>
   );
