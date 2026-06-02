@@ -198,13 +198,15 @@ const MOCK_SHELTERS: Shelter[] = [
     activated: true, status: 'OPEN', capacity: 300, occupancy: 142,
     pet_friendly: true, ada_accessible: true, managing_org: 'American Red Cross',
     updated_at: new Date(Date.now() - 12 * 60_000).toISOString(),
+    opened_at: new Date(Date.now() - 30 * 3_600_000).toISOString(),
   },
   {
     id: 'open-nss-1002', name: 'Berkeley High School Shelter', lat: 37.8676, lon: -122.2720,
     type: 'County Emergency Management', distance_mi: 0.7, address: '1980 Allston Way, Berkeley, CA',
     activated: true, status: 'OPEN', capacity: 180, occupancy: 171,
     pet_friendly: false, ada_accessible: true, managing_org: 'Alameda County EM',
-    updated_at: new Date(Date.now() - 47 * 60_000).toISOString(),
+    updated_at: null,
+    opened_at: new Date(Date.now() - 50 * 3_600_000).toISOString(),
   },
   // Candidates (static potential evacuation points).
   { id: '1', name: 'Berkeley Community Center', lat: 37.8689, lon: -122.2737, type: 'community_centre', distance_mi: 0.3, address: '1900 Sixth St, Berkeley, CA', activated: false },
