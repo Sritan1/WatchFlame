@@ -88,3 +88,6 @@ Safety screen 2.png
 # Local-only temporary scratch (e.g. commit message drafts)
 .commit-msg.tmp
 .review-diff.tmp
+
+# One-shot probe/scratch scripts kept locally (not part of the shipped pipeline)
+scripts/_probe_*.py
