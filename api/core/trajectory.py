@@ -58,6 +58,11 @@ class TrajectoryResult:
     now: TrajectoryFrame
     projected: TrajectoryFrame
     dominant_driver: str   # "vpd" / "wind" / "humidity" — what shifted most
+    # Full hour-by-hour series from now out to the horizon (length
+    # horizon_hours + 1). frames[0] IS `now` and frames[horizon_hours] IS
+    # `projected` — so existing consumers are unaffected; the series just
+    # additionally powers the hour-by-hour phase-space curve on the frontend.
+    frames: list[TrajectoryFrame]
 
 
 def _pick_hour_index(times: list[str], from_iso: str | None, hours_ahead: int) -> int:
@@ -176,7 +181,6 @@ def compute_trajectory(
         now_idx = times.index(current_iso)
     else:
         now_idx = 0
-    proj_idx = _pick_hour_index(times, times[now_idx], horizon_hours)
 
     # Guard against any-null entries at the chosen indices — Open-Meteo
     # occasionally returns null for stations that didn't report. We
@@ -195,28 +199,30 @@ def compute_trajectory(
                 return float(arr[j])
         return fallback
 
-    now_frame = _build_frame(
-        "now",
-        times[now_idx],
-        _safe(temps, now_idx, 20.0),
-        _safe(rhs, now_idx, 50.0),
-        _safe(winds, now_idx, 10.0),
-        _safe(precs, now_idx, 0.0),
-        kbdi,
-        ndvi_anomaly,
-        season_fallback,
-    )
-    proj_frame = _build_frame(
-        f"+{horizon_hours} hr",
-        times[proj_idx],
-        _safe(temps, proj_idx, 20.0),
-        _safe(rhs, proj_idx, 50.0),
-        _safe(winds, proj_idx, 10.0),
-        _safe(precs, proj_idx, 0.0),
-        kbdi,
-        ndvi_anomaly,
-        season_fallback,
-    )
+    # Build the full hour-by-hour series from `now` out to the horizon.
+    # Index h is clamped to the last sample so a late-night `now` that runs
+    # off the end of the array carries the last value forward (matching the
+    # old projected-clamp behavior). frames[0] is the now-frame and
+    # frames[horizon_hours] is the projected-frame, so now/projected keep
+    # their exact prior values.
+    frames: list[TrajectoryFrame] = []
+    for h in range(horizon_hours + 1):
+        idx = min(now_idx + h, len(times) - 1)
+        frames.append(
+            _build_frame(
+                "now" if h == 0 else f"+{h} hr",
+                times[idx],
+                _safe(temps, idx, 20.0),
+                _safe(rhs, idx, 50.0),
+                _safe(winds, idx, 10.0),
+                _safe(precs, idx, 0.0),
+                kbdi,
+                ndvi_anomaly,
+                season_fallback,
+            )
+        )
+    now_frame = frames[0]
+    proj_frame = frames[horizon_hours]
 
     # Tier from signed score delta
     delta_pct = _percent_change(now_frame.v4_score, proj_frame.v4_score)
@@ -246,6 +252,7 @@ def compute_trajectory(
         now=now_frame,
         projected=proj_frame,
         dominant_driver=dominant_driver,
+        frames=frames,
     )
 
 
