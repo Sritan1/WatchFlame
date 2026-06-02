@@ -51,7 +51,8 @@ def test_map_feature_parses_real_shape():
     assert s.managing_org == "American Red Cross of Chicago"
     assert s.pet_friendly is False          # pet_accommodations_code == NONE
     assert s.ada_accessible is True          # ada UNK → falls back to wheelchair Y
-    assert s.updated_at is not None          # from shelter_open_date epoch ms
+    assert s.updated_at is None              # reporting_period was null
+    assert s.opened_at is not None           # from shelter_open_date epoch ms
 
 
 def test_map_feature_skips_missing_geometry():
