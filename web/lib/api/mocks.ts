@@ -191,9 +191,25 @@ const US_CITIES: GeocodeHit[] = [
 ];
 
 const MOCK_SHELTERS: Shelter[] = [
-  { id: '1', name: 'Berkeley Community Center', lat: 37.8689, lon: -122.2737, type: 'community_centre', distance_mi: 0.3, address: '1900 Sixth St, Berkeley, CA' },
-  { id: '2', name: 'Albany Senior Center', lat: 37.8870, lon: -122.2974, type: 'community_centre', distance_mi: 1.8, address: '846 Masonic Ave, Albany, CA' },
-  { id: '3', name: 'Emeryville Recreation Center', lat: 37.8316, lon: -122.2855, type: 'community_centre', distance_mi: 2.9, address: '4300 San Pablo Ave, Emeryville, CA' },
+  // Tier 1 — activated/open shelters (mock). Sorted first, like the real route.
+  {
+    id: 'open-nss-1001', name: 'MLK Jr. Civic Center Shelter', lat: 37.8702, lon: -122.2729,
+    type: 'American Red Cross', distance_mi: 0.5, address: '2151 Martin Luther King Jr Way, Berkeley, CA',
+    activated: true, status: 'OPEN', capacity: 300, occupancy: 142,
+    pet_friendly: true, ada_accessible: true, managing_org: 'American Red Cross',
+    updated_at: new Date(Date.now() - 12 * 60_000).toISOString(),
+  },
+  {
+    id: 'open-nss-1002', name: 'Berkeley High School Shelter', lat: 37.8676, lon: -122.2720,
+    type: 'County Emergency Management', distance_mi: 0.7, address: '1980 Allston Way, Berkeley, CA',
+    activated: true, status: 'OPEN', capacity: 180, occupancy: 171,
+    pet_friendly: false, ada_accessible: true, managing_org: 'Alameda County EM',
+    updated_at: new Date(Date.now() - 47 * 60_000).toISOString(),
+  },
+  // Candidates (static potential evacuation points).
+  { id: '1', name: 'Berkeley Community Center', lat: 37.8689, lon: -122.2737, type: 'community_centre', distance_mi: 0.3, address: '1900 Sixth St, Berkeley, CA', activated: false },
+  { id: '2', name: 'Albany Senior Center', lat: 37.8870, lon: -122.2974, type: 'community_centre', distance_mi: 1.8, address: '846 Masonic Ave, Albany, CA', activated: false },
+  { id: '3', name: 'Emeryville Recreation Center', lat: 37.8316, lon: -122.2855, type: 'community_centre', distance_mi: 2.9, address: '4300 San Pablo Ave, Emeryville, CA', activated: false },
 ];
 
 function clamp01(v: number): number { return Math.max(0, Math.min(1, v)); }
