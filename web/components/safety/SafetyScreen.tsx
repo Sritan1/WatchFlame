@@ -8,7 +8,6 @@ import { useState } from 'react';
 import { AdvisoryRow } from '@/components/safety/AdvisoryRow';
 import { ChecklistCard } from '@/components/safety/ChecklistCard';
 import { EvacuationCard, type EvacMode } from '@/components/safety/EvacuationCard';
-import { OpenSheltersCard } from '@/components/safety/OpenSheltersCard';
 import { FemaBanner } from '@/components/safety/FemaBanner';
 import { cardinal8 } from '@/components/ui/CompassRose';
 import { PageSection } from '@/components/ui/PageSection';
@@ -138,7 +137,6 @@ export function SafetyScreen() {
         });
 
   const activeDisaster = disasters.data?.active[0];
-  const nearestShelter = shelters.data?.[0] ?? null;
 
   // Combined Safety Status banner: factors in BOTH local fire-weather (from
   // /risk) AND the closest fire's threat heuristic (distance + size). Rules:
@@ -229,8 +227,10 @@ export function SafetyScreen() {
               it. The card itself renders skeletons inline for whichever mode
               is still waiting on its data, so the toggle stays interactive. */}
           {(closestDistanceMi != null && closestCoords) ||
+          (shelters.data && shelters.data.length > 0) ||
           incidents.isLoading ||
-          fires.isLoading ? (
+          fires.isLoading ||
+          shelters.isLoading ? (
             <EvacuationCard
               origin={loc.coords}
               fireBearingDeg={closestCoords ? nearestBearing : null}
@@ -238,18 +238,11 @@ export function SafetyScreen() {
               riskLevel={chromeLevel}
               mode={evacMode}
               onModeChange={setEvacMode}
-              nearestShelter={nearestShelter}
+              shelters={shelters.data}
               fireLoading={incidents.isLoading || fires.isLoading}
               sheltersLoading={shelters.isLoading}
             />
           ) : null}
-
-          {/* Tier-1 activated shelters — self-hides when none are open. */}
-          <OpenSheltersCard
-            shelters={shelters.data}
-            origin={loc.coords}
-            isLoading={shelters.isLoading}
-          />
         </div>
       </div>
     </PageSection>

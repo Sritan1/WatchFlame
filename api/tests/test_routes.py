@@ -565,6 +565,7 @@ class _OpenShelter:
         self.ada_accessible = kw.get("ada_accessible", True)
         self.managing_org = kw.get("managing_org", "American Red Cross")
         self.updated_at = kw.get("updated_at", "2026-06-01T00:00:00+00:00")
+        self.opened_at = kw.get("opened_at", None)
 
 
 async def _stub_open_empty(lat, lon, radius_mi=50):

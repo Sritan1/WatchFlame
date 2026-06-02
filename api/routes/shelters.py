@@ -86,6 +86,7 @@ async def get_shelters(
                     "ada_accessible": s.ada_accessible,
                     "managing_org": s.managing_org,
                     "updated_at": s.updated_at,
+                    "opened_at": s.opened_at,
                 }
             )
 
