@@ -2,8 +2,9 @@ import asyncio
 import logging
 from math import asin, cos, radians, sin, sqrt
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
+from ..core.rate_limit import EXPENSIVE, limiter
 from ..services.nces import fetch_schools
 from ..services.open_shelters import fetch_open_shelters
 from ..services.overpass import fetch_shelters
@@ -24,7 +25,9 @@ def _haversine_mi(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> flo
 
 
 @router.get("")
+@limiter.limit(EXPENSIVE)
 async def get_shelters(
+    request: Request,
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     radius_mi: float = Query(50.0, ge=5.0, le=125.0),
