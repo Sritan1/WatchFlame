@@ -9,9 +9,10 @@ Response: see TrajectoryResponse below.
 """
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
+from ..core.rate_limit import EXPENSIVE, limiter
 from ..core.trajectory import compute_trajectory
 from ..services.ndvi_cache import get_climatology as get_ndvi_climatology
 from ..services.ndvi_cache import get_current as get_ndvi_current
@@ -50,16 +51,18 @@ class TrajectoryResponse(BaseModel):
 
 
 @router.get("/trajectory", response_model=TrajectoryResponse | None)
-async def get_trajectory(lat: float, lon: float) -> TrajectoryResponse | None:
+@limiter.limit(EXPENSIVE)
+async def get_trajectory(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+) -> TrajectoryResponse | None:
     """Compute trajectory for the given coordinates.
 
     Returns `null` rather than 5xx on upstream failures (Open-Meteo
     timeout, sparse response, etc.) so the frontend can degrade
     gracefully — same pattern as the rest of the API.
     """
-    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
-        raise HTTPException(status_code=400, detail="lat/lon out of range")
-
     forecast = await fetch_forecast_hourly(lat, lon)
     if forecast is None:
         return None

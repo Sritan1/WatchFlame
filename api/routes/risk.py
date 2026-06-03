@@ -2,10 +2,11 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from ..core.ndvi import ndvi_anomaly as compute_ndvi_anomaly
+from ..core.rate_limit import EXPENSIVE, limiter
 from ..core.regional_calibration import (
     calibration_info,
     get_state_calibration,
@@ -101,7 +102,8 @@ class RiskResponse(BaseModel):
 
 
 @router.post("", response_model=RiskResponse)
-async def post_risk(body: RiskRequest) -> RiskResponse:
+@limiter.limit(EXPENSIVE)
+async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
     kbdi_value: float | None = body.kbdi
     ndvi_anom: float | None = body.ndvi_anomaly
     # Observed days-since-rain from the archive (when fetched). Stays None on
