@@ -3,7 +3,7 @@
 import { useAesthetic } from '@/lib/aesthetic';
 
 /** Eyebrow + optional right-side meta — the section divider used above every
- *  page block (e.g. "STATUS · Berkeley, CA … Updated 2m ago · CAL FIRE · NWS"). */
+ *  page block (e.g. "STATUS · Berkeley, CA … Updated 2m ago · FIRMS · NIFC"). */
 export function SectionEyebrow({
   children,
   color,

@@ -158,7 +158,7 @@ export function SafetyScreen() {
     <PageSection top={36} bottom={56}>
       <SectionEyebrow
         color="#E8B339"
-        right={`FEMA · CAL FIRE · NWS · synced ${new Date().toLocaleTimeString([], {
+        right={`FEMA · NIFC · CAL FIRE · synced ${new Date().toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
         })}`}

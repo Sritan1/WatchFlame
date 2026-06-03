@@ -280,7 +280,7 @@ export function StatusScreen() {
             color={isAlarming ? r.color : ae.textDim}
             right={`${
               weather.isFetching || !weather.data ? 'Updating' : weather.data.location.name
-            } · CAL FIRE · NWS`}
+            } · FIRMS · NIFC`}
           >
             {isAlarming ? 'Active Threat · ' : 'Status · '}{loc.label}
           </SectionEyebrow>
@@ -724,7 +724,7 @@ function ConditionsCard({
               maxWidth: '60%',
             }}
           >
-            NWS · {locationName}
+            OWM · {locationName}
           </span>
         </div>
         <div
