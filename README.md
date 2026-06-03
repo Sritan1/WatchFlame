@@ -1,12 +1,12 @@
-# WildFire
+# Ember Watch
 
-[![Validated against 500 historical fires](https://img.shields.io/badge/validated-500%20historical%20fires-3FB68B?style=flat-square)](docs/v4_validation.png) [![17-state regional calibration](https://img.shields.io/badge/calibration-17%20states-E8B339?style=flat-square)](docs/regional_thresholds.png) [![Design decisions](https://img.shields.io/badge/docs-design%20decisions-FF7A3A?style=flat-square)](docs/DECISIONS.md)
+[![Validated against 500 historical fires](https://img.shields.io/badge/validated-500%20historical%20fires-3FB68B?style=flat-square)](docs/v4_validation.png) [![17-state regional calibration](https://img.shields.io/badge/calibration-17%20states-E8B339?style=flat-square)](docs/regional_thresholds.png) [![Design decisions](https://img.shields.io/badge/docs-design%20decisions-FF7A3A?style=flat-square)](docs/DECISIONS.md) [![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)](LICENSE)
 
-A mobile wildfire-awareness app for the US. Live satellite fire detections, regionally-calibrated risk scoring driven by real per-location vegetation and weather data, evacuation shelter lookup, and a transparent what-if risk calculator — all on your phone via Expo Go.
+A wildfire-awareness web app for the US. It fuses live satellite fire detections, regionally-calibrated fire-weather scoring driven by real per-location weather and vegetation data, an active-fire proximity model, open-shelter lookup, and a transparent what-if risk calculator — all in one product-grade dashboard.
 
-Built solo as a portfolio project to demonstrate end-to-end product engineering: a real fire-weather algorithm (V4 NDVI anomaly × KBDI × multiplicative VPD with per-state percentile thresholds), live data fusion across nine government and satellite sources, and a mobile UI with intentional motion design and accessibility considerations.
+Built solo as a portfolio project to demonstrate end-to-end product engineering: a real, **fit-and-validated** fire-weather algorithm, live data fusion across ten government and satellite sources, and a polished UI with intentional motion design — backed by a typed FastAPI service with graceful degradation on every upstream.
 
-<!-- TODO: hero GIF — Status screen flowing into Map screen, ~3s loop. Should show the orb, the live animated background, and one tap → map view -->
+> **The app is "Ember Watch"; the repository is `wildfire-app`.** The primary surface is the **Next.js web app** (`web/`). A parallel Expo/React Native client (`app/`) shares the same backend and algorithm and is feature-tracked but deferred.
 
 ---
 
@@ -15,8 +15,8 @@ Built solo as a portfolio project to demonstrate end-to-end product engineering:
 - [What it does](#what-it-does)
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
-- [The risk algorithm](#the-risk-algorithm)
-- [Design decisions](docs/DECISIONS.md) — load-bearing engineering choices, each with cost + alternative named
+- [The risk model](#the-risk-model)
+- [Design decisions](docs/DECISIONS.md) — load-bearing engineering choices, each with its cost and the alternative named
 - [Data sources](#data-sources)
 - [Run locally](#run-locally)
 - [Project layout](#project-layout)
@@ -29,192 +29,177 @@ Built solo as a portfolio project to demonstrate end-to-end product engineering:
 
 ## What it does
 
-**Status screen** — A live composite risk tier for your current GPS location. Combines two independent axes — calibration-aware fire weather (V4 algorithm via VPD × wind × KBDI drought × NDVI vegetation anomaly) and active-fire proximity (distance + size + wind alignment + containment + FIRMS staleness) — through a published 4×4 lookup matrix, not a politically-weighted average. The hero pairs with three click-to-expand modals that document the math end-to-end: the **calibration ladder** shows where your score lands across all 17 fitted states; the **"Why this score?" explainer** shows the matrix cell your weather and threat tiers landed in; the **confidence breakdown** itemizes the freshness of every upstream signal feeding the tier. Also shows the active drought index (KBDI), the live vegetation-stress signal (NDVI anomaly from Sentinel-2 satellite), nearby active fires, and a FEMA disaster banner when applicable.
+The app is organized as five screens. Each one is built on the same shared backend and the same calibrated algorithm.
 
-**Map screen** — Live NASA FIRMS satellite fire detections plus named-incident overlays from NIFC and CAL FIRE, sized by acreage and color-coded by fire-weather risk. Pull-to-refresh, tap-to-inspect, zoom-aware hit testing, two distinct bottom sheets for the two data layers.
+**Command Center (Status)** — A live composite risk tier for your location. It combines two independent axes:
 
-**Risk Calculator** — A slider-driven what-if tool: temperature, humidity, wind, KBDI drought index, and season. The same algorithm that powers the Status score, but driven by hypothetical inputs instead of live weather. Useful for understanding how each input moves the score, and for sanity-checking the algorithm's behavior across the full input space.
+- **Fire weather** — the calibration-aware V4 index (VPD × wind × KBDI drought × NDVI vegetation anomaly), bucketed against your state's own fire history.
+- **Active-fire threat** — proximity, size, wind alignment, containment, and detection age of any fire within 50 mi.
 
-**Safety screen** — Nearby fire shelters from OpenStreetMap (community centers, schools) and NCES (US Department of Education's public schools database), sorted by distance and deduped. Direction-of-evacuation arrow and Maps deep-link integration.
+These combine through a published **4×5 tier matrix** — not a hand-weighted average. Three click-to-open modals document the math end to end: a **calibration ladder** (where your score lands across all 17 fitted states), a **"Why this score?"** matrix explainer (the exact cell you landed in), and a **confidence breakdown** (the freshness of every upstream signal). The screen also surfaces drought (KBDI), live vegetation stress (NDVI), a 6-hour fire-weather **trajectory**, nearby fires, and a FEMA advisory when one is active.
 
-**Saved locations** — Save locations as "Home", "Work", "Mom's house", etc. Swap the active location from a long-press on the Status header.
+**Live Map** — NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and two distinct rails for the two data layers.
+
+**Risk Forecast (Calculator)** — A slider-driven what-if tool over temperature, humidity, wind, KBDI, and vegetation. Same algorithm as Command Center, driven by hypothetical inputs instead of live weather — useful for understanding how each factor moves the score. Works fully offline, no GPS or keys required.
+
+**Safety Plan** — Open shelters from the live **FEMA National Shelter System** (with status and capacity) plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. Direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
+
+**Settings** — Three coordinated dark themes, unit preferences (all browser-local, no account), a full disclaimer, and the complete data-source attribution.
+
+Plus **saved locations** (Home / Work / etc., swappable from the rail) and a per-incident **Fire Detail** page.
 
 ---
 
 ## Screenshots
 
-<!-- TODO: Status screen hero shot — wave background visible, hero orb showing risk score, ShimmerPill, headline + subtitle, calibration link, conditions card -->
+<!-- Drop UI captures here. Suggested set:
+     1. Command Center hero — orb + headline + confidence chip + trajectory chip
+     2. Live Map — markers + incident rail open
+     3. Risk Forecast — sliders + score gauge
+     4. Safety Plan — open shelter tile + checklist
+     5. "Why this score?" matrix modal -->
 
-<!-- TODO: Map screen — at least 3 fire markers visible, one of the bottom sheets open, header chips showing active fires count -->
-
-<!-- TODO: Risk Calculator — all 5 sliders visible mid-position, risk score readout, "Reset to my area" button visible -->
-
-<!-- TODO: Safety screen — shelter list with at least 3 entries, distance + direction arrows visible -->
-
-<!-- TODO: Calibration modal — open over Status, showing the regional explanation + the NDVI anomaly section with a live value -->
+_App UI captures are kept out of version control; the validation figures below are generated from the committed pipeline._
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Expo Go (your phone)                    │
-│   ┌──────────────┬──────┬──────┬──────────┬────────────┐   │
-│   │   Status     │ Map  │ Risk │  Safety  │  Settings  │   │
-│   └──────┬───────┴──┬───┴──┬───┴────┬─────┴──────┬─────┘   │
-│          │          │      │        │            │         │
-│          ▼          ▼      ▼        ▼            ▼         │
-│       TanStack Query (request dedup + persistent cache)     │
-│            │                                                │
-└────────────┼────────────────────────────────────────────────┘
-             │ HTTPS (local: laptop LAN IP, prod: Railway URL)
-             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                FastAPI backend (uvicorn)                    │
-│                                                             │
-│   /healthz   /fires        /risk       /weather             │
-│   /geocode   /shelters     /disasters/near                  │
-│   /incidents/near          /risk/calibration                │
-│                                                             │
-└────┬────────────────────────────────────────────────────────┘
-     │
-     ▼ async fan-out (httpx, graceful degradation per upstream)
-┌────────────────────────────────────────────────────────────┐
-│ NASA FIRMS │ OWM │ Open-Meteo │ CDSE │ Census │ NIFC │ ... │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│   Web app  (Next.js, primary)│        │  Mobile  (Expo RN, deferred) │
+│   Command · Map · Risk ·     │        │   same screens, same algo    │
+│   Safety · Settings          │        │                              │
+└──────────────┬───────────────┘        └───────────────┬──────────────┘
+               │     TanStack Query (dedup + cache)      │
+               └────────────────────┬────────────────────┘
+                                    │ HTTPS
+                                    ▼
+                    ┌───────────────────────────────────┐
+                    │      FastAPI backend (uvicorn)     │
+                    │  /healthz /fires /risk /weather    │
+                    │  /geocode /shelters /trajectory    │
+                    │  /incidents/near /disasters/near   │
+                    │  /risk/calibration                 │
+                    └──────────────────┬────────────────┘
+                                       │ async fan-out (httpx),
+                                       │ graceful degradation per upstream
+                                       ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │ FIRMS · OWM · Open-Meteo · Copernicus · Census · NIFC ·   │
+        │ Cal Fire · FEMA · OpenStreetMap · NCES                    │
+        └──────────────────────────────────────────────────────────┘
 ```
 
-**Frontend:** Expo SDK 54 + Expo Router (file-based routing), React Native + TypeScript, NativeWind v4 (Tailwind for RN), TanStack Query with AsyncStorage persistence, Reanimated v4 for the animated backgrounds and orb, react-native-maps for the map screen, react-native-svg for the custom orb and tick rings.
+**Frontend (`web/`)** — Next.js 16 (App Router) + React + TypeScript (strict), Tailwind v4, TanStack Query, react-leaflet on MapTiler tiles, with custom canvas/SVG rendering for the hero orb, phase-space graph, and animated backgrounds. The composite math lives in pure, testable functions ([`web/lib/composite-risk.ts`](web/lib/composite-risk.ts)).
 
-**Backend:** FastAPI on Python 3.14, httpx async client, pure-Python algorithm core (no ML), pydantic v2 for request/response validation, JSON-on-disk caching for NDVI (per-coordinate, 7-day TTL for current / 30-day for climatology), in-memory caching for the live data feeds.
+**Backend (`api/`)** — FastAPI on Python 3.14, async `httpx`, pydantic v2, and a **pure-Python algorithm core (no ML)**. JSON-on-disk caching for NDVI (per-coordinate, with separate TTLs for current vs. climatology) and in-memory caching for the live feeds.
 
-**Design principles** — Graceful degradation on every upstream: when a service returns 4xx/5xx/timeout, the route logs once and returns an empty/null payload rather than 5xx-ing back to the client. Every feature has a fallback: regional calibration falls back to global cutoffs, NDVI falls back to a calendar season multiplier, KBDI falls back to a days-since-rain proxy. The Risk Calculator works fully offline without GPS or API keys.
+**Design principle — graceful degradation everywhere.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty/null payload instead of failing the request. Every feature has a fallback: regional calibration → global cutoffs, NDVI → calendar season factor, KBDI → days-since-rain proxy, open shelters → candidate locations. The Risk Forecast runs with no GPS and no keys at all.
 
 ---
 
-## The risk algorithm
+## The risk model
 
-A transparent rule-based fire weather index — no ML — implemented in [api/core/risk_algorithm.py](api/core/risk_algorithm.py). Grades the current environment for fire ignition and growth on a 0–1 scale, like a UV index for fire danger. It does **not** predict that a fire *will* start, and it doesn't describe an existing fire's behavior — it's a severity signal for the local environment.
+A transparent, rule-based fire-weather index — no machine learning — in [`api/core/risk_algorithm.py`](api/core/risk_algorithm.py). It grades the local environment for fire ignition and growth on a 0–1 scale, like a UV index for fire danger. It does **not** predict that a fire *will* start, and it does not describe an existing fire's behavior.
 
-### Formula (V4)
+### 1. The fire-weather index (V4)
 
-```
-e_s              = 6.1078 · exp(17.27·T / (T + 237.3))         # Tetens / Magnus, hPa
-VPD              = e_s · (1 − humidity/100)                    # vapor pressure deficit
-vpd_factor       = clamp(VPD / 40, 0, 1)
-wind_factor      = clamp(0.2 + 0.8 · (wind_kph / 40)^1.5, 0.2, 1)
-drought_factor   = clamp(0.1 + 0.9 · KBDI / 800, 0.1, 1)
-ndvi_anomaly     = current_NDVI − same_month_climatology_NDVI
-ndvi_factor      = clamp(0.80 − ndvi_anomaly · 1.0, 0.40, 1.00)
-
-raw   = vpd_factor^0.5 · wind_factor^0.3 · drought_factor^0.2
-score = ndvi_factor · raw                                      # ndvi_factor REPLACES the
-                                                               # old calendar season_mult on
-                                                               # the live path; falls back
-                                                               # to season_mult when
-                                                               # Sentinel-2 is unavailable
-```
-
-Multiplicative combination captures the "hot AND dry AND windy" non-linearity — any single mild factor pulls the whole score down. The structure mirrors the published Fosberg, Hot-Dry-Windy, and McArthur fire-weather indices.
-
-### The vegetation-stress signal (NDVI anomaly)
-
-Raw NDVI alone is mostly biome detection — Pacific Northwest forests are always ~0.8, the Arizona desert always ~0.2. **NDVI anomaly** (current minus the same-month climatology averaged over the last 3 years) is biome-agnostic and captures the actual fire-relevant signal: how much drier or sparser the vegetation in a 1 km buffer around you is right now versus its seasonal norm. This is the variable USFS WFAS and similar operational systems use as a fuel-load proxy.
-
-When the Sentinel-2 satellite imagery is unavailable (heavy cloud cover, the user is in the Risk Calculator without GPS), the score falls back transparently to a calendar-based season multiplier. The Status calibration modal surfaces the live NDVI value when present and explains the fallback when not.
-
-### Drought (KBDI)
-
-The Keetch-Byram Drought Index (Keetch & Byram 1968) — the operational soil-moisture deficit metric the US Forest Service uses. Computed daily by integrating a year of precipitation and evapotranspiration history from [Open-Meteo's free archive](https://open-meteo.com/) (no API key required), keyed to a 0.1° grid cell so two users in the same metro area share one cached compute.
-
-This is far more honest than V1's "days since rain" proxy because two weeks of dry weather in Florida humidity is not the same drought as two weeks in Arizona — KBDI captures both.
-
-### Per-state regional calibration
-
-A score of 0.55 in Florida is a high fire-risk day; the same 0.55 in Arizona is fairly routine. A single global cutoff would cry wolf in one and miss real danger in the other.
-
-The calibration script ([scripts/build_regional_thresholds.py](scripts/build_regional_thresholds.py)) samples 100 historical fires per state from the federal FPA_FOD database (Fire Program Analysis, ~1.88M wildfires 1992–2015), pulls real day-of-fire weather from the Open-Meteo Archive, runs `compute_risk` against each, and stores the resulting score distribution's 50th / 75th / 97th percentiles per state. These become the bucket boundaries:
+Three meteorological factors combine **multiplicatively**, then a vegetation signal scales the result:
 
 ```
-LOW       :  score < 50th percentile of fire-day scores in this state
-MODERATE  :  50th – 75th
-HIGH      :  75th – 97th
-EXTREME   :  ≥ 97th  (top ~3% of historically-observed fire days)
+VPD            vapor pressure deficit from temperature + humidity (Tetens/Magnus)
+wind           sustained 10-min wind, saturating at a ~32 mph plateau
+drought        Keetch-Byram Drought Index (KBDI, 0–800)
+vegetation     NDVI anomaly vs. the same-month 3-year normal (fallback: season factor)
+
+score = (vpd^a · wind^b · drought^c) · vegetation_factor
 ```
 
-17 states are currently fitted, covering the highest-fire-risk regions in the US: the entire West (AZ, CA, CO, ID, MT, NM, NV, OR, UT, WA, WY), the SE belt (FL, GA, NC, SC), and TX + OK. Other states fall back to global cutoffs.
+Multiplicative combination captures the "hot **and** dry **and** windy" non-linearity — any single mild factor pulls the whole score down. The structure mirrors the published Fosberg, Hot-Dry-Windy, and McArthur indices.
 
-For state membership at request time, the route calls the **Census Bureau's reverse-geocoder** (free, no key, cached 24h) — authoritative even for border-overlap points like Reno NV that a bbox+centroid heuristic would misclassify as CA.
+<details>
+<summary><strong>Why each input, and what it really measures</strong></summary>
+
+- **NDVI anomaly, not raw NDVI.** Raw NDVI is mostly biome detection (PNW forests are always ~0.8, Arizona desert ~0.2). The *anomaly* — current vs. the same-month normal over a 1 km buffer — is biome-agnostic and captures how much drier or sparser the vegetation is *right now* versus its seasonal baseline. This is the fuel-load proxy operational systems like USFS WFAS rely on. When Sentinel-2 is unavailable (cloud cover, or the Calculator with no GPS), the score falls back transparently to a calendar season factor.
+- **KBDI for drought.** The operational soil-moisture-deficit metric (Keetch & Byram 1968), computed daily from a 365-day precipitation + evapotranspiration window via the free Open-Meteo archive, keyed to a 0.1° grid cell so neighbors share one cached compute. Two dry weeks in Florida humidity is not the same drought as two dry weeks in Arizona — KBDI captures both; a "days since rain" proxy does not.
+
+</details>
+
+### 2. Per-state calibration
+
+A 0.55 in Florida is a dangerous fire day; the same 0.55 in Arizona is routine. A single global cutoff would cry wolf in one place and miss real danger in the other.
+
+The calibration script samples ~500 historical fire days **per state** from the federal FPA-FOD database (~1.88M wildfires, 1992–2015), pulls real day-of-fire weather, scores each with the same V4 algorithm, and stores the **50th / 75th / 97th percentiles** of the resulting distribution as that state's tier boundaries:
+
+```
+LOW       score < 50th pctile of the state's fire-day scores
+MODERATE  50th – 75th
+HIGH      75th – 97th
+EXTREME   ≥ 97th    (top ~3% of historically observed fire days)
+```
+
+**17 states are fitted** (the entire West, the Southeast belt, plus TX/OK); others fall back to global cutoffs. State membership is resolved at request time via the **US Census reverse-geocoder** — authoritative even for border points like Reno, NV that a bbox heuristic would misclassify.
 
 ![Per-state regional thresholds](docs/regional_thresholds.png)
 
-Each row is one state's calibrated tier bands. The vertical probe line at score **0.45** shows the headline result of calibration: the same raw V4 score lands in **EXT** in NC/GA/FL (top three rows), **MOD** in NM/AZ/UT/NV/CA (next cluster), and **HIGH** for the nine states in between — a 2-tier swing across the country for an identical number. The same score is interpreted differently because the underlying fire-day distribution is different; calibration is what makes that legible to the user.
+_Each row is one state's calibrated tier bands. A probe at score **0.45** lands in **EXTREME** in NC/GA/FL, **HIGH** across the middle cluster, and **MODERATE** in NM/AZ/UT/NV/CA — a two-tier swing across the country for an identical raw number. That legibility is exactly what calibration buys._
 
-### Personal Threat composite (Status page)
+### 3. The personal-threat composite
 
-Fire weather is one half of the picture. The other half — **how exposed are you to an active fire right now?** — needs distance, size, wind alignment, containment, and detection age of any fires within 50 mi of the user. The Status page combines both axes into a single **headline tier** through a published 4×4 lookup matrix:
+Fire weather is one axis; **how exposed you are to an active fire right now** is the other. The threat axis aggregates distance and fire size **multiplicatively** across every fire within 50 mi, with smooth adjustments for wind alignment, containment, and detection age (no hard cliffs). The two axes resolve to a single headline tier through a published **4×5 lookup matrix**:
 
 ```
-                T=none     T=low      T=mod      T=high     T=ext
-W=low           LOW        LOW        LOW        MOD        HIGH
-W=mod           LOW        MOD        MOD        HIGH       HIGH
-W=high          MOD        MOD        HIGH       HIGH       EXT
-W=ext           MOD        HIGH       HIGH       EXT        EXT
+                T=none   T=low    T=mod    T=high   T=ext
+W=low           LOW      LOW      LOW      MOD      HIGH
+W=mod           LOW      MOD      MOD      HIGH     HIGH
+W=high          MOD      MOD      HIGH     HIGH     EXT
+W=ext           MOD      HIGH     HIGH     EXT      EXT
 ```
 
-`W` is the calibration-aware fire-weather tier (LOW / MOD / HIGH / EXT from per-state percentile bucketing above). `T` is the active-fire threat tier — derived from `t = clamp01((base + windBump) × staleDampener × containmentDampener)` where `base = 1 − exp(−d/21) · (1 − size_score)` aggregates distance and size across all fires within 50 mi, with ±0.15 wind-alignment adjustment, ×0.6 dampener for stale FIRMS detections (>24 hr), and ×0.6 dampener for fires ≥75% contained. `T = none` is a fifth column for the "no active fires in range" case, distinct from the lowest threat tier.
+**Why a matrix, not a weighted average?** An earlier version was `0.45·W + 0.55·T`, bucketed by quartile — but those weights were never fitted; they existed only to cap weather-alone risk at MODERATE. The matrix encodes that same intent directly (`W=ext × T=none → MOD`, now a single editable cell) while arguing every other cell on its own merits. Full rationale in [`docs/DECISIONS.md §6`](docs/DECISIONS.md).
 
-**Why a matrix and not a weighted average?** An earlier version was `composite = 0.45 × W + 0.55 × T` bucketed by quartile. Those weights weren't fitted to anything — they were chosen to cap weather-alone risk at MODERATE so the headline never escalated to EXTREME on a hot dry day with no nearby fire. The matrix encodes that same intent directly (`W=ext × T=none → MOD` is the same constraint, now editable as a single cell), but every other cell is now argued on its own merits instead of derived through two arbitrary coefficients. The full rationale, including cells where the matrix disagrees with the prior linear blend, lives in [`docs/DECISIONS.md §6`](docs/DECISIONS.md#6-from-political-weights-to-a-published-tier-matrix).
+### 4. Validation
 
-The composite logic lives in [`web/lib/composite-risk.ts`](web/lib/composite-risk.ts) (pure functions, no React, easy to unit-test). The Status page surfaces it through three click-to-expand modals — calibration ladder, "Why this score?" matrix explainer, and confidence breakdown — so the entire derivation is explainable from the orb back to the upstream data sources.
+The constants are **fit, not hand-picked.** The exponents, saturation scales, and floors live in a `RiskParams` dataclass and were fit to maximize Spearman ρ(score, log fire size) on a 70/30 **train split**, with the honest number reported on the **held-out test split**. The 500-fire sample is frozen to a CSV so fitting, benchmarking, and chart regeneration run offline and reproducibly.
 
-### Validation
+![V4 validated against ~500 historical fires](docs/v4_validation.png)
 
-The V4 algorithm is hindcast against a stratified 500-fire sample from the USDA Fire Program Analysis Fire-Occurrence Database (FPA-FOD, 1992–2015), with real day-of-fire weather pulled from the Open-Meteo Archive and real KBDI computed per fire from a 365-day precipitation + temperature window. The sample is frozen to `data/hindcast_features.csv`, so the whole pipeline — fitting, benchmarking, chart regen — runs offline and reproducibly.
+- **Spearman ρ = +0.32 on the held-out test split** (+0.31 full sample), up from +0.26 under the original hand-picked constants. Modest but real — a fire-weather index is not a fire-size predictor, and at this sample size ignition-cause variance dominates.
+- **Beats published operational indices on the same fires:** fitted V4 (+0.32) edges out Hot-Dry-Windy (+0.30) and Fosberg FFWI (+0.28) — and unlike either, V4 carries the per-state calibration layer on top.
+- **Mean score rises monotonically with fire size** — 0.265 (<1 ac) → 0.386 (>1,000 ac) — with **non-overlapping 95% CIs between the extremes.** The algorithm assigns higher fire-weather severity to days that produced large fires, without knowing a fire occurred.
 
-![V4 algorithm validated against ~500 historical fires — Spearman 0.31, monotonic increase in mean score with fire size, non-overlapping 95% CIs between smallest and largest buckets](docs/v4_validation.png)
+![Fitted V4 vs. published fire-weather indices](docs/v4_benchmark.png)
 
-**The constants are fit, not hand-picked.** The multiplicative exponents, VPD/wind saturation scales, and floors live in a `RiskParams` dataclass and were fit to maximize Spearman ρ(score, log fire size) on a 70/30 **train split**, with the honest number reported on the **held-out test split** — see [scripts/fit_v4_params.py](scripts/fit_v4_params.py).
+<details>
+<summary><strong>Honest gaps</strong></summary>
 
-**Headline results (N=498, 100% real KBDI):**
+- The unconstrained fit drove the KBDI exponent toward zero (fire *size* is spread- and VPD-dominated; drought governs ignition more than final size). It's floored at 0.12 to keep the drought integrator load-bearing, costing only +0.006 ρ — argued in [`docs/DECISIONS.md §2`](docs/DECISIONS.md).
+- The FPA-FOD sample skews toward human-caused spring fires that peak before green-up, which a vegetation-as-fuel proxy under-rates. Splitting natural vs. human ignition is on the roadmap.
+- The dataset ends in 2015; the per-state percentile shape should be re-fit periodically against newer fire records.
+- NDVI is averaged over a 1 km buffer — hyper-local fuel state isn't modeled. The right scale for this app; finer resolution would matter for a fielded tool.
 
-- **Spearman ρ = +0.32 on the held-out test split** (+0.31 across the full sample), up from +0.26 under the original hand-picked constants. Modest but real — the V4 score is a fire-weather index, not a fire-size predictor; on a sample this size, ignition-cause variance dominates fire size.
-- **Beats published operational indices on the same fires**: fitted V4 (test ρ +0.32) edges out the Hot-Dry-Windy Index (+0.30, Srock et al. 2018) and the Fosberg FFWI (+0.28) — and unlike either raw index, V4 carries the per-state calibration layer on top.
-- **Mean predicted score increases monotonically with fire size**: 0.265 (<1 ac) → 0.274 (1-100 ac) → 0.329 (100-1,000 ac) → 0.386 (>1,000 ac), with **non-overlapping 95% confidence intervals between the two extremes** (small upper bound 0.287; very-large lower bound 0.361). The algorithm assigns materially higher fire-weather severity to days that produced large fires than to days that produced small ones — without knowing a fire occurred.
-- **Sample shape**: stratified by FPA-FOD size class (125 fires each from <1 / 1-100 / 100-1,000 / >1,000 ac), deterministic `seed=7`. Reproduce via [scripts/freeze_hindcast_dataset.py](scripts/freeze_hindcast_dataset.py) → [scripts/validate_v4_chart.py](scripts/validate_v4_chart.py).
-
-![Fitted V4 vs published fire-weather indices on the same held-out test fires — Spearman ρ: V4 fitted +0.32, Hot-Dry-Windy +0.30, Fosberg FFWI +0.28, V4 original constants +0.26](docs/v4_benchmark.png)
-
-**Honest notes**:
-- The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03 — fire **size** is dominated by spread (wind) and evaporative demand (VPD), while drought governs ignition more than final size. The exponent was floored at 0.12 to keep the KBDI integrator load-bearing, at a cost of only +0.006 ρ. The tradeoff is argued in [docs/DECISIONS.md §2](docs/DECISIONS.md).
-- 125 fires per bucket isn't enormous, so the small gap between the two middle buckets is within noise. The two extreme buckets are cleanly separated, which is the load-bearing claim for a fire-weather index.
-
-### Honest gaps
-
-- **Spring underweighting.** The Kaggle dataset is dominated by human-caused fires (debris burning) that peak in March–April before vegetation greens up. A vegetation/season-as-fuel proxy under-rates that season. Splitting natural vs. human ignition into separate fitted thresholds is on the deferred roadmap.
-- **Climate has shifted since 2015** (the Kaggle dataset's end). Newer fire databases exist (NIFC has 2016+ data) but are less tidily structured; the per-state percentile shape should be re-fit periodically.
-- **NDVI is averaged over a 1 km buffer.** Hyper-local fuel state (a single yard, a backcountry trail) isn't modeled. For a portfolio app this is the right scale; for a fielded tool, finer resolution would matter.
+</details>
 
 ---
 
 ## Data sources
 
-| Source | What it provides | Endpoint | Key required |
-|---|---|---|---|
-| [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/) | VIIRS / MODIS satellite fire detections (live, ~4-hour latency) | Area API | Free (map key) |
-| [OpenWeatherMap](https://openweathermap.org/api) | Current temperature, humidity, wind | One Call | Free tier |
-| [Open-Meteo Archive](https://open-meteo.com/) | 365-day temperature + precipitation history → KBDI | Archive API | None |
-| [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) | Sentinel-2 satellite imagery → NDVI anomaly | Statistical API | Free (OAuth) |
-| [US Census Bureau](https://geocoding.geo.census.gov/) | Reverse geocode lat/lon → state + county | Geographies API | None |
-| [NIFC WFIGS](https://data-nifc.opendata.arcgis.com/) | Named active wildland-fire incidents (national) | Open Data | None |
-| [CAL FIRE](https://www.fire.ca.gov/incidents) | California-specific named incidents | XML feed | None |
-| [OpenFEMA](https://www.fema.gov/about/openfema/api) | Active federal disaster declarations | Open API | None |
-| [OpenStreetMap Overpass](https://overpass-api.de/) | Community centers / churches as shelter candidates | Overpass QL | None |
-| [NCES](https://nces.ed.gov/programs/edge/) | Public schools as shelter candidates | Public Schools API | None |
-| [Kaggle: 1.88M US Wildfires](https://www.kaggle.com/datasets/rtatman/188-million-us-wildfires) | Historical validation + calibration ground truth | SQLite dataset | Kaggle account |
+| Source | Provides | Key |
+|---|---|---|
+| [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/) | VIIRS/MODIS satellite fire detections (~1–4 hr latency) | Free (map key) |
+| [OpenWeatherMap](https://openweathermap.org/api) | Current temperature, humidity, wind | Free tier |
+| [Open-Meteo](https://open-meteo.com/) | 365-day weather history → KBDI drought | None |
+| [Copernicus (CDSE)](https://dataspace.copernicus.eu/) | Sentinel-2 imagery → NDVI anomaly | Free (OAuth) |
+| [US Census](https://geocoding.geo.census.gov/) | Reverse geocode → state + county | None |
+| [NIFC WFIGS](https://data-nifc.opendata.arcgis.com/) | Named active wildfire incidents (national) | None |
+| [Cal Fire](https://www.fire.ca.gov/incidents) | California-specific named incidents | None |
+| [FEMA](https://www.fema.gov/about/openfema/api) | Disaster declarations + National Shelter System | None |
+| [OpenStreetMap](https://overpass-api.de/) | Community centers / churches as shelter candidates | None |
+| [NCES](https://nces.ed.gov/programs/edge/) | Public schools as shelter candidates | None |
+| [FPA-FOD (Kaggle)](https://www.kaggle.com/datasets/rtatman/188-million-us-wildfires) | Historical validation + calibration ground truth | Kaggle account |
 
-Six free upstream services + Kaggle for historical data. **Two API keys total** (NASA FIRMS + OpenWeatherMap). CDSE requires a free account to get OAuth credentials; if you skip CDSE, the NDVI feature falls back transparently to the calendar season multiplier.
+**Two API keys total** (NASA FIRMS + OpenWeatherMap). CDSE needs a free OAuth account; skip it and NDVI falls back to the season factor. Everything else is keyless.
 
 ---
 
@@ -222,13 +207,9 @@ Six free upstream services + Kaggle for historical data. **Two API keys total** 
 
 ### Prerequisites
 
-- **Python 3.11+** (3.14 used in development). The Microsoft Store stub does not work — get the official installer from [python.org/downloads](https://www.python.org/downloads/) and check "Add Python to PATH".
-- **Node.js 18+** for the Expo dev server.
-- **Expo Go** on your phone ([iOS](https://apps.apple.com/app/expo-go/id982107779) / [Android](https://play.google.com/store/apps/details?id=host.exp.exponent)). Same Wi-Fi as the laptop, or use `--tunnel`.
-- **API keys** (all free):
-  - NASA FIRMS — [map key signup](https://firms.modaps.eosdis.nasa.gov/api/map_key/)
-  - OpenWeatherMap — [api signup](https://openweathermap.org/api)
-  - CDSE — register at [dataspace.copernicus.eu](https://dataspace.copernicus.eu/) → User Settings → OAuth clients (optional but recommended for V4 NDVI)
+- **Python 3.11+** (3.14 in development) — use the [python.org](https://www.python.org/downloads/) installer, not the Microsoft Store stub.
+- **Node.js 18+**.
+- API keys (all free): [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/api/map_key/), [OpenWeatherMap](https://openweathermap.org/api), and optionally [CDSE](https://dataspace.copernicus.eu/) for NDVI.
 
 ### Backend
 
@@ -238,53 +219,37 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r api/requirements.txt
 
-# copy and fill in keys
-copy api\.env.example api\.env
-# edit api\.env — NASA_FIRMS_API_KEY, OPENWEATHERMAP_API_KEY, CDSE_*
+copy api\.env.example api\.env     # fill in OWM_API_KEY, FIRMS_API_KEY, CDSE_*
 
-# run tests (should report 97 passed)
-python -m pytest api/ -q
-
-# run server
+python -m pytest api/ -q           # → 131 passed
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 # → http://localhost:8000/docs   (Swagger UI)
-# → http://localhost:8000/healthz
 ```
 
-Note: `python -m uvicorn` rather than `uvicorn.exe` works around a Windows Application Control quirk that blocks the pip-installed CLI shim. Same workaround applies to other pip-installed CLI tools on Windows.
+> On Windows, `python -m uvicorn` avoids an Application Control quirk that can block the pip-installed `uvicorn.exe` shim. Set `MOCK_OPEN_SHELTERS=1` to populate the open-shelter UI from fixtures (the live FEMA feed is usually empty for any given location).
 
-### Mobile app
+### Web app (primary)
+
+```powershell
+cd web
+# .env.local needs:
+#   NEXT_PUBLIC_API_URL=http://localhost:8000
+#   NEXT_PUBLIC_USE_MOCKS=false
+#   NEXT_PUBLIC_MAPTILER_KEY=<key>
+npm install
+npm run dev
+# → http://localhost:3000
+```
+
+> Set `NEXT_PUBLIC_USE_MOCKS=true` to run the entire UI against bundled fixtures with no backend. The MapTiler key is inlined into the browser bundle by design — **domain-lock it in the MapTiler dashboard before any public deploy.**
+
+### Mobile app (deferred, optional)
 
 ```powershell
 cd app
-
-# copy and set the API URL
-copy .env.example .env
-# edit .env: EXPO_PUBLIC_API_URL should be your laptop LAN IP
-#   find LAN IP:  ipconfig | Select-String IPv4
-#   e.g. EXPO_PUBLIC_API_URL=http://192.168.1.42:8000
-
+copy .env.example .env             # EXPO_PUBLIC_API_URL = your laptop LAN IP
 npm install
-npx expo start
-
-# scan the QR code with Expo Go (same Wi-Fi as laptop)
-# different network / Wi-Fi blocks LAN:  npx expo start --tunnel
-```
-
-### Smoke tests (optional)
-
-```powershell
-# verify CDSE OAuth + NDVI fetch works
-python -m scripts._smoke_cdse
-
-# verify KBDI fetch + computation
-python -m scripts._smoke_kbdi
-
-# verify regional calibration is loaded and bucketing differently per state
-python scripts\_smoke_regional_level.py
-
-# end-to-end /risk smoke
-python -m scripts._smoke_risk_e2e
+npx expo start                     # scan the QR with Expo Go (same Wi-Fi)
 ```
 
 ---
@@ -293,37 +258,25 @@ python -m scripts._smoke_risk_e2e
 
 ```
 .
-├── api/                            # FastAPI backend
-│   ├── core/                       # Pure-Python algorithm + calibration
-│   │   ├── risk_algorithm.py       # V4 multiplicative fire-weather index
-│   │   ├── ndvi.py                 # NDVI anomaly + ndvi_factor mapping
-│   │   ├── kbdi.py                 # Keetch-Byram Drought Index
-│   │   ├── regional_calibration.py # Per-state percentile bucketing
-│   │   └── openmeteo.py            # Shared Open-Meteo fetcher + cache
-│   ├── routes/                     # FastAPI endpoint handlers
-│   ├── services/                   # Async clients for each upstream
-│   │   ├── cdse.py                 # Copernicus Sentinel-2 Statistical API
-│   │   ├── ndvi_cache.py           # Disk cache wrapping cdse fetchers
-│   │   ├── firms.py, owm.py, ...   # other upstream integrations
-│   ├── data/                       # regional_thresholds.json + backups
-│   ├── tests/                      # 97 backend tests
-│   └── main.py                     # FastAPI app factory + CORS
-├── app/                            # Expo React Native app
-│   ├── app/                        # Expo Router file-based routes
-│   │   └── (tabs)/                 # Tab navigator: status, map, risk, safety
-│   ├── components/ui/              # Shared UI components
-│   └── lib/                        # Hooks, types, theme, helpers
-├── notebooks/                      # Validation + calibration analysis
-│   ├── validation.ipynb            # Monthly aggregate sanity check
-│   ├── validation_v2.ipynb         # Real-weather per-fire validation + regional fit
-│   └── figures/                    # Generated charts
-├── scripts/                        # One-off ops and smoke tests
-│   └── build_regional_thresholds.py    # Re-fits per-state percentile cutoffs
-├── data/                           # Raw FPA_FOD SQLite + per-fetch caches (gitignored)
-├── docs/                           # README-embedded charts
-├── Procfile, railway.json          # Backend deployment
-├── handoff.md                      # Engineering handoff notes (session continuity)
-└── README.md
+├── api/                      # FastAPI backend
+│   ├── core/                 # Pure-Python algorithm + calibration
+│   │   ├── risk_algorithm.py #   V4 multiplicative fire-weather index (RiskParams)
+│   │   ├── kbdi.py           #   Keetch-Byram Drought Index
+│   │   ├── ndvi.py           #   NDVI anomaly → vegetation factor
+│   │   ├── trajectory.py     #   6-hour fire-weather projection
+│   │   └── regional_calibration.py
+│   ├── routes/               # Endpoint handlers (10 routes)
+│   ├── services/             # Async clients per upstream (firms, owm, cdse, open_shelters, …)
+│   ├── data/                 # regional_thresholds.json + backups
+│   └── tests/                # 131 backend tests
+├── web/                      # Next.js 16 web app (primary surface)
+│   ├── app/                  #   App Router pages
+│   ├── components/           #   Screen + UI components
+│   └── lib/                  #   Hooks, API client, composite-risk math, theme
+├── app/                      # Expo React Native app (deferred)
+├── scripts/                  # Fitting, calibration, chart generation
+├── docs/                     # DECISIONS.md + validation charts
+└── notebooks/                # Validation + calibration analysis
 ```
 
 ---
@@ -332,79 +285,47 @@ python -m scripts._smoke_risk_e2e
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m pytest api/ -q
-# → 97 passed
+python -m pytest api/ -q       # → 131 passed
 ```
 
-Backend test coverage:
+Backend coverage spans algorithm correctness (factor floors, KBDI/NDVI overrides, score-bounds sweeps), the KBDI and NDVI math, regional-calibration lookup (including the Reno border-overlap regression), Open-Meteo fetch resilience across 200/4xx/429, the FEMA NSS shelter parser, the calibration build script (circuit breaker + incremental save), and end-to-end route tests against every endpoint with mocked upstreams.
 
-- **Algorithm correctness** ([test_risk_algorithm.py](api/tests/test_risk_algorithm.py)) — V2 formula correctness, season ordering, factor floors, KBDI override, NDVI override, score-bounds sweep.
-- **KBDI math** ([test_kbdi.py](api/tests/test_kbdi.py)) — pure drought-index math, daily integration correctness.
-- **NDVI math** ([test_ndvi.py](api/tests/test_ndvi.py)) — anomaly arithmetic, factor monotonicity, clamp bounds.
-- **Regional calibration** ([test_regional_calibration.py](api/tests/test_regional_calibration.py)) — bbox lookup, centroid tiebreaker, state-hint precedence (Census), Reno NV border-overlap regression.
-- **Open-Meteo fetch resilience** ([test_openmeteo_fetch.py](api/tests/test_openmeteo_fetch.py)) — caching across 200/4xx/429.
-- **Build script logic** ([test_build_regional_thresholds.py](api/tests/test_build_regional_thresholds.py)) — circuit breaker, incremental save, quota-vs-data-poverty discrimination.
-- **End-to-end routes** ([test_routes.py](api/tests/test_routes.py)) — FastAPI TestClient against all 8 endpoints, mocked upstreams, success + degraded paths.
-
-Frontend uses TypeScript strict mode + `npx tsc --noEmit` for typecheck. No runtime tests yet (interactive testing is via Expo Go).
+The frontend uses TypeScript strict mode; type-check with `cd web && npx tsc --noEmit`.
 
 ---
 
 ## Roadmap
 
-### Done
-- ✅ V2 multiplicative VPD-based fire-weather index (vs V1 additive sum)
-- ✅ KBDI integration via Open-Meteo Archive
-- ✅ 17-state regional percentile calibration
-- ✅ V4 NDVI anomaly via Copernicus Sentinel-2 (replaces calendar season multiplier on live path)
-- ✅ Authoritative state lookup via Census reverse-geocoder (fixes border-overlap misclassification)
-- ✅ Live fire layer (NASA FIRMS) + named incidents (NIFC + CAL FIRE)
-- ✅ Shelter lookup (OSM + NCES) + evacuation direction
-- ✅ Saved-locations + UnitsProvider context with AsyncStorage persistence
-- ✅ Animated wave/glow backgrounds with focus-pause performance optimization
-- ✅ Four in-app explainer modals: regional calibration, map legend, shelter info, disclaimer
-- ✅ Web app port at `web/` — Next.js 16 + Tailwind v4 + react-leaflet + MapTiler, sharing the FastAPI backend with mobile. All four mobile screens (Status / Map / Risk / Safety) plus Fire Detail, Settings, and Locations are mirrored with web-native interactions (cursor tilt, scroll, dropdown menus) and the same V4 algorithm + composite math
-- ✅ Personal Threat composite (web) — fire weather + active-fire proximity combined into a 0-1 score with calibration-aware normalization, FIRMS→incident tiebreak, wind-alignment bump, and stale/containment dampeners
+**Done**
 
-### Deferred (in priority order)
-- Security review pass (CORS, rate limiting, input audit) before any public deploy
-- Railway deploy + custom domain (currently the API only runs from the laptop)
-- App icon (1024×1024) + splash screen via `expo-splash-screen`
-- Mobile parity for the composite — web-only currently; mobile Status still shows raw fire-weather only. Port `personalThreatBucket` to `app/lib/threat.ts` and unify the Safety banner + Fire Detail "Threat to You" tile
-- Further phone-heat reduction. Current state already pauses the Status-screen animations when the screen isn't focused or the app is backgrounded, and the wave-path worklet runs at ~30% lower density than the original design. If long-session users still feel heat, the next levers are: reduce wave count (5→4) and blob count (4→3); migrate `WavesBackground` to `react-native-skia` for GPU-accelerated rendering (biggest single win); respect the OS-level "Reduce Motion" accessibility setting and disable animations when enabled; detect thermal state on iOS (`ProcessInfo.thermalState`) and degrade animations under thermal pressure; lengthen the TanStack Query refetch intervals on Status.
-- Push notifications when a fire is detected near saved locations (requires dev build, not Expo Go)
-- Lightning vs. human-caused fire split (separate fitted thresholds for ignition source)
-- TestFlight + App Store submission path (EAS Build, Apple Developer account, privacy policy)
+- ✅ V4 multiplicative fire-weather index with **fitted** constants (`RiskParams`), validated and benchmarked vs. Hot-Dry-Windy + Fosberg
+- ✅ KBDI drought (Open-Meteo) and NDVI vegetation anomaly (Copernicus Sentinel-2)
+- ✅ 17-state percentile calibration + authoritative Census state lookup
+- ✅ Personal-threat composite — multiplicative distance × size with smoothed wind / containment / staleness adjustments, resolved through the 4×5 tier matrix
+- ✅ 6-hour fire-weather trajectory + atmospheric "risk strata" phase-space graph
+- ✅ Live FEMA National Shelter System open-shelter layer, integrated into the Safety UI
+- ✅ Full Next.js web app — all five screens, plus Fire Detail and saved locations — sharing the backend with the Expo client
+
+**Deferred**
+
+- Production deploy hardening (CORS, rate limiting, input audit) + custom domain
+- Mobile parity for the composite, trajectory, and open-shelter layers (currently web-only)
+- Lightning vs. human-caused ignition split (separate fitted thresholds)
+- Push notifications when a fire is detected near a saved location (needs a dev build)
+- App Store submission path (EAS Build, privacy policy)
 
 ---
 
 ## Disclaimer
 
-This is an informational app, not a substitute for emergency services. **Always call 911 first** in an emergency. The fire-risk score is a research-grade indicator, not a National Weather Service red-flag warning. Shelter locations are community centers and schools selected for their general capacity as gathering points — they are NOT pre-activated emergency shelters. Cross-check the [Red Cross shelter map](https://www.redcross.org/get-help/disaster-relief-and-recovery-services/find-an-open-shelter.html), [CAL FIRE Ready For Wildfire](https://readyforwildfire.org/), and your local emergency management agency in any real emergency.
-
-A more detailed in-app disclaimer appears on first launch in Settings → "Important notice".
+This is an informational app, not a substitute for emergency services. **Always call 911 first.** The risk score is a research-grade indicator, not a National Weather Service red-flag warning. Shelter "candidates" are general gathering points, not pre-activated emergency shelters; even the live FEMA-reported open shelters should be confirmed by phone in a real emergency. Cross-check the [Red Cross shelter map](https://www.redcross.org/get-help/disaster-relief-and-recovery-services/find-an-open-shelter.html), [Cal Fire / Ready for Wildfire](https://readyforwildfire.org/), and your local emergency-management agency. A fuller disclaimer lives in the app under **Settings → Important notice**.
 
 ---
 
 ## Credits & license
 
-Algorithm references:
+**Algorithm references** — Fosberg (1978); Goodrick (2002, Fosberg + drought); Keetch & Byram (1968, KBDI); Noble et al. (1980, McArthur); Rothermel (1972); Srock et al. (2018, Hot-Dry-Windy); Tetens (1930).
 
-- Fosberg, M. A. (1978). *Weather in Wildland Fire Management: The Fire Weather Index.*
-- Goodrick, S. L. (2002). *Modification of the Fosberg Fire Weather Index to Include Drought.* USDA SRS.
-- Keetch, J. J. & Byram, G. M. (1968). *A Drought Index for Forest Fire Control.* USDA SE Forest Experiment Station.
-- Noble, I. R. et al. (1980). *McArthur's fire-danger meters expressed as equations.* Australian Journal of Ecology 5: 201–203.
-- Rothermel, R. C. (1972). *A Mathematical Model for Predicting Fire Spread in Wildland Fuels.* USDA Intermountain Forest and Range Experiment Station.
-- Srock, A. F. et al. (2018). *The Hot-Dry-Windy Index: A New Fire Weather Index.* Atmosphere 9 (7): 279.
-- Tetens, O. (1930). *Über einige meteorologische Begriffe.* Z. Geophys 6: 297–309.
+**Data attribution** — Fire detections: NASA FIRMS (VIIRS/MODIS). Weather: OpenWeatherMap, Open-Meteo. Imagery: ESA Sentinel-2 via Copernicus. Incidents: NIFC WFIGS, Cal Fire. Shelters & declarations: FEMA. Geographies: US Census, OpenStreetMap (© OpenStreetMap contributors, ODbL), NCES. Historical fires: Karen C. Short, *Spatial wildfire occurrence data for the United States, 1992–2015* (FPA-FOD).
 
-Data attribution:
-
-- Fire detections: NASA FIRMS (VIIRS/MODIS sensors).
-- Weather: OpenWeatherMap, Open-Meteo.
-- Satellite imagery: ESA Sentinel-2 via Copernicus Data Space Ecosystem.
-- Named incidents: NIFC WFIGS, CAL FIRE.
-- Geographies: US Census Bureau, OpenStreetMap (© OpenStreetMap contributors, ODbL), NCES.
-- Historical fires: Karen C. Short. *Spatial wildfire occurrence data for the United States, 1992-2015* (FPA_FOD), via Kaggle.
-
-License: MIT (pending — to be added before publication).
+**License** — [MIT](LICENSE).

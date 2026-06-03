@@ -197,7 +197,7 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
               textTransform: ae.chipUpper ? 'uppercase' : 'none',
             }}
           >
-            Watch · v3
+            Watch · v4
           </span>
         </div>
       </div>
@@ -566,7 +566,7 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
           </span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-          {['CAL FIRE', 'NWS', 'NIFC'].map((s) => (
+          {['FIRMS', 'NIFC', 'CAL FIRE'].map((s) => (
             <div
               key={s}
               style={{
