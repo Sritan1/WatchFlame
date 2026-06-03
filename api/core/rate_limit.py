@@ -19,7 +19,10 @@ limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[_settings.rate_limit_default],
     enabled=_settings.rate_limit_enabled,
-    headers_enabled=True,
+    # headers_enabled stays False: slowapi's informational X-RateLimit-* headers
+    # require every decorated route to declare a `response: Response` param, and
+    # without it slowapi raises on each request. Enforcement (429) is unaffected.
+    headers_enabled=False,
 )
 
 # Tighter bucket for endpoints that fan out to paid / quota-limited upstreams.
