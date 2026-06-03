@@ -69,7 +69,10 @@ def test_fires_passes_bbox(monkeypatch):
     monkeypatch.setattr("api.routes.fires.fetch_fires_geojson", stub)
     r = client.get("/fires?days=3&bbox=-122,37,-121,38")
     assert r.status_code == 200
-    assert seen == {"days": 3, "bbox": "-122,37,-121,38"}
+    # The route validates and canonicalizes the bbox to a normalized float
+    # string before it reaches the service (keeps arbitrary text out of the
+    # upstream FIRMS URL path).
+    assert seen == {"days": 3, "bbox": "-122.0,37.0,-121.0,38.0"}
 
 
 # --- /risk -------------------------------------------------------------------
