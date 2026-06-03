@@ -1,12 +1,19 @@
 import csv
 import io
 import os
+import re
 import time
 from typing import Any
 
 import httpx
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+# Defense-in-depth: `area` is interpolated into the FIRMS URL path, so it must
+# never be arbitrary text. Callers (the /fires route) already validate, but the
+# service refuses anything that isn't "world" or four comma-separated numbers
+# and falls back to "world" rather than building a URL from untrusted input.
+_BBOX_RE = re.compile(r"^-?\d{1,3}(?:\.\d+)?(?:,-?\d{1,3}(?:\.\d+)?){3}$")
 
 
 def _ttl() -> int:
@@ -33,6 +40,9 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
       AREA is "world" or "minLon,minLat,maxLon,maxLat".
     """
     area = bbox if bbox else "world"
+    if area != "world" and not _BBOX_RE.match(area):
+        # Untrusted/malformed input never reaches the URL path.
+        area = "world"
     cache_key = f"{_source()}|{area}|{days}"
 
     now = time.time()
@@ -40,6 +50,9 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     if cached and now - cached[0] < _ttl():
         return cached[1]
 
+    # NOTE: the API key is embedded in this URL path — never log `url`. Error
+    # logging below intentionally references only `area`/`days`. (The root
+    # logger also has a redaction filter as a backstop; see core/logging_setup.)
     url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{_api_key()}/{_source()}/{area}/{days}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
