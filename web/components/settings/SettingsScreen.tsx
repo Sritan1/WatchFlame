@@ -258,7 +258,7 @@ export function SettingsScreen() {
               num={2}
               accentRgb={WARN_RGB}
               title="Detection delays exist"
-              body="NASA satellite detections (FIRMS) lag the real fire by 1–2 hours. Named-incident metadata from NIFC and Cal Fire is updated on each agency's own schedule and may also be delayed."
+              body="NASA satellite detections (FIRMS) lag the real fire by roughly 1–4 hours. Named-incident metadata from NIFC and Cal Fire is updated on each agency's own schedule and may also be delayed."
             />
             <NoticeBullet
               ae={ae}
@@ -271,8 +271,8 @@ export function SettingsScreen() {
               ae={ae}
               num={4}
               accentRgb={WARN_RGB}
-              title="Shelters listed may not be activated"
-              body="Listings come from community-tagged OpenStreetMap data and the NCES public-school database. They are potential evacuation points — call ahead during a real emergency."
+              title="Shelters: open vs. potential"
+              body="Open shelters reported by the FEMA National Shelter System appear with live status and capacity. Everything else is a potential evacuation point drawn from OpenStreetMap and the NCES public-school database — not a confirmed open site. Call ahead during a real emergency."
             />
             <NoticeBullet
               ae={ae}
@@ -306,7 +306,10 @@ export function SettingsScreen() {
             <SourceChip ae={ae} code="NIFC" kind="Incidents" label="Named incident metadata" />
             <SourceChip ae={ae} code="Cal Fire" kind="Incidents" label="California operations" />
             <SourceChip ae={ae} code="OpenWeatherMap" kind="Weather" label="Current conditions" />
-            <SourceChip ae={ae} code="FEMA" kind="Federal" label="Disaster declarations" />
+            <SourceChip ae={ae} code="Open-Meteo" kind="Weather" label="Drought (KBDI) history" />
+            <SourceChip ae={ae} code="Copernicus" kind="Satellite" label="Sentinel-2 vegetation (NDVI)" />
+            <SourceChip ae={ae} code="US Census" kind="Geodata" label="State / county lookup" />
+            <SourceChip ae={ae} code="FEMA" kind="Federal" label="Disasters & open shelters" />
             <SourceChip ae={ae} code="MapTiler" kind="Cartography" label="Map tiles" />
             <SourceChip ae={ae} code="OpenStreetMap" kind="Geodata" label="Base map & POI" />
             <SourceChip ae={ae} code="NCES" kind="Public DB" label="School database" />
@@ -325,7 +328,10 @@ export function SettingsScreen() {
             <strong style={{ color: ae.text, fontWeight: 600 }}>NASA FIRMS</strong>. Active incident metadata from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>NIFC</strong> and{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>Cal Fire</strong>. Current conditions from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>OpenWeatherMap</strong>. Risk score is a transparent rule-based fire-weather index based on Fosberg, Hot-Dry-Windy, and McArthur indices. Federal disaster declarations from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>OpenWeatherMap</strong>, with drought (KBDI) history from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Open-Meteo</strong> and live vegetation stress (NDVI) from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index — based on the Fosberg, Hot-Dry-Windy, and McArthur indices — calibrated per state against historical fire records, using{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong> geographies. Federal disaster declarations and open shelters from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>FEMA</strong>. Map tiles by{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>MapTiler</strong> with{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>OpenStreetMap</strong> data.
@@ -385,7 +391,7 @@ export function SettingsScreen() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {(['FIRMS', 'NIFC', 'CAL FIRE', 'OPEN-METEO', 'OWM', 'FEMA', 'OSM', 'NCES'] as const).map(
+            {(['FIRMS', 'NIFC', 'CAL FIRE', 'OWM', 'OPEN-METEO', 'CDSE', 'CENSUS', 'FEMA', 'OSM', 'NCES'] as const).map(
               (s, i, arr) => (
                 <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span
