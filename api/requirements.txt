@@ -9,7 +9,7 @@ geojson>=3.1
 pandas>=2.2.4
 numpy>=2.2
 pytest>=8.3
-ruff>=0.7
+ruff>=0.15.15
 pip-audit>=2.7
 
 # Security floors for transitive runtime deps flagged by pip-audit (OSV).
