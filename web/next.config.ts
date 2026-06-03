@@ -1,7 +1,56 @@
 import type { NextConfig } from "next";
 
+// Origin of the FastAPI backend, derived from the public API URL so CSP
+// connect-src can allowlist exactly it (and nothing else). Empty when running
+// against mocks.
+const API_ORIGIN = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_API_URL
+      ? new URL(process.env.NEXT_PUBLIC_API_URL).origin
+      : "";
+  } catch {
+    return "";
+  }
+})();
+
+const MAPTILER = "https://api.maptiler.com https://*.maptiler.com";
+
+// Content-Security-Policy. Shipped as *report-only* for now: the app relies on
+// MapTiler tiles + browser geolocation + Next's inline hydration bootstrap, so
+// this is enforced only after verifying zero console violations in a real
+// browser, then flipping the header name to "Content-Security-Policy".
+const csp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  `img-src 'self' data: blob: ${MAPTILER}`,
+  // 'unsafe-inline' for Next's hydration bootstrap; 'unsafe-eval' for dev only.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
+  `connect-src 'self' ${API_ORIGIN} ${MAPTILER}`.trim(),
+  "worker-src 'self' blob:",
+].join("; ");
+
+const securityHeaders = [
+  // Enforced — these are safe and never break legitimate functionality.
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // The app uses browser geolocation, so allow it for same-origin only; deny
+  // camera/microphone entirely.
+  { key: "Permissions-Policy", value: "geolocation=(self), camera=(), microphone=()" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  // CSP in report-only mode until verified (see note above).
+  { key: "Content-Security-Policy-Report-Only", value: csp },
+];
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
 };
 
 export default nextConfig;
