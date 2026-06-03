@@ -135,3 +135,26 @@ def test_rate_limit_returns_429():
     assert c.get("/ping").status_code == 200
     assert c.get("/ping").status_code == 200
     assert c.get("/ping").status_code == 429
+
+
+def test_decorated_route_does_not_500_when_limiting_enabled(monkeypatch):
+    # Regression: the suite disables rate limiting, so a decorated route's
+    # ENABLED path was never exercised — and slowapi's header injection 500'd
+    # every rate-limited endpoint in real dev (no `response` param). Enable the
+    # real limiter and confirm a normal request still succeeds.
+    from api.core import rate_limit
+
+    async def fake_weather(lat, lon):
+        return {
+            "temperature": 20,
+            "humidity": 50,
+            "wind_speed": 5,
+            "wind_deg": 0,
+            "conditions": "clear",
+            "location": {"lat": lat, "lon": lon, "name": "Test"},
+        }
+
+    monkeypatch.setattr("api.routes.weather.fetch_current_weather", fake_weather)
+    monkeypatch.setattr(rate_limit.limiter, "enabled", True)
+    r = client.get("/weather?lat=37&lon=-122")
+    assert r.status_code == 200
