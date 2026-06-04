@@ -96,9 +96,15 @@ def lookup_state(lat: float, lon: float) -> str | None:
         bbox = info.get("bbox")
         if not bbox or len(bbox) != 4:
             continue
+        centroid = info.get("centroid")
+        if not centroid or len(centroid) != 2:
+            # Defensive against stale/partial JSON (mirrors get_state_calibration)
+            # — a state with a bbox but no usable centroid is skipped rather
+            # than crashing the lookup with a KeyError.
+            continue
         west, south, east, north = bbox
         if west <= lon <= east and south <= lat <= north:
-            candidates.append((code, info["centroid"]))
+            candidates.append((code, centroid))
 
     if len(candidates) == 1:
         return candidates[0][0]

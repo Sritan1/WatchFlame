@@ -10,8 +10,15 @@ router = APIRouter(prefix="/disasters", tags=["disasters"])
 
 logger = logging.getLogger(__name__)
 
-# Some old FEMA declarations have null incidentEndDate (data never logged).
-# A real "active" disaster has begun within the last year.
+# Why this second filter exists (don't remove it): the upstream query treats
+# "incidentEndDate is null" as ongoing, but ~95% of FEMA's null-end records are
+# zombies — old Fire Management declarations (some from 1998-99) whose end date
+# was simply never logged. Filtering on incidentBeginDate within the last year
+# drops that decades-old backlog. Real active fires are always recent (FM
+# declarations are short-lived), so the cutoff sits in a wide empty gap and
+# never drops a genuinely-active disaster. Null begin dates (currently 0 records
+# on the live feed) are also dropped, which is fine — they're part of the same
+# stale backlog.
 _MAX_AGE_DAYS = 365
 
 
