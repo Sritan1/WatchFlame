@@ -106,15 +106,24 @@ export function MapScreen() {
   // with nothing selected than to mislabel a random nearby fire as the FEMA
   // incident, which was the prior behavior. Handled exactly once per
   // query-param change.
-  const intentHandledRef = useRef(false);
+  // Track the last FEMA title we acted on (not just a boolean) so a SECOND
+  // "Show on Map" handoff for a different disaster still fires — keying on a
+  // bare boolean latched the effect after the first intent for the whole
+  // mount, swallowing every subsequent handoff. Leaving the fema intent (no
+  // ?from=fema) resets it so re-opening the same disaster works too.
+  const lastIntentRef = useRef<string | null>(null);
   useEffect(() => {
-    if (intentHandledRef.current) return;
-    if (searchParams.get('from') !== 'fema') return;
+    if (searchParams.get('from') !== 'fema') {
+      lastIntentRef.current = null;
+      return;
+    }
     if (fires.length === 0) return;
     const title = searchParams.get('title');
+    const intentKey = title ?? '';
+    if (lastIntentRef.current === intentKey) return;
     const match = title ? matchIncidentByFemaTitle(title, fires) : null;
     if (match) setSelection({ kind: 'incident', id: match.id });
-    intentHandledRef.current = true;
+    lastIntentRef.current = intentKey;
   }, [fires, searchParams]);
 
   const counts: Record<FireFilter, number> = useMemo(() => {
@@ -129,13 +138,17 @@ export function MapScreen() {
   );
 
   // Clear selection if the selected incident was filtered out (only applies
-  // to incident selections — satellite selections aren't filtered).
-  if (
-    selection?.kind === 'incident' &&
-    !visibleFires.find((f) => f.id === selection.id)
-  ) {
-    queueMicrotask(() => setSelection(null));
-  }
+  // to incident selections — satellite selections aren't filtered). Done in
+  // an effect, not a render-phase queueMicrotask, so it doesn't schedule a
+  // setState on every render while the condition holds.
+  useEffect(() => {
+    if (
+      selection?.kind === 'incident' &&
+      !visibleFires.find((f) => f.id === selection.id)
+    ) {
+      setSelection(null);
+    }
+  }, [selection, visibleFires]);
 
   return (
     <div

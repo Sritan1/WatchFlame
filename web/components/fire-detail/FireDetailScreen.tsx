@@ -118,7 +118,7 @@ export function FireDetailScreen() {
   const me = useUserLocation();
   const weather = useWeather(fireLoc);
   // User-location weather — used to align the "Threat to You" formula's
-  // wind bump from the USER's perspective (same source Status uses for the
+  // wind alignment modifier from the USER's perspective (same source Status uses for the
   // composite). TanStack dedupes on the query key, so this is free when
   // Status already loaded the same coords.
   const userWeather = useWeather(me.coords);
@@ -151,11 +151,14 @@ export function FireDetailScreen() {
 
   const passes = useMemo(() => {
     if (!nearby.data) return [];
+    // FIRMS acq_time is "HHMM" but not always zero-padded ("542" = 05:42), so
+    // pad before the string compare or "542" would sort after "1842".
+    const hhmm = (t: string | null | undefined) => (t ?? '').padStart(4, '0');
     return [...nearby.data.features]
       .sort(
         (a, b) =>
           (b.properties.acq_date ?? '').localeCompare(a.properties.acq_date ?? '') ||
-          (b.properties.acq_time ?? '').localeCompare(a.properties.acq_time ?? ''),
+          hhmm(b.properties.acq_time).localeCompare(hhmm(a.properties.acq_time)),
       )
       .slice(0, 8);
   }, [nearby.data]);
@@ -166,6 +169,51 @@ export function FireDetailScreen() {
       (f) => !(f.properties.lat === fireLat && f.properties.lon === fireLon),
     );
   }, [nearby.data, fireLoc, fireLat, fireLon]);
+
+  // "Threat to You" — uses the same per-fire helper as Status's Active Fire
+  // Threat axis so a fire reads the same on both screens. Same modifiers:
+  // distance + size + wind alignment (user-side wind) + time decay for
+  // stale FIRMS + containment dampener. Synchronous; wind/age modifiers
+  // gracefully degrade when their inputs aren't yet loaded (null wind →
+  // skip wind modifier). No new loading state introduced.
+  // Only FIRMS-only flows (no matched incident) participate in the
+  // stale-pixel dampener; reuse the shared helper so the threshold is in
+  // one place.
+  // NOTE: these two hooks (firmsAge, threatLevel) must stay ABOVE the
+  // `!coordsValid` early return — moving them below it would make the hook
+  // count vary between renders when coordsValid flips (React error).
+  const firmsAge = useMemo(
+    () => (matched ? null : firmsAgeHours(acqDate, acqTime)),
+    [matched, acqDate, acqTime],
+  );
+
+  const userWindDeg = userWeather.data?.wind_deg ?? null;
+  const userWindSpeedKph = userWeather.data?.wind_speed ?? null;
+  const matchedAcres = matched?.acres ?? null;
+  const matchedContainedPct = matched?.contained_pct ?? null;
+  const threatLevel: RiskLevel | null = useMemo(
+    () =>
+      distFromMe == null || bearingDegFromMe == null
+        ? null
+        : personalThreatBucket({
+            distanceMi: distFromMe,
+            acres: matchedAcres,
+            containedPct: matchedContainedPct,
+            firmsAgeHours: firmsAge,
+            windDeg: userWindDeg,
+            windSpeedKph: userWindSpeedKph,
+            bearingToFireDeg: bearingDegFromMe,
+          }),
+    [
+      distFromMe,
+      bearingDegFromMe,
+      matchedAcres,
+      matchedContainedPct,
+      firmsAge,
+      userWindDeg,
+      userWindSpeedKph,
+    ],
+  );
 
   if (!coordsValid) {
     return (
@@ -205,48 +253,6 @@ export function FireDetailScreen() {
     ? dangerToRisk(risk.data.danger_level)
     : null;
   const accentTone = riskLevel ? getRisk(riskLevel, accent) : null;
-
-  // "Threat to You" — uses the same per-fire helper as Status's Active Fire
-  // Threat axis so a fire reads the same on both screens. Same modifiers:
-  // distance + size + wind alignment (user-side wind) + time decay for
-  // stale FIRMS + containment dampener. Synchronous; wind/age modifiers
-  // gracefully degrade when their inputs aren't yet loaded (null wind →
-  // skip bump). No new loading state introduced.
-  // Only FIRMS-only flows (no matched incident) participate in the
-  // stale-pixel dampener; reuse the shared helper so the threshold is in
-  // one place.
-  const firmsAge = useMemo(
-    () => (matched ? null : firmsAgeHours(acqDate, acqTime)),
-    [matched, acqDate, acqTime],
-  );
-
-  const userWindDeg = userWeather.data?.wind_deg ?? null;
-  const userWindSpeedKph = userWeather.data?.wind_speed ?? null;
-  const matchedAcres = matched?.acres ?? null;
-  const matchedContainedPct = matched?.contained_pct ?? null;
-  const threatLevel: RiskLevel | null = useMemo(
-    () =>
-      distFromMe == null || bearingDegFromMe == null
-        ? null
-        : personalThreatBucket({
-            distanceMi: distFromMe,
-            acres: matchedAcres,
-            containedPct: matchedContainedPct,
-            firmsAgeHours: firmsAge,
-            windDeg: userWindDeg,
-            windSpeedKph: userWindSpeedKph,
-            bearingToFireDeg: bearingDegFromMe,
-          }),
-    [
-      distFromMe,
-      bearingDegFromMe,
-      matchedAcres,
-      matchedContainedPct,
-      firmsAge,
-      userWindDeg,
-      userWindSpeedKph,
-    ],
-  );
   const threatTone = threatLevel ? getRisk(threatLevel, accent) : null;
 
   const openInMaps = `https://www.google.com/maps?q=${fireLat},${fireLon}`;

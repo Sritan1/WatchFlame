@@ -147,7 +147,7 @@ _Each row is one state's calibrated tier bands. A probe at score **0.45** lands 
 
 ### 3. The personal-threat composite
 
-Fire weather is one axis; **how exposed you are to an active fire right now** is the other. The threat axis aggregates distance and fire size **multiplicatively** across every fire within 50 mi, with smooth adjustments for wind alignment, containment, and detection age (no hard cliffs). The two axes resolve to a single headline tier through a published **4×5 lookup matrix**:
+Fire weather is one axis; **how exposed you are to an active fire right now** is the other. The threat axis aggregates distance and fire size **multiplicatively** across every fire within 50 mi, then applies smooth **multiplicative modifiers** for wind alignment, containment, and detection age (no hard cliffs — and wind direction can't escalate a far fire it has no physical bearing on). The two axes resolve to a single headline tier through a published **4×5 lookup matrix**:
 
 ```
                 T=none   T=low    T=mod    T=high   T=ext
@@ -221,7 +221,7 @@ pip install -r api/requirements.txt
 
 copy api\.env.example api\.env     # fill in OWM_API_KEY, FIRMS_API_KEY, CDSE_*
 
-python -m pytest api/ -q           # → 131 passed
+python -m pytest api/ -q           # → 143 passed
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 # → http://localhost:8000/docs   (Swagger UI)
 ```
@@ -268,7 +268,7 @@ npx expo start                     # scan the QR with Expo Go (same Wi-Fi)
 │   ├── routes/               # Endpoint handlers (10 routes)
 │   ├── services/             # Async clients per upstream (firms, owm, cdse, open_shelters, …)
 │   ├── data/                 # regional_thresholds.json + backups
-│   └── tests/                # 131 backend tests
+│   └── tests/                # 143 backend tests
 ├── web/                      # Next.js 16 web app (primary surface)
 │   ├── app/                  #   App Router pages
 │   ├── components/           #   Screen + UI components
@@ -285,10 +285,10 @@ npx expo start                     # scan the QR with Expo Go (same Wi-Fi)
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m pytest api/ -q       # → 131 passed
+python -m pytest api/ -q       # → 143 passed
 ```
 
-Backend coverage spans algorithm correctness (factor floors, KBDI/NDVI overrides, score-bounds sweeps), the KBDI and NDVI math, regional-calibration lookup (including the Reno border-overlap regression), Open-Meteo fetch resilience across 200/4xx/429, the FEMA NSS shelter parser, the calibration build script (circuit breaker + incremental save), and end-to-end route tests against every endpoint with mocked upstreams.
+Backend coverage spans algorithm correctness (factor floors, KBDI/NDVI overrides, score-bounds sweeps), the KBDI and NDVI math, regional-calibration lookup (including the Reno border-overlap regression), Open-Meteo fetch resilience across 200/4xx/429, the FEMA NSS shelter parser, the calibration build script (circuit breaker + incremental save), end-to-end route tests against every endpoint with mocked upstreams, and a security suite (CORS/config fail-fast, input + bbox validation, rate limiting, safe errors). CI also runs `pip-audit`, `npm audit`, and `gitleaks` — see [SECURITY.md](SECURITY.md).
 
 The frontend uses TypeScript strict mode; type-check with `cd web && npx tsc --noEmit`.
 
@@ -305,10 +305,11 @@ The frontend uses TypeScript strict mode; type-check with `cd web && npx tsc --n
 - ✅ 6-hour fire-weather trajectory + atmospheric "risk strata" phase-space graph
 - ✅ Live FEMA National Shelter System open-shelter layer, integrated into the Safety UI
 - ✅ Full Next.js web app — all five screens, plus Fire Detail and saved locations — sharing the backend with the Expo client
+- ✅ Security hardening — CORS allowlist + prod fail-fast, per-IP rate limiting, input/bbox validation, security headers + CSP, secret-redacting logging, CI audits (`pip-audit`/`npm audit`/`gitleaks`)
 
 **Deferred**
 
-- Production deploy hardening (CORS, rate limiting, input audit) + custom domain
+- Public deploy (web → Vercel, API → Railway) + custom domain
 - Mobile parity for the composite, trajectory, and open-shelter layers (currently web-only)
 - Lightning vs. human-caused ignition split (separate fitted thresholds)
 - Push notifications when a fire is detected near a saved location (needs a dev build)
