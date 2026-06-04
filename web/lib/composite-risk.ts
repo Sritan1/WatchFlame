@@ -59,13 +59,19 @@ const SIZE_HILL_K_ACRES = 300;
 
 /** ±this many degrees from "wind blowing toward me" counts as alignment —
  *  used only by `computeWindAlignment` for the toward/away/crosswind LABEL.
- *  The threat bump itself now varies smoothly as cos(angle), no cone step. */
+ *  The threat modifier itself (see WIND_REL) varies smoothly as cos(angle),
+ *  no cone step. */
 const WIND_CONE_DEG = 30;
 /** Below this wind speed (kph) we treat wind direction as noise. */
 const WIND_CALM_KPH = 5;
-/** Peak additive bump when wind blows directly toward (or −away from) the user.
- *  Scaled by cos(angle) so it eases to 0 at crosswind — no hard cone edges. */
-const WIND_BUMP = 0.15;
+/** Relative magnitude of the wind-alignment modifier. Wind scales the per-fire
+ *  threat MULTIPLICATIVELY: ×(1+WIND_REL) blowing directly toward the user,
+ *  ×(1−WIND_REL) directly away, ×1 at crosswind, eased by cos(angle) (no hard
+ *  cone edges). Multiplicative (not a flat additive bump) so the effect stays
+ *  proportional to the distance/size-driven base — a far fire whose base has
+ *  decayed to ~0 can't be escalated a tier by wind direction alone. See
+ *  DECISIONS §8. */
+const WIND_REL = 0.2;
 
 /** FIRMS staleness dampener. Threat ramps smoothly from ×1.0 (fresh) toward
  *  ×STALE_DAMPENER as a detection ages, centered at STALE_FIRMS_HOURS with a
@@ -254,7 +260,7 @@ function containmentDampener(containedPct: number | null | undefined): number {
  *    base = distanceFactor(d) × sizeMultiplier(acres)   — multiplicative:
  *           threatening only if BOTH close AND large; a far megafire no
  *           longer pegs to 1.0. FIRMS pixels (no acres) stay distance-only.
- *    + wind alignment bump (WIND_BUMP × cos(angle), smooth, calm-gated)
+ *    × wind alignment modifier (1 + WIND_REL·cos(angle), smooth, calm-gated)
  *    × smooth staleness dampener (from FIRMS age)
  *    × smooth containment dampener (from contained %)
  *
@@ -270,7 +276,7 @@ export function fireThreatFactor(args: {
   windDeg: number | null;
   /** Bearing from user → fire in degrees (0 = N, 90 = E). */
   bearingToFireDeg: number;
-  /** Wind speed in kph. Null or < WIND_CALM_KPH disables the wind bump. */
+  /** Wind speed in kph. Null or < WIND_CALM_KPH disables the wind modifier (×1). */
   windSpeedKph: number | null;
   /** Named-incident containment percentage. Null for FIRMS hits or when the
    *  agency hasn't reported it. Higher containment smoothly dampens threat. */
@@ -290,20 +296,26 @@ export function fireThreatFactor(args: {
   // peg the score on size alone), and the edge taper removes the 50 mi cliff.
   const base = distanceFactor(distanceMi) * sizeMultiplier(acres);
 
-  // Wind alignment: smooth cosine of the angle between wind-from and the
-  // bearing to the fire — +WIND_BUMP blowing toward, −WIND_BUMP away, 0 at
-  // crosswind. Replaces the old ±30° cone step. Gated off when calm.
-  let windBump = 0;
+  // Wind alignment: a smooth, MULTIPLICATIVE modifier centered on 1.0 —
+  // ×(1+WIND_REL) blowing directly toward the user, ×(1−WIND_REL) directly
+  // away, ×1 at crosswind (cos eases between them) or when calm. Scaling the
+  // existing threat — rather than adding a flat ±bump — keeps wind's influence
+  // proportional to distance: a far fire whose `base` has already decayed to
+  // ~0 can't be pushed up a tier by wind direction alone (the old additive
+  // `base + bump` did exactly that near the 50 mi eligibility edge). Replaces
+  // the old ±30° cone step.
+  let windModifier = 1;
   if (windDeg != null && windSpeedKph != null && windSpeedKph >= WIND_CALM_KPH) {
     const delta = angularDiff(windDeg, bearingToFireDeg);
-    windBump = WIND_BUMP * Math.cos((delta * Math.PI) / 180);
+    windModifier = 1 + WIND_REL * Math.cos((delta * Math.PI) / 180);
   }
 
-  // Dampeners are multiplicative and stack. In practice a fire is either a
-  // FIRMS pixel (has age, no containment) or a named incident (has
-  // containment, no age), so exactly one (or neither) is < 1.
+  // All three modifiers are multiplicative and stack on `base`. In practice a
+  // fire is either a FIRMS pixel (has age, no containment) or a named incident
+  // (has containment, no age), so at most one dampener is < 1 at a time.
   return clamp01(
-    (base + windBump) *
+    base *
+      windModifier *
       stalenessDampener(firmsAgeHours) *
       containmentDampener(containedPct),
   );
@@ -430,7 +442,7 @@ export function compositeFromBuckets(
  *  banner, Fire Detail "Threat to You") reads the same fire the same way.
  *
  *  Synchronous; safe to call even when wind/age data isn't yet available
- *  (pass null for windDeg/windSpeedKph and the bump is skipped). When the
+ *  (pass null for windDeg/windSpeedKph and the wind modifier stays ×1). When the
  *  caller doesn't yet have the user's distance to the fire, gate the call
  *  before invoking — this function assumes distanceMi is known. */
 export function personalThreatBucket(args: {

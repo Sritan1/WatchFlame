@@ -79,7 +79,7 @@ const MOCK_FIRES: FireCollection = {
     properties: {
       lat: p.lat, lon: p.lon,
       brightness: p.brightness, confidence: 'nominal',
-      acq_date: '2026-05-20', acq_time: '13:14',
+      acq_date: '2026-05-20', acq_time: '1314',
       satellite: 'Suomi NPP', frp: p.frp, daynight: 'D',
     },
   })),
@@ -324,9 +324,8 @@ function regionalBucket(
 }
 
 /** V4 fire-weather index — mirrors api/core/risk_algorithm.py exactly.
- *  Inputs are accepted as the mobile UI sends them: temperature °C,
- *  humidity %, wind in MPH (converted to kph internally), kbdi 0–800,
- *  days_since_rain int, season. */
+ *  Inputs match the wire contract: temperature °C, humidity %, wind in
+ *  km/h, kbdi 0–800, days_since_rain int, season. */
 function computeMockRisk(req: RiskRequest): RiskResponse {
   // Synthesize realistic kbdi/ndvi/state when coords supplied — mirrors the
   // real backend's asyncio.gather over KBDI / NDVI / Census-state lookups.
@@ -339,8 +338,10 @@ function computeMockRisk(req: RiskRequest): RiskResponse {
   const vpdHpa = saturationVaporPressureHpa(req.temperature) * (1 - clamp(req.humidity, 0, 100) / 100);
   const vpdFactor = clamp01(vpdHpa / VPD_SCALE_HPA);
 
-  // Wind factor — power law (kph/40)^1.5 with 0.2 floor. UI sends mph.
-  const windKph = Math.max(0, req.wind_speed) * 1.60934;
+  // Wind factor — power law (kph/40)^1.5 with 0.2 floor. The wire field
+  // `wind_speed` is km/h (matches api/routes/risk.py and /weather, and the
+  // web Risk Calculator's km/h slider) — no mph conversion.
+  const windKph = Math.max(0, req.wind_speed);
   const windBase = Math.pow(windKph / WIND_SCALE_KPH, 1.5);
   const windFactor = clamp(WIND_FLOOR + (1 - WIND_FLOOR) * windBase, WIND_FLOOR, 1);
 

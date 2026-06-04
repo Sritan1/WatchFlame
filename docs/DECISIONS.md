@@ -1,6 +1,6 @@
 # Design decisions
 
-These are the eight choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version of this system. Not a complete inventory of every design call — just the load-bearing ones that come up in conversations about the project.
+These are the nine choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version of this system. Not a complete inventory of every design call — just the load-bearing ones that come up in conversations about the project.
 
 For the full mathematical formulation see the [risk algorithm section in the README](../README.md#the-risk-algorithm) and [api/core/risk_algorithm.py](../api/core/risk_algorithm.py). For the personal-threat composite (which combines fire weather with active-fire proximity), see [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
 
@@ -14,7 +14,7 @@ For the full mathematical formulation see the [risk algorithm section in the REA
 
 **Cost.** Two component scores require two explanations and two visualizations. UX has to surface both meaningfully rather than reduce to a single headline.
 
-**Where it could go.** A third axis — Trajectory: short-term forecast deltas in VPD, wind, and RH — is the obvious next addition. Real fire forecasts model trajectory; this system currently only knows "now."
+**Where it could go.** A third axis — Trajectory: short-term forecast deltas in VPD, wind, and RH — was the obvious next addition, and has since been built (see §9).
 
 ---
 
@@ -94,7 +94,7 @@ W=ext           MOD        HIGH       HIGH       EXT        EXT
 
 **Cost.** The composite-as-a-single-number disappears as a tier source — there's no longer one scalar that summarizes the whole picture. The orb's arc fill still uses the linear blend as a visual position cue (so the orb moves continuously as inputs change), but that number is decorative; the tier label is authoritative. In a handful of edge cells the arc position and the tier color can visually disagree by one band — acceptable since users read the tier label, not the precise arc position.
 
-**Where it could go.** The 4×4 grid still produces only 4 output tiers (LOW / MOD / HIGH / EXT). A 5-state action vocabulary (STAND DOWN / STANDBY / AWARE / WATCH / ACTION) would map decisions to behaviors instead of adjectives — the same change operational systems like NWS Storm Prediction Center make when they cascade Fire Weather Watch → Red Flag Warning. Out of scope for this revision; would touch the orb palette, headline copy, Safety banner styling, and the calibration ladder color scheme simultaneously.
+**Where it could go.** The 4×5 grid still produces only 4 output tiers (LOW / MOD / HIGH / EXT). A 5-state action vocabulary (STAND DOWN / STANDBY / AWARE / WATCH / ACTION) would map decisions to behaviors instead of adjectives — the same change operational systems like NWS Storm Prediction Center make when they cascade Fire Weather Watch → Red Flag Warning. Out of scope for this revision; would touch the orb palette, headline copy, Safety banner styling, and the calibration ladder color scheme simultaneously.
 
 ---
 
@@ -123,13 +123,27 @@ with τ = 21 mi, floor = 0.70, K = 300 ac. A fire is threatening only if it is *
 - **50 mi eligibility** — the distance factor tapers smoothly to 0 between 46 and 50 mi (smoothstep), so a fire crossing the boundary fades out rather than dropping off a cliff. Fires past 50 mi are still skipped for loop tightness, but contribute ~0 by then anyway.
 - **75% containment** — a logistic ramp from ×1.0 (uncontained) toward ×0.6, centered at 75%, instead of a step at exactly 75%.
 - **24 hr FIRMS staleness** — a logistic ramp from ×1.0 (fresh) toward ×0.6, centered at 24 hr. The per-fire function now takes the detection's *age in hours* rather than a stale boolean.
-- **±30° wind cone** — the wind bump scales as `WIND_BUMP × cos(angle)`: +0.15 blowing toward, 0 at crosswind, −0.15 away. No cone edges.
+- **±30° wind cone** — wind alignment is a *multiplicative* modifier on the per-fire threat: `× (1 + WIND_REL·cos(angle))` with `WIND_REL = 0.20`, i.e. ×1.20 blowing directly toward the user, ×1.0 at crosswind, ×0.80 directly away. No cone edges. It is multiplicative (not a flat additive `± bump`) on purpose: scaling the existing distance/size-driven `base` keeps wind's influence *proportional to distance*, so a fire near the 50 mi eligibility edge — whose `base` has already decayed toward 0 — can't be escalated a whole tier by wind direction alone. This also makes wind a peer of the staleness and containment dampeners (one consistent chain of multiplicative modifiers on `base`) rather than an additive special case.
 
 **Why.** A fire at 49.9 vs 50.1 mi, or 74% vs 76% contained, used to flip the user's status discontinuously — the kind of knife-edge that erodes trust in a score. It's the same artifact the V4 *fire-weather* index already removed for wind via a power law; this brings the *threat* side to parity.
 
 **Cost.** The smooth ramps engage a little earlier (a 60%-contained fire gets a small damp; a 12 hr-old detection a slight one) — arguably more honest, but it does lower some mid-range threats. The ramp widths are hand-chosen, not fit: unlike fire weather, there's no labeled personal-threat outcome dataset to calibrate against.
 
 **Where it could go.** Fit the ramp widths and the size floor/K against a labeled proximity-outcome set if one becomes available; until then they're defensible defaults.
+
+---
+
+## 9. Trajectory as a third axis, anchored to the live score (Option B)
+
+**Decision.** The third axis §1 anticipated now exists: a short-term (6-hour) fire-weather trajectory, surfaced as a RISING / STEADY / FALLING chip on Status and an interactive phase-space graph (**time × fire-weather**). It projects the V4 score forward hour-by-hour from Open-Meteo's forecast. See [api/core/trajectory.py](../api/core/trajectory.py) and [web/components/status/PhaseSpaceModal.tsx](../web/components/status/PhaseSpaceModal.tsx).
+
+**The data-source tension, and Option B.** The trajectory is computed from **Open-Meteo's** forecast, while the Status orb and the weather cards use **OpenWeatherMap's** current observation. Two providers estimating the same "now" disagree slightly — so the modal's "now" wouldn't match the cards. The options were: (A) re-platform `/risk` onto Open-Meteo so everything shares one source, or (B) keep OWM as the established Status source and **anchor the trajectory curve multiplicatively to the orb's score**, letting Open-Meteo supply only the *shape* of the trend. **Option B was chosen.** The "now" point and absolute values come from OWM (so the graph agrees with the cards); the hour-to-hour *deltas* come from Open-Meteo.
+
+**Why Option B.** OWM had been the established, tested current-conditions source across the whole app; switching `/risk` off it is a deliberate, wider change with its own validation cost. Anchoring preserves cross-screen consistency (the orb, the cards, and the modal all read the same "now") while still delivering a real forecast trend — the part trajectory actually adds. Real operational fire systems model trajectory; a static "now" can't tell a user whether conditions are building or easing.
+
+**Cost.** The displayed trajectory is a **blend of two providers** — absolute level from OWM, trend shape from Open-Meteo — not a pure single-source forecast, so a purist would call it inconsistent. It's an honest tradeoff logged as a known tension. Also: because the *threat* axis is essentially static over a 6-hour horizon, the phase-space graph plots **time** as its second axis (threat lives in a summary callout, not the plot) — an earlier weather-vs-threat version implied a threat trend that wasn't really there. The anchor ratio and the forecast horizon are chosen, not fit.
+
+**Where it could go.** Unify on one weather provider for both `/risk` and `/trajectory` (removes the blend); add a trail of historical positions or an FPA-FOD historical-fire scatter behind the phase-space plot; extend the horizon once a longer-range provider is wired in.
 
 ---
 
