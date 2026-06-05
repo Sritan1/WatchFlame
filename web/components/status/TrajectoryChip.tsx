@@ -13,6 +13,7 @@
 // upcoming phase-space modal triggered separately — keeps this chip
 // readable at a glance.
 
+import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
@@ -33,15 +34,58 @@ const TONE: Record<
 export function TrajectoryChip({
   trajectory,
   isLoading,
+  isError = false,
   onOpen,
 }: {
   trajectory: TrajectoryResponse | null | undefined;
   isLoading: boolean;
+  /** The /trajectory query errored (HTTP/network). Trajectory is an additive
+   *  signal — hide the chip, same as the backend-null case, rather than
+   *  skeleton forever (data is `undefined` on error, which the skeleton
+   *  check below would otherwise treat as "still loading"). */
+  isError?: boolean;
   /** Opens the 2D phase-space modal where the projection arrow + driver
    *  context live. */
   onOpen: () => void;
 }) {
   const { ae } = useAesthetic();
+
+  // Query errored → show an explicit, clickable "Forecast Failed" chip (slate,
+  // not a risk tier) rather than hiding it. Clicking opens the phase-space
+  // modal, which explains the failure and notes that the current position is
+  // still accurate. The composite tier from /risk stays valid regardless.
+  if (isError) {
+    const SLATE = '148, 163, 184';
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Forecast failed — open for details"
+        className="ember-fade-up"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 7,
+          padding: '5px 12px 5px 10px',
+          borderRadius: 99,
+          background: `linear-gradient(180deg, rgba(${SLATE}, 0.14), rgba(${SLATE}, 0.05))`,
+          border: `0.5px solid rgba(${SLATE}, 0.38)`,
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+          cursor: 'pointer',
+          fontFamily: ae.fontMono,
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: '0.14em',
+          color: ae.textDim,
+          textTransform: 'uppercase',
+          animationDelay: '720ms',
+        }}
+      >
+        <Icon name="warn" size={12} color="#E8B339" strokeWidth={1.8} />
+        Forecast Failed
+      </button>
+    );
+  }
 
   // Skeleton when the chip can't render anything determinate yet.
   // Two cases: TanStack hasn't started the query (data === undefined)

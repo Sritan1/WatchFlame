@@ -1,0 +1,525 @@
+// GENERATED — full mirror of api/data/regional_thresholds.json
+// (version v4, fitted 2026-05-31).
+//
+// Bundled into the web app so the Risk Calculator works FULLY OFFLINE: compute a
+// score (web/lib/risk-local.ts), bucket it per state, render the calibration
+// ladder, and auto-resolve the calibration state from a location's coordinates
+// — all without a /risk or /risk/calibration round-trip. The backend remains the
+// authority for the live Status/Safety flows. REGENERATE this whenever the
+// calibration re-runs (scripts/build_regional_thresholds.py); it is static data
+// that changes only on recalibration.
+
+import type { CalibrationInfo, RegionalThresholds } from '@/lib/api';
+
+/** The complete per-state calibration block (same shape /risk/calibration
+ *  returns). Drives the offline calibration ladder. */
+export const CALIBRATION_INFO: CalibrationInfo = {
+  "version": "v4",
+  "fitted_at": "2026-05-31",
+  "algorithm_version": "v4-ndvi-anomaly-baseline-neutral",
+  "states_calibrated": [
+    "AZ",
+    "CA",
+    "CO",
+    "FL",
+    "GA",
+    "ID",
+    "MT",
+    "NC",
+    "NM",
+    "NV",
+    "OK",
+    "OR",
+    "SC",
+    "TX",
+    "UT",
+    "WA",
+    "WY"
+  ],
+  "global_thresholds": {
+    "low": 0.3,
+    "moderate": 0.6,
+    "high": 0.8,
+    "extreme": 0.8
+  },
+  "states": {
+    "CA": {
+      "n_fires": 100,
+      "bbox": [
+        -123.7267,
+        32.7544,
+        -116.56,
+        41.9883
+      ],
+      "centroid": [
+        37.3218,
+        -119.6089
+      ],
+      "thresholds": {
+        "low": 0.2523,
+        "moderate": 0.2872,
+        "high": 0.3327,
+        "extreme": 0.3867
+      },
+      "score_summary": {
+        "min": 0.062,
+        "median": 0.2523,
+        "mean": 0.2489,
+        "max": 0.4491
+      }
+    },
+    "OR": {
+      "n_fires": 100,
+      "bbox": [
+        -124.2933,
+        42.0283,
+        -116.6283,
+        45.9511
+      ],
+      "centroid": [
+        44.0709,
+        -120.4686
+      ],
+      "thresholds": {
+        "low": 0.2376,
+        "moderate": 0.285,
+        "high": 0.3391,
+        "extreme": 0.3761
+      },
+      "score_summary": {
+        "min": 0.0765,
+        "median": 0.2376,
+        "mean": 0.2385,
+        "max": 0.4073
+      }
+    },
+    "WA": {
+      "n_fires": 100,
+      "bbox": [
+        -124.3818,
+        45.7999,
+        -117.123,
+        48.9808
+      ],
+      "centroid": [
+        47.6401,
+        -120.1172
+      ],
+      "thresholds": {
+        "low": 0.215,
+        "moderate": 0.2898,
+        "high": 0.3536,
+        "extreme": 0.407
+      },
+      "score_summary": {
+        "min": 0.0691,
+        "median": 0.215,
+        "mean": 0.2295,
+        "max": 0.5933
+      }
+    },
+    "ID": {
+      "n_fires": 100,
+      "bbox": [
+        -117.1547,
+        42.0332,
+        -111.1011,
+        48.76
+      ],
+      "centroid": [
+        44.5805,
+        -114.9665
+      ],
+      "thresholds": {
+        "low": 0.2364,
+        "moderate": 0.3268,
+        "high": 0.3911,
+        "extreme": 0.4551
+      },
+      "score_summary": {
+        "min": 0.0514,
+        "median": 0.2364,
+        "mean": 0.2556,
+        "max": 0.4873
+      }
+    },
+    "MT": {
+      "n_fires": 100,
+      "bbox": [
+        -116.0433,
+        44.45,
+        -104.6066,
+        48.9933
+      ],
+      "centroid": [
+        46.9048,
+        -111.6566
+      ],
+      "thresholds": {
+        "low": 0.2164,
+        "moderate": 0.3024,
+        "high": 0.3727,
+        "extreme": 0.4869
+      },
+      "score_summary": {
+        "min": 0.0947,
+        "median": 0.2164,
+        "mean": 0.2448,
+        "max": 0.5197
+      }
+    },
+    "UT": {
+      "n_fires": 100,
+      "bbox": [
+        -113.8971,
+        37.0622,
+        -109.0833,
+        41.9233
+      ],
+      "centroid": [
+        39.2733,
+        -111.9284
+      ],
+      "thresholds": {
+        "low": 0.3244,
+        "moderate": 0.3839,
+        "high": 0.4386,
+        "extreme": 0.4934
+      },
+      "score_summary": {
+        "min": 0.0697,
+        "median": 0.3244,
+        "mean": 0.3177,
+        "max": 0.5793
+      }
+    },
+    "AZ": {
+      "n_fires": 100,
+      "bbox": [
+        -112.3489,
+        31.3386,
+        -109.0533,
+        36.7667
+      ],
+      "centroid": [
+        34.0165,
+        -111.1303
+      ],
+      "thresholds": {
+        "low": 0.3089,
+        "moderate": 0.3698,
+        "high": 0.4113,
+        "extreme": 0.4506
+      },
+      "score_summary": {
+        "min": 0.1259,
+        "median": 0.3089,
+        "mean": 0.3011,
+        "max": 0.4888
+      }
+    },
+    "NM": {
+      "n_fires": 100,
+      "bbox": [
+        -109.034,
+        32.1501,
+        -103.0725,
+        36.9025
+      ],
+      "centroid": [
+        34.262,
+        -106.6831
+      ],
+      "thresholds": {
+        "low": 0.2754,
+        "moderate": 0.3897,
+        "high": 0.4957,
+        "extreme": 0.5741
+      },
+      "score_summary": {
+        "min": 0.0987,
+        "median": 0.2754,
+        "mean": 0.3066,
+        "max": 0.654
+      }
+    },
+    "CO": {
+      "n_fires": 100,
+      "bbox": [
+        -109.0453,
+        37.0533,
+        -102.3517,
+        40.968
+      ],
+      "centroid": [
+        39.201,
+        -107.547
+      ],
+      "thresholds": {
+        "low": 0.2875,
+        "moderate": 0.3421,
+        "high": 0.4172,
+        "extreme": 0.4885
+      },
+      "score_summary": {
+        "min": 0.0732,
+        "median": 0.2875,
+        "mean": 0.2886,
+        "max": 0.5227
+      }
+    },
+    "TX": {
+      "n_fires": 100,
+      "bbox": [
+        -104.8854,
+        25.9275,
+        -93.6396,
+        35.7172
+      ],
+      "centroid": [
+        30.379,
+        -96.1856
+      ],
+      "thresholds": {
+        "low": 0.2342,
+        "moderate": 0.293,
+        "high": 0.3687,
+        "extreme": 0.438
+      },
+      "score_summary": {
+        "min": 0.1032,
+        "median": 0.2342,
+        "mean": 0.2457,
+        "max": 0.5387
+      }
+    },
+    "WY": {
+      "n_fires": 100,
+      "bbox": [
+        -110.9508,
+        41.0325,
+        -104.2685,
+        44.9931
+      ],
+      "centroid": [
+        43.377,
+        -107.726
+      ],
+      "thresholds": {
+        "low": 0.2658,
+        "moderate": 0.3666,
+        "high": 0.4752,
+        "extreme": 0.5235
+      },
+      "score_summary": {
+        "min": 0.0926,
+        "median": 0.2658,
+        "mean": 0.2917,
+        "max": 0.6256
+      }
+    },
+    "NV": {
+      "n_fires": 100,
+      "bbox": [
+        -119.9747,
+        36.1469,
+        -114.0669,
+        41.9319
+      ],
+      "centroid": [
+        39.7015,
+        -116.7347
+      ],
+      "thresholds": {
+        "low": 0.3108,
+        "moderate": 0.366,
+        "high": 0.4235,
+        "extreme": 0.452
+      },
+      "score_summary": {
+        "min": 0.0699,
+        "median": 0.3108,
+        "mean": 0.3071,
+        "max": 0.5031
+      }
+    },
+    "OK": {
+      "n_fires": 100,
+      "bbox": [
+        -99.5675,
+        33.7564,
+        -94.479,
+        36.9336
+      ],
+      "centroid": [
+        35.2395,
+        -95.875
+      ],
+      "thresholds": {
+        "low": 0.2252,
+        "moderate": 0.2931,
+        "high": 0.3652,
+        "extreme": 0.4045
+      },
+      "score_summary": {
+        "min": 0.0736,
+        "median": 0.2252,
+        "mean": 0.2392,
+        "max": 0.4768
+      }
+    },
+    "FL": {
+      "n_fires": 100,
+      "bbox": [
+        -86.6336,
+        25.3524,
+        -80.203,
+        30.9561
+      ],
+      "centroid": [
+        28.0363,
+        -81.8689
+      ],
+      "thresholds": {
+        "low": 0.2024,
+        "moderate": 0.2517,
+        "high": 0.3008,
+        "extreme": 0.3227
+      },
+      "score_summary": {
+        "min": 0.0801,
+        "median": 0.2024,
+        "mean": 0.2116,
+        "max": 0.3656
+      }
+    },
+    "GA": {
+      "n_fires": 78,
+      "bbox": [
+        -85.5133,
+        30.6358,
+        -80.9738,
+        34.9766
+      ],
+      "centroid": [
+        32.7351,
+        -83.5343
+      ],
+      "thresholds": {
+        "low": 0.1808,
+        "moderate": 0.2186,
+        "high": 0.277,
+        "extreme": 0.3125
+      },
+      "score_summary": {
+        "min": 0.0866,
+        "median": 0.1808,
+        "mean": 0.1932,
+        "max": 0.4057
+      }
+    },
+    "NC": {
+      "n_fires": 83,
+      "bbox": [
+        -84.2744,
+        33.9702,
+        -75.7432,
+        36.5333
+      ],
+      "centroid": [
+        35.3338,
+        -79.7995
+      ],
+      "thresholds": {
+        "low": 0.1895,
+        "moderate": 0.2298,
+        "high": 0.2862,
+        "extreme": 0.3122
+      },
+      "score_summary": {
+        "min": 0.086,
+        "median": 0.1895,
+        "mean": 0.1964,
+        "max": 0.3249
+      }
+    },
+    "SC": {
+      "n_fires": 76,
+      "bbox": [
+        -83.2958,
+        32.15,
+        -78.9,
+        34.9438
+      ],
+      "centroid": [
+        33.7976,
+        -80.7792
+      ],
+      "thresholds": {
+        "low": 0.2017,
+        "moderate": 0.2405,
+        "high": 0.2838,
+        "extreme": 0.344
+      },
+      "score_summary": {
+        "min": 0.1052,
+        "median": 0.2017,
+        "mean": 0.2106,
+        "max": 0.3726
+      }
+    }
+  }
+};
+
+/** Global fallback cutoffs (uncalibrated states). `score_max` is 1.0 since the
+ *  global band spans the full 0–1 range. */
+export const GLOBAL_THRESHOLDS: RegionalThresholds = {
+  ...CALIBRATION_INFO.global_thresholds,
+  score_max: 1.0,
+};
+
+/** Per-state {low, moderate, high, extreme, score_max} derived from the full
+ *  block — the shape the score gauge + composite bucketing consume. */
+export const REGIONAL_THRESHOLDS: Record<string, RegionalThresholds> =
+  Object.fromEntries(
+    Object.entries(CALIBRATION_INFO.states).map(([code, s]) => [
+      code,
+      { ...s.thresholds, score_max: s.score_summary.max },
+    ]),
+  );
+
+/** Thresholds for a state code, or null for Global (uncalibrated). */
+export function thresholdsForState(
+  state: string | null | undefined,
+): RegionalThresholds | null {
+  if (!state) return null;
+  return REGIONAL_THRESHOLDS[state] ?? null;
+}
+
+/** Resolve a calibrated state from coordinates — the client-side mirror of
+ *  api/core/regional_calibration.py `lookup_state`: bbox containment with a
+ *  nearest-centroid (equirectangular) tiebreak for overlapping Mountain-West
+ *  borders. Returns null outside every fitted state's bbox. Used to auto-select
+ *  the Risk Calculator's calibration region offline (online, the backend's
+ *  authoritative Census-geocoded `regional_state` is preferred). */
+export function lookupStateLocal(lat: number, lon: number): string | null {
+  const inBox: Array<{ code: string; centroid: [number, number] }> = [];
+  for (const [code, s] of Object.entries(CALIBRATION_INFO.states)) {
+    const [west, south, east, north] = s.bbox;
+    if (west <= lon && lon <= east && south <= lat && lat <= north) {
+      inBox.push({ code, centroid: s.centroid });
+    }
+  }
+  if (inBox.length === 0) return null;
+  if (inBox.length === 1) return inBox[0].code;
+  const d2 = (c: [number, number]): number => {
+    const [clat, clon] = c;
+    const dx = (lon - clon) * Math.cos((lat * Math.PI) / 180);
+    const dy = lat - clat;
+    return dx * dx + dy * dy;
+  };
+  return inBox.reduce((best, c) => (d2(c.centroid) < d2(best.centroid) ? c : best)).code;
+}
+
+/** All calibrated state codes. */
+export const CALIBRATED_STATES: string[] = Object.keys(CALIBRATION_INFO.states);

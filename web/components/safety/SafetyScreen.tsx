@@ -10,6 +10,7 @@ import { ChecklistCard } from '@/components/safety/ChecklistCard';
 import { EvacuationCard, type EvacMode } from '@/components/safety/EvacuationCard';
 import { FemaBanner } from '@/components/safety/FemaBanner';
 import { cardinal8 } from '@/components/ui/CompassRose';
+import { DataErrorState } from '@/components/ui/DataErrorState';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -154,6 +155,23 @@ export function SafetyScreen() {
   const bannerLoading =
     weather.isLoading || risk.isLoading || incidents.isLoading || fires.isLoading;
 
+  // CRITICAL safety state: if any core live signal errored, we CANNOT compute a
+  // trustworthy banner. Without this guard the banner falls through to "All
+  // Clear" (green) on a backend/network failure — affirmatively telling the
+  // user they're safe with no data behind it. Show an explicit "unavailable"
+  // state + Retry instead. (weather feeding risk means a weather error also
+  // surfaces here; risk stays disabled until weather resolves.)
+  const safetyDataFailed =
+    weather.isError || risk.isError || incidents.isError || fires.isError;
+  const retryCoreData = () => {
+    weather.refetch();
+    risk.refetch();
+    incidents.refetch();
+    fires.refetch();
+    disasters.refetch();
+    shelters.refetch();
+  };
+
   return (
     <PageSection top={36} bottom={56}>
       <SectionEyebrow
@@ -196,8 +214,20 @@ export function SafetyScreen() {
         </p>
       </div>
 
-      {/* FEMA banner — only when there's an active declaration */}
-      {activeDisaster ? <FemaBanner disaster={activeDisaster} /> : null}
+      {/* FEMA banner — active declaration, or a compact note when the FEMA
+          lookup itself failed (so an outage doesn't silently hide a possible
+          declaration). When the core data failed the top banner already covers
+          it, so don't double up. */}
+      {disasters.isError && !safetyDataFailed ? (
+        <DataErrorState
+          compact
+          title="FEMA disaster status unavailable"
+          message="Couldn't reach FEMA — an active declaration for your county may exist but isn't shown. Check FEMA.gov or your local alerts."
+          onRetry={() => disasters.refetch()}
+        />
+      ) : activeDisaster ? (
+        <FemaBanner disaster={activeDisaster} />
+      ) : null}
 
       {/* 2-col body */}
       <div
@@ -209,17 +239,25 @@ export function SafetyScreen() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ChecklistCard riskLevel={chromeLevel} />
-          <AdvisoryRow
-            banner={bannerSignal}
-            closestFire={
-              closestDistanceMi != null
-                ? { distance_mi: closestDistanceMi, name: closestName ?? '—' }
-                : null
-            }
-            closestBearingLabel={closestCoords ? cardinal8(nearestBearing) : ''}
-            closestSeverity={nearestSeverity}
-            isLoading={bannerLoading}
-          />
+          {safetyDataFailed ? (
+            <DataErrorState
+              title="Safety data unavailable"
+              message="We can't load current fire and weather data for your area right now, so this screen can't confirm whether you're at risk. Check official sources — NWS, CAL FIRE, and your local emergency alerts — and try again."
+              onRetry={retryCoreData}
+            />
+          ) : (
+            <AdvisoryRow
+              banner={bannerSignal}
+              closestFire={
+                closestDistanceMi != null
+                  ? { distance_mi: closestDistanceMi, name: closestName ?? '—' }
+                  : null
+              }
+              closestBearingLabel={closestCoords ? cardinal8(nearestBearing) : ''}
+              closestSeverity={nearestSeverity}
+              isLoading={bannerLoading}
+            />
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -241,6 +279,28 @@ export function SafetyScreen() {
               shelters={shelters.data}
               fireLoading={incidents.isLoading || fires.isLoading}
               sheltersLoading={shelters.isLoading}
+            />
+          ) : incidents.isError || fires.isError ? (
+            // Genuinely no evac routing info: we couldn't load fire/incident
+            // locations, so away-from-fire routing is dead. Keyed off the EVAC
+            // queries, NOT safetyDataFailed — if only the weather/risk data
+            // behind the left banner were down but fires/shelters loaded fine,
+            // the card still renders. We only show this when there's actually
+            // no evac info to show AND that's because a fetch errored (not a
+            // genuine "no fire, no shelters" all-clear, which stays null).
+            <DataErrorState
+              title="Evacuation routing unavailable"
+              message="We can't load nearby fire and incident data right now, so this can't route you away from an active fire. Check your local emergency services and try again."
+              onRetry={retryCoreData}
+            />
+          ) : shelters.isError ? (
+            // Fire data is fine (nothing in range) but the shelter lookup
+            // failed — surface that instead of showing nothing.
+            <DataErrorState
+              compact
+              title="Shelter data unavailable"
+              message="Couldn't load nearby shelters. Try again, or check Red Cross / local emergency services directly."
+              onRetry={() => shelters.refetch()}
             />
           ) : null}
         </div>
