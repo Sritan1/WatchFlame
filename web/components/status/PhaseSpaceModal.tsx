@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 
+import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds, TrajectoryResponse, TrajectoryTier } from '@/lib/api';
@@ -149,6 +150,8 @@ export function PhaseSpaceModal({
   regionalThresholds,
   currentWeatherScore,
   currentConditions,
+  error = false,
+  onRetry,
 }: {
   open: boolean;
   onClose: () => void;
@@ -162,6 +165,10 @@ export function PhaseSpaceModal({
     humidityPct: number | null;
     windKph: number | null;
   };
+  /** The /trajectory query errored (vs. the backend gracefully returning null
+   *  for a location with no forecast). Drives a failure-specific message + Retry. */
+  error?: boolean;
+  onRetry?: () => void;
 }) {
   const { ae } = useAesthetic();
 
@@ -197,6 +204,18 @@ export function PhaseSpaceModal({
 
   return (
     <Modal open={open} onClose={onClose} eyebrow="Trajectory" title="Where you are, where you're heading" maxWidth={720}>
+      {/* On a forecast fetch failure, lead with a prominent callout + Retry —
+          the failure is the headline, not a footnote. The plot below still
+          renders the (accurate) "now" position. */}
+      {error ? (
+        <div style={{ marginBottom: 18 }}>
+          <DataErrorState
+            title="Forecast unavailable"
+            message="Couldn’t load the 6-hour forecast — check your connection and try again. Your current position (the bright dot) is still accurate; only the projected trend is missing."
+            onRetry={onRetry}
+          />
+        </div>
+      ) : null}
       <p
         style={{
           margin: 0,
@@ -234,7 +253,7 @@ export function PhaseSpaceModal({
           projectedComposite={projectedComposite}
           currentConditions={currentConditions}
         />
-      ) : (
+      ) : error ? null : (
         <p
           style={{
             marginTop: 16,
@@ -244,8 +263,8 @@ export function PhaseSpaceModal({
             lineHeight: 1.5,
           }}
         >
-          Forecast trajectory unavailable right now — your current position (the bright dot) is
-          still accurate.
+          Forecast trajectory unavailable for this location right now — your current position (the
+          bright dot) is still accurate.
         </p>
       )}
     </Modal>

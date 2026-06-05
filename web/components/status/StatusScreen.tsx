@@ -21,6 +21,7 @@ import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Button } from '@/components/ui/Button';
 import { cardinal8 } from '@/components/ui/CompassRose';
+import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { HeroBand } from '@/components/ui/HeroBand';
@@ -271,6 +272,22 @@ export function StatusScreen() {
     ],
   );
 
+  // Failed state: if any core signal errored, `compositeReady` stays false (the
+  // SAME condition as "still loading"), so the page naturally keeps its
+  // skeletons. Rather than swap in a whole error screen, we leave those
+  // skeletons frozen and overlay a centered, non-dismissible modal (the
+  // BlockingErrorOverlay at the end of the render). Computed after all hooks so
+  // nothing changes hook order between renders.
+  const statusDataFailed =
+    weather.isError || risk.isError || fires.isError || incidents.isError;
+  const retryStatusData = () => {
+    weather.refetch();
+    risk.refetch();
+    fires.refetch();
+    incidents.refetch();
+    trajectory.refetch();
+  };
+
   return (
     <>
       {/* ─── HERO BAND ─────────────────────────────────────────────────── */}
@@ -394,6 +411,7 @@ export function StatusScreen() {
                 <TrajectoryChip
                   trajectory={trajectory.data}
                   isLoading={trajectory.isLoading}
+                  isError={trajectory.isError}
                   onOpen={() => setPhaseSpaceOpen(true)}
                 />
               </div>
@@ -653,6 +671,8 @@ export function StatusScreen() {
         weatherBucket={weatherBucket}
         threatBucket={threatBucket}
         trajectory={trajectory.data}
+        error={trajectory.isError}
+        onRetry={() => trajectory.refetch()}
         regionalThresholds={risk.data?.regional_thresholds ?? null}
         currentWeatherScore={risk.data?.risk_score ?? null}
         currentConditions={{
@@ -661,7 +681,76 @@ export function StatusScreen() {
           windKph: weather.data?.wind_speed ?? null,
         }}
       />
+
+      {/* Blocking failure modal — overlays the frozen skeletons when core data
+          can't load. Non-dismissible (no backdrop click-through) since the page
+          has nothing real to show; the only way forward is a successful Retry. */}
+      {statusDataFailed ? (
+        <BlockingErrorOverlay
+          ae={ae}
+          title="Conditions unavailable"
+          message="We can't load current fire weather and nearby-fire data for your area right now. Check your connection and try again."
+          onRetry={retryStatusData}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** Centered, non-dismissible failure modal that floats over the page's frozen
+ *  skeletons. The backdrop intentionally has NO click handler, so clicking
+ *  outside the card does nothing — the user can only Retry (or navigate away
+ *  via the sidebar). */
+function BlockingErrorOverlay({
+  ae,
+  title,
+  message,
+  onRetry,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  title: string;
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="presentation"
+      style={{
+        // Cover the content area only (left offset = Shell's 248px sidebar
+        // gutter) so the failure is non-dismissible over Status but the sidebar
+        // stays navigable — the user can still reach the offline Risk Calculator
+        // or another screen rather than being trapped on a dead page.
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 248,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'rgba(7, 9, 12, 0.55)',
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(3px)',
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 440,
+          borderRadius: ae.radiusLg,
+          background: ae.surface,
+          boxShadow: '0 30px 90px rgba(0, 0, 0, 0.6)',
+        }}
+      >
+        <DataErrorState title={title} message={message} onRetry={onRetry} />
+      </div>
+    </div>
   );
 }
 

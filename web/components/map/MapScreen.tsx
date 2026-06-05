@@ -294,6 +294,16 @@ export function MapScreen() {
         locationLabel={loc.label}
         severityOf={severityOf}
         isLoading={incidentsQ.isLoading}
+        // Independent feeds: the incident feed (NIFC/Cal Fire) and the FIRMS
+        // satellite feed fail separately, so the rail surfaces each on its own —
+        // one being down still shows the other (the map layers are independent
+        // too). Only both-down reads as a full fire-data outage.
+        incidentsError={incidentsQ.isError}
+        satellitesError={firesQ.isError}
+        onRetry={() => {
+          incidentsQ.refetch();
+          firesQ.refetch();
+        }}
         satelliteCount={satellites.length}
         userCoords={loc.coords}
         radiusMi={INCIDENT_RADIUS_MI}
