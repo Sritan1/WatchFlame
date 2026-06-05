@@ -43,7 +43,15 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        # `npm install`, not `npm ci`: the lockfile is generated on Windows and
+        # omits a Linux-only transitive optional subtree (the WASM runtime of
+        # Tailwind v4's native engine — @napi-rs/wasm-runtime -> @emnapi/*), so
+        # the strict `npm ci` integrity check fails on the Linux runner with
+        # "Missing @emnapi/core/runtime from lock file". `npm install` reconciles
+        # and installs the same versions without that cross-platform strictness,
+        # and matches how Vercel installs for deploy. This job only type-checks,
+        # so bit-for-bit reproducibility isn't required here.
+        run: npm install --no-audit --no-fund
       - name: Type-check
         run: npx tsc --noEmit
       - name: Dependency audit (advisory)
