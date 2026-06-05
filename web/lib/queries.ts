@@ -7,11 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { api } from './api';
-import type {
-  FireCollection,
-  LatLon,
-  RiskRequest,
-} from './api';
+import type { FireCollection, LatLon } from './api';
 
 /** Generic value debounce — returns `value` after `ms` of stable input. */
 export function useDebounced<T>(value: T, ms = 250): T {
@@ -21,26 +17,6 @@ export function useDebounced<T>(value: T, ms = 250): T {
     return () => clearTimeout(t);
   }, [value, ms]);
   return v;
-}
-
-/** Compute risk for arbitrary inputs (used by the Risk Forecast screen). */
-export function useRiskForInputs(input: RiskRequest, debounceMs = 250) {
-  const debounced = useDebounced(input, debounceMs);
-  return useQuery({
-    queryKey: [
-      'risk',
-      debounced.temperature,
-      debounced.humidity,
-      debounced.wind_speed,
-      debounced.days_since_rain,
-      debounced.season,
-      debounced.kbdi,
-      debounced.ndvi_anomaly,
-      debounced.state,
-    ],
-    queryFn: () => api.risk(debounced),
-    staleTime: 60_000,
-  });
 }
 
 /** Compute risk from a fresh weather reading. 5 min cache + full coord
