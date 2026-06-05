@@ -26,7 +26,7 @@ import {
 } from '@/components/risk/StatePickerModal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds } from '@/lib/api';
-import { useRiskCalibration } from '@/lib/queries';
+import { CALIBRATION_INFO } from '@/lib/regional-thresholds';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 const AMBER = '#E8B339';
@@ -62,7 +62,6 @@ export function HeroScorePanel({
   const { ae, accent } = useAesthetic();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ladderOpen, setLadderOpen] = useState(false);
-  const calibration = useRiskCalibration();
   // Ambient chrome (border tint, top stripe, corner glow) is floored to
   // moderate when actual is low — matches the same convention used on Status
   // / Safety so low doesn't read as muted teal everywhere.
@@ -436,24 +435,14 @@ export function HeroScorePanel({
           in for that state.
         </p>
         <div style={{ marginTop: 18 }}>
-          {calibration.isLoading || !calibration.data ? (
-            <p
-              style={{
-                margin: 0,
-                fontFamily: ae.fontBody,
-                fontSize: 13,
-                color: ae.textMute,
-              }}
-            >
-              Loading calibration data…
-            </p>
-          ) : (
-            <CalibrationLadder
-              data={calibration.data}
-              userState={region}
-              userScore={score}
-            />
-          )}
+          {/* Calibration data is bundled (web/lib/regional-thresholds.ts), so
+              the ladder renders instantly and works fully offline — no
+              /risk/calibration fetch, no loading state. */}
+          <CalibrationLadder
+            data={CALIBRATION_INFO}
+            userState={region}
+            userScore={score}
+          />
         </div>
       </Modal>
     </div>

@@ -18,6 +18,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/Icon';
 import { FireFieldsExplainerModal } from '@/components/map/FireFieldsExplainerModal';
 import type { MapSelection } from '@/components/map/MapImpl';
+import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
@@ -32,6 +33,9 @@ export function IncidentsRail({
   locationLabel,
   severityOf,
   isLoading = false,
+  incidentsError = false,
+  satellitesError = false,
+  onRetry,
   satelliteCount = 0,
   userCoords,
   radiusMi = 30,
@@ -42,6 +46,15 @@ export function IncidentsRail({
   locationLabel: string;
   severityOf: (f: NamedIncident) => RiskLevel;
   isLoading?: boolean;
+  /** The named-incident feed (NIFC/Cal Fire) failed to load — show an error
+   *  state in the rail instead of the misleading "0 fires in region" empty. */
+  incidentsError?: boolean;
+  /** The FIRMS satellite feed failed to load — show a targeted note in the
+   *  satellite callout. Independent of incidentsError: the two are separate
+   *  feeds, so one failing still shows the other (the map layers are independent
+   *  too). */
+  satellitesError?: boolean;
+  onRetry?: () => void;
   /** Number of FIRMS satellite hot-pixels in view. */
   satelliteCount?: number;
   /** User's current focus point — needed to compute distance to the
@@ -245,7 +258,20 @@ export function IncidentsRail({
           </div>
         </div>
 
-        {isLoading && fires.length === 0 ? (
+        {incidentsError ? (
+          <div
+            style={{
+              marginTop: 10,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              color: ae.textDim,
+              letterSpacing: '0.06em',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            Incident feed unavailable
+          </div>
+        ) : isLoading && fires.length === 0 ? (
           <>
             <div style={{ marginTop: 8 }}>
               <Skeleton width={'70%'} height={28} rounded="md" />
@@ -330,40 +356,65 @@ export function IncidentsRail({
               ) : null}
             </div>
 
-            {/* Satellite count callout — preserved */}
-            {satelliteCount > 0 ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 10px',
-                  borderRadius: 99,
-                  background: 'rgba(255, 122, 58, 0.10)',
-                  border: '0.5px solid rgba(255, 122, 58, 0.30)',
-                  fontFamily: ae.fontMono,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: '0.10em',
-                  color: '#ff7a3a',
-                  textTransform: ae.chipUpper ? 'uppercase' : 'none',
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 99,
-                    background: '#ff7a3a',
-                    boxShadow: '0 0 6px #ff7a3a',
-                  }}
-                />
-                {satelliteCount} satellite{satelliteCount === 1 ? '' : 's'} detected
-              </div>
-            ) : null}
           </>
         )}
+
+        {/* Satellite feed status — INDEPENDENT of the incident feed (separate
+            source + separate map layer), so it renders even when incidents are
+            errored, and shows its own failure note rather than vanishing. */}
+        {satellitesError ? (
+          <div
+            style={{
+              marginTop: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '4px 10px',
+              borderRadius: 99,
+              background: 'rgba(148, 163, 184, 0.10)',
+              border: '0.5px solid rgba(148, 163, 184, 0.30)',
+              fontFamily: ae.fontMono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.10em',
+              color: ae.textDim,
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            <Icon name="warn" size={11} color="#E8B339" strokeWidth={1.8} />
+            Satellite feed unavailable
+          </div>
+        ) : satelliteCount > 0 ? (
+          <div
+            style={{
+              marginTop: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: 99,
+              background: 'rgba(255, 122, 58, 0.10)',
+              border: '0.5px solid rgba(255, 122, 58, 0.30)',
+              fontFamily: ae.fontMono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.10em',
+              color: '#ff7a3a',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 99,
+                background: '#ff7a3a',
+                boxShadow: '0 0 6px #ff7a3a',
+              }}
+            />
+            {satelliteCount} satellite{satelliteCount === 1 ? '' : 's'} detected
+          </div>
+        ) : null}
       </div>
 
       {/* ── List ───────────────────────────────────────────────────── */}
@@ -378,7 +429,15 @@ export function IncidentsRail({
           zIndex: 1,
         }}
       >
-        {isLoading && fires.length === 0
+        {incidentsError ? (
+          <DataErrorState
+            compact
+            title="Incident feed unavailable"
+            message="Couldn't load NIFC/Cal Fire incidents. Satellite detections (if any) still show on the map. Try again."
+            onRetry={onRetry}
+          />
+        ) : null}
+        {!incidentsError && isLoading && fires.length === 0
           ? Array.from({ length: 4 }).map((_, i) => (
               // eslint-disable-next-line react/no-array-index-key
               <div

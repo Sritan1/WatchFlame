@@ -257,8 +257,14 @@ export function FireDetailScreen() {
 
   const openInMaps = `https://www.google.com/maps?q=${fireLat},${fireLon}`;
 
+  // Fire-weather (local /weather + /risk) failed to load. Excluded from
+  // `fireWeatherLoading` so the Risk Level cell doesn't skeleton forever when
+  // risk errors after weather resolves — the `weather.data != null && risk.data
+  // == null` clause below would otherwise stay true indefinitely on error.
+  const fireWeatherFailed = weather.isError || risk.isError;
   const fireWeatherLoading =
-    weather.isLoading || risk.isLoading || (weather.data != null && risk.data == null);
+    !fireWeatherFailed &&
+    (weather.isLoading || risk.isLoading || (weather.data != null && risk.data == null));
 
   const idLabel = matched
     ? matched.source === 'calfire'
@@ -519,6 +525,7 @@ export function FireDetailScreen() {
             threatTone={threatTone?.color ?? ae.textDim}
             threatGlow={threatTone?.glow ?? '255,255,255'}
             riskLoading={fireWeatherLoading}
+            riskError={fireWeatherFailed}
           />
 
           {/* Incident facts — matched only (2x2 mini grid) */}
@@ -935,6 +942,7 @@ function AssessmentSplit({
   threatTone,
   threatGlow,
   riskLoading,
+  riskError = false,
 }: {
   ae: Ae;
   riskLevel: RiskLevel | null;
@@ -944,6 +952,9 @@ function AssessmentSplit({
   threatTone: string;
   threatGlow: string;
   riskLoading: boolean;
+  /** Local /weather or /risk errored — the Risk Level cell shows an explicit
+   *  "Unavailable" instead of a bare "—" (which reads as unknown, not failed). */
+  riskError?: boolean;
 }) {
   return (
     <IncPanel ae={ae} padding={0}>
@@ -956,6 +967,7 @@ function AssessmentSplit({
           tone={riskTone}
           glow={riskGlow}
           loading={riskLoading}
+          error={riskError}
         />
         <div
           style={{
@@ -987,6 +999,7 @@ function AssessmentCell({
   tone,
   glow,
   loading,
+  error = false,
 }: {
   ae: Ae;
   label: string;
@@ -995,6 +1008,7 @@ function AssessmentCell({
   tone: string;
   glow: string;
   loading: boolean;
+  error?: boolean;
 }) {
   const bar = level ? RISK_LEVELS[level].bar : 0;
   const pillText = level ? RISK_LEVELS[level].label : '—';
@@ -1045,6 +1059,23 @@ function AssessmentCell({
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 28 }}>
         {loading ? (
           <Skeleton width={86} height={24} rounded="full" />
+        ) : error ? (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.08em',
+              color: ae.textMute,
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            <Icon name="warn" size={13} color="#E8B339" strokeWidth={1.8} />
+            Unavailable
+          </span>
         ) : level ? (
           <span
             style={{

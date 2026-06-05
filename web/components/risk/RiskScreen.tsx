@@ -1,8 +1,10 @@
 'use client';
 
 // Risk Forecast orchestrator. Owns: input state (temp/humidity/wind/kbdi/season/ndvi),
-// region selection, vegetation mode. Calls useRiskForInputs (debounced) and
-// renders the hero + factor breakdown + inputs grid + insights rail.
+// region selection, vegetation mode. Computes the what-if score LOCALLY via
+// computeRiskLocal (offline, no /risk round-trip) and renders the hero + factor
+// breakdown + inputs grid + insights rail. Only the location seeding below
+// ("reset to my area") hits the backend.
 //
 // Two seeding flows:
 //   1. AUTO-SEED — on first load (and whenever the user's location changes),
@@ -28,7 +30,9 @@ import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk, type RiskRequest, type Season } from '@/lib/api';
-import { useRiskForInputs, useRiskFromWeather, useWeather } from '@/lib/queries';
+import { useRiskFromWeather, useWeather } from '@/lib/queries';
+import { lookupStateLocal } from '@/lib/regional-thresholds';
+import { computeRiskLocal } from '@/lib/risk-local';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { useUnits } from '@/lib/use-units';
@@ -112,6 +116,13 @@ export function RiskScreen() {
   // stops overwriting their values when fresh local data arrives. Reset to
   // my area clears it so subsequent location changes auto-seed again.
   const userTouchedRef = useRef(false);
+  // Region (calibration state) auto-follows the active location. Tracked
+  // SEPARATELY from slider seeding because the region only needs coordinates (a
+  // client-side lookup), so it must update even OFFLINE when the backend seed
+  // fails. `regionManualRef` guards a user's explicit pick from being
+  // overridden by the backend value until the location next changes.
+  const regionLocKeyRef = useRef<string | null>(null);
+  const regionManualRef = useRef(false);
   // Per-slider "user touched" flags for KBDI + NDVI specifically — used to
   // hide the "Couldn't fetch" warning once the user supplies their own value.
   // The warning reappears after Reset to my area (which clears these flags).
@@ -131,7 +142,7 @@ export function RiskScreen() {
   // marks the screen as user-touched. Without this, the auto-seed effect
   // would silently re-set region back to the user's local state when /risk
   // refetches — overriding their pick.
-  const pickRegion = (v: RegionCode) => { markTouched(); setRegion(v); };
+  const pickRegion = (v: RegionCode) => { regionManualRef.current = true; markTouched(); setRegion(v); };
 
   // Local readings — re-uses Status's cached queries (same coords) so this
   // is usually free. KBDI is the gate; NDVI is allowed to fail and falls back
@@ -193,16 +204,15 @@ export function RiskScreen() {
     } else if (seedMode === 'auto') {
       setNdviRaw(DEFAULTS.ndvi);
     }
-    // Auto-pick the calibration region from the backend's reverse-geocode.
-    // null = outside the fitted 17 states → Global. Matches mobile applyLocal
-    // (app/(tabs)/risk.tsx:142 `setSelectedState(localState)`).
-    setRegion(localRisk.data?.regional_state ?? null);
+    // (Calibration region is auto-selected by the dedicated effect below — it
+    // only needs coordinates, so it must follow the location even offline when
+    // this backend seed fails.)
     // Clear the per-slider "user supplied this value" flags so the
     // KBDI / NDVI fetch-failed warnings reappear if those upstreams are
     // still down. Matches mobile applyLocal behavior.
     setKbdiUserSet(false);
     setNdviUserSet(false);
-  }, [localTemp, localHumidity, localWind, localKbdi, localDays, localNdvi, localRisk.data?.regional_state]);
+  }, [localTemp, localHumidity, localWind, localKbdi, localDays, localNdvi]);
 
   // Upstream failure flags — `localRisk.data !== undefined` means the /risk
   // call resolved; within that, kbdi/ndvi_anomaly being null means the
@@ -213,14 +223,18 @@ export function RiskScreen() {
   const localKbdiFailed = localFetchComplete && localKbdi == null;
   const localNdviFailed = localFetchComplete && localNdvi == null;
 
-  /** Reset button — applyLocal already seeds every input (including region
-   *  from the backend's reverse-geocode), so this just calls it and clears
-   *  the user-touched flag so subsequent location changes auto-seed again.
+  /** Reset button — re-seeds every input from the user's location and snaps the
+   *  calibration region back to the location's state, clearing the user-touched
+   *  + manual-region flags so subsequent location changes auto-seed again.
    *  Matches mobile's "Reset to my area" behavior. */
   const resetToLocal = useCallback(() => {
     applyLocal('reset');
     userTouchedRef.current = false;
-  }, [applyLocal]);
+    regionManualRef.current = false;
+    setRegion(
+      localRisk.data?.regional_state ?? lookupStateLocal(loc.coords.lat, loc.coords.lon),
+    );
+  }, [applyLocal, localRisk.data?.regional_state, loc.coords.lat, loc.coords.lon]);
 
   // Auto-seed: on first load (and whenever the location's local readings
   // change), if the user hasn't manually edited anything, swap the placeholder
@@ -249,6 +263,26 @@ export function RiskScreen() {
     seededContentRef.current = contentKey;
     setAppliedLocKey(locKey);
   }, [localReady, locKey, contentKey, applyLocal]);
+
+  // Calibration region auto-follows the active location — even OFFLINE, since it
+  // only needs coordinates (lookupStateLocal mirrors the backend's lookup_state
+  // bbox/centroid logic). On a location change it re-selects from the client
+  // lookup immediately; when the backend's authoritative reverse-geocoded state
+  // resolves it upgrades to that — unless the user has manually picked a region
+  // since the location last changed.
+  useEffect(() => {
+    if (regionLocKeyRef.current !== locKey) {
+      regionLocKeyRef.current = locKey;
+      regionManualRef.current = false;
+      setRegion(
+        localRisk.data?.regional_state ?? lookupStateLocal(loc.coords.lat, loc.coords.lon),
+      );
+      return;
+    }
+    if (!regionManualRef.current && localRisk.data?.regional_state != null) {
+      setRegion(localRisk.data.regional_state);
+    }
+  }, [locKey, localRisk.data?.regional_state, loc.coords.lat, loc.coords.lon]);
 
   // If local data outright failed, drop the skeletons — show the hardcoded
   // defaults so the user can still play with the calculator (and the
@@ -284,15 +318,20 @@ export function RiskScreen() {
     [temperature, humidity, wind, kbdi, daysSinceRain, droughtMode, season, ndvi, vegMode, region],
   );
 
-  const risk = useRiskForInputs(req, 220);
+  // The what-if score is a pure function of the slider inputs — compute it
+  // LOCALLY (offline, instant, no per-keystroke /risk round-trip). The backend
+  // stays the authority for the live Status/Safety flows; the calculator only
+  // needs the V4 formula + the bundled per-state calibration cutoffs. This also
+  // removes the old "fake placeholder on error" behavior — there's no request
+  // to fail. See web/lib/risk-local.ts. (Seeding from the user's real location
+  // — localWeather/localRisk above — still uses the backend.)
+  const risk = useMemo(() => computeRiskLocal(req), [req]);
 
-  // Fall back to a synthesized computation when the request is still in flight
-  // so the hero never shows "—" or blanks during typing.
-  const score = risk.data?.risk_score ?? 0.33;
-  const level: RiskLevel = risk.data
-    ? (risk.data.regional_level ? dangerToRisk(risk.data.regional_level) : dangerToRisk(risk.data.danger_level))
-    : 'extreme';
-  const factors = risk.data?.factors ?? { vpd: 0.77, wind: 0.19, drought: 0.64, season: 0.80 };
+  const score = risk.risk_score;
+  const level: RiskLevel = risk.regional_level
+    ? dangerToRisk(risk.regional_level)
+    : dangerToRisk(risk.danger_level);
+  const factors = risk.factors;
 
   // Dominant driver — pick the largest WEIGHTED contribution. Weights mirror
   // the fitted V4 exponents (api/core/risk_algorithm.py RiskParams).
@@ -326,7 +365,7 @@ export function RiskScreen() {
       <PageSection top={36} bottom={28}>
         <SectionEyebrow
           color="#E8B339"
-          right={`Calibrated for ${regionDisplay}${risk.data?.danger_level && region ? ` · Global: ${capitalize(risk.data.danger_level)}` : ''}`}
+          right={`Calibrated for ${regionDisplay}${region ? ` · Global: ${capitalize(risk.danger_level)}` : ''}`}
         >
           Risk Forecast · What-If
         </SectionEyebrow>
@@ -346,7 +385,7 @@ export function RiskScreen() {
             level={level}
             region={region}
             onRegionChange={pickRegion}
-            thresholds={risk.data?.regional_thresholds ?? null}
+            thresholds={risk.regional_thresholds ?? null}
             isLoading={inputsLoading}
           />
           <FactorBreakdown
