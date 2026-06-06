@@ -1,16 +1,11 @@
-"""Phase 1 of the ML feature - baseline ignition classifier + leakage-safe eval.
+"""Phases 1-2 of the ML feature - baseline + gradient-boosted ignition classifier.
 
-Trains a logistic-regression baseline on data/ignition_dataset.csv and evaluates
-it three ways, to make the methodology visible:
-
-  1. no-skill reference (DummyClassifier)          -> what "no signal" looks like
-  2. logistic reg, RANDOM split (StratifiedKFold)  -> the naive, LEAKY way
-  3. logistic reg, SPATIAL split (GroupKFold on    -> the honest way; whole
-     spatial_block)                                    regions held out at once
-
-The gap between (2) and (3) is the leakage the dataset was designed to expose:
-a fire and its own typical-day negatives share a location, so a random split can
-put near-identical rows on both sides of train/test and inflate the score.
+Evaluates two models on data/ignition_dataset.csv with a leakage-safe protocol:
+  * logistic regression                 (the baseline / bar to beat)
+  * HistGradientBoostingClassifier       (the real model)
+each under a RANDOM split (naive/leaky) and a SPATIAL GroupKFold split (honest,
+whole 2-degree regions held out at once). We also print train-vs-test ROC to
+expose overfitting (when a model memorizes instead of generalizing).
 
 Usage:
     python scripts/train_ignition_model.py
@@ -27,7 +22,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.base import clone  # noqa: E402
 from sklearn.compose import ColumnTransformer  # noqa: E402
-from sklearn.dummy import DummyClassifier  # noqa: E402
+from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
 from sklearn.model_selection import GroupKFold, StratifiedKFold  # noqa: E402
@@ -47,9 +42,7 @@ SEED = 7
 
 
 def make_logreg() -> Pipeline:
-    """Logistic regression with scaling + one-hot encoding. Scaling matters
-    because logistic regression is sensitive to feature magnitude (KBDI runs
-    0-800, humidity 0-100); the scaler puts every feature on equal footing."""
+    """Linear baseline. Needs scaling (it's sensitive to feature magnitude)."""
     pre = ColumnTransformer([
         ("num", StandardScaler(), NUMERIC),
         ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
@@ -60,21 +53,39 @@ def make_logreg() -> Pipeline:
     ])
 
 
+def make_gbm() -> Pipeline:
+    """Gradient-boosted trees. No scaling needed - trees split on thresholds,
+    so they're scale-invariant. Season is one-hot encoded; numerics pass
+    through. Regularized (shallow-ish leaves + L2) to limit overfitting."""
+    pre = ColumnTransformer(
+        [("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL)],
+        remainder="passthrough",
+    )
+    return Pipeline([
+        ("pre", pre),
+        ("clf", HistGradientBoostingClassifier(
+            learning_rate=0.08, max_iter=300, min_samples_leaf=50,
+            l2_regularization=1.0, class_weight="balanced", random_state=SEED)),
+    ])
+
+
 def cv_scores(model, X, y, splitter, groups=None):
-    """Train on each fold's training rows, score on its held-out rows. The
-    model is never scored on data it trained on - that's the whole point."""
-    roc, pr = [], []
+    """Per-fold held-out ROC-AUC + PR-AUC, plus per-fold TRAIN ROC-AUC so we
+    can see the train-vs-test gap (the fingerprint of overfitting)."""
+    roc_te, pr_te, roc_tr = [], [], []
     for tr, te in splitter.split(X, y, groups):
         m = clone(model).fit(X.iloc[tr], y.iloc[tr])
-        p = m.predict_proba(X.iloc[te])[:, 1]
-        roc.append(roc_auc_score(y.iloc[te], p))
-        pr.append(average_precision_score(y.iloc[te], p))
-    return np.array(roc), np.array(pr)
+        p_te = m.predict_proba(X.iloc[te])[:, 1]
+        roc_te.append(roc_auc_score(y.iloc[te], p_te))
+        pr_te.append(average_precision_score(y.iloc[te], p_te))
+        roc_tr.append(roc_auc_score(y.iloc[tr], m.predict_proba(X.iloc[tr])[:, 1]))
+    return np.array(roc_te), np.array(pr_te), np.array(roc_tr)
 
 
-def report(name, roc, pr):
-    print(f"  {name:34s} ROC-AUC {roc.mean():.3f} +/- {roc.std():.3f}   "
-          f"PR-AUC {pr.mean():.3f} +/- {pr.std():.3f}")
+def report(name, roc_te, pr_te, roc_tr):
+    gap = roc_tr.mean() - roc_te.mean()
+    print(f"  {name:26s} test ROC {roc_te.mean():.3f}  PR {pr_te.mean():.3f}"
+          f"   | train ROC {roc_tr.mean():.3f}  (train-test gap {gap:+.3f})")
 
 
 def main() -> int:
@@ -82,35 +93,18 @@ def main() -> int:
     X, y, g = df[FEATURES], df[TARGET], df[GROUP]
     base_rate = y.mean()
     print(f"dataset: {len(df):,} rows, {int(y.sum()):,} positives "
-          f"({base_rate:.1%}), {g.nunique()} spatial blocks\n")
-    print(f"reference points: no-skill ROC-AUC = 0.500, "
-          f"no-skill PR-AUC = base rate = {base_rate:.3f}\n")
+          f"({base_rate:.1%}), {g.nunique()} spatial blocks")
+    print(f"no-skill reference: ROC-AUC 0.500, PR-AUC {base_rate:.3f}\n")
 
     strat = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
     group = GroupKFold(n_splits=N_SPLITS)
 
-    print("Baseline (logistic regression):")
-    roc, pr = cv_scores(
-        DummyClassifier(strategy="stratified", random_state=SEED), X, y, group, g)
-    report("no-skill (dummy)", roc, pr)
-    roc, pr = cv_scores(make_logreg(), X, y, strat)
-    report("logreg - RANDOM split (leaky)", roc, pr)
-    roc_h, pr_h = cv_scores(make_logreg(), X, y, group, g)
-    report("logreg - SPATIAL split (honest)", roc_h, pr_h)
-
-    # Which features does the baseline lean on? Fit on all data for a peek.
-    m = make_logreg().fit(X, y)
-    names = (NUMERIC + list(
-        m.named_steps["pre"].named_transformers_["cat"]
-        .get_feature_names_out(CATEGORICAL)))
-    coefs = m.named_steps["clf"].coef_[0]
-    print("\nWhat the baseline leans on (standardized coefficients, |biggest| first):")
-    for i in np.argsort(np.abs(coefs))[::-1]:
-        sign = "raises" if coefs[i] > 0 else "lowers"
-        print(f"  {names[i]:22s} {coefs[i]:+.2f}  ({sign} ignition likelihood)")
-
-    print(f"\nHonest headline: ROC-AUC {roc_h.mean():.3f}, "
-          f"PR-AUC {pr_h.mean():.3f}  (no-skill = 0.500 / {base_rate:.3f}).")
+    for label, factory in [("Logistic regression (baseline)", make_logreg),
+                           ("Gradient-boosted trees", make_gbm)]:
+        print(f"{label}:")
+        report("RANDOM split (leaky)", *cv_scores(factory(), X, y, strat))
+        report("SPATIAL split (honest)", *cv_scores(factory(), X, y, group, g))
+        print()
     return 0
 
 
