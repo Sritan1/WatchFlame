@@ -37,6 +37,35 @@ def test_score_features_incomplete_returns_none():
     assert ignition.score_features({"temperature_c": None, "humidity_pct": 50}) is None
 
 
+def test_dense_urban_scores_below_open_developed_same_weather():
+    """v2 intensity split: for IDENTICAL weather, dense urban (NLCD 24,
+    developed_high — Chicago downtown) reads lower than grassy open-space
+    developed (NLCD 21, developed_open — parks/lawns that genuinely burn).
+    Collapsing 21–24 into one 'developed' bucket hid this, which is what made
+    v1 over-flag dense cities. This asserts the split actually separates them."""
+    # Cool, windy, low-drought spring day (the Chicago over-flag scenario).
+    base = {
+        "temperature_c": 19.8, "humidity_pct": 61.0, "wind_kph": 17.0,
+        "days_since_rain": 6, "kbdi": 71.0, "month": 5, "season": "spring",
+    }
+    dense = ignition.score_features({**base, "land_cover": "developed_high"})
+    opendev = ignition.score_features({**base, "land_cover": "developed_open"})
+    if dense is None or opendev is None:
+        import pytest
+        pytest.skip("ignition model artifact not present")
+    assert dense["percentile"] < opendev["percentile"]
+
+
+def test_score_features_defaults_missing_land_cover():
+    """A feature dict without land_cover still scores (degrades to 'unknown')
+    rather than raising — back-compat for callers/fixtures that don't supply it."""
+    scored = ignition.score_features(_HOT_DRY)  # no land_cover key
+    if scored is None:
+        import pytest
+        pytest.skip("ignition model artifact not present")
+    assert 0 <= scored["percentile"] <= 100
+
+
 def test_route_returns_payload(monkeypatch):
     async def fake(lat, lon):
         return {"percentile": 82.0, "probability": 0.41, "level": "high",
