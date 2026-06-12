@@ -11,6 +11,7 @@ import type {
   DisastersNearResponse,
   FireCollection,
   GeocodeHit,
+  IgnitionResponse,
   NamedIncident,
   RiskRequest,
   RiskResponse,
@@ -67,6 +68,8 @@ const realApi = {
     request<DisastersNearResponse>(`/disasters/near?lat=${lat}&lon=${lon}`),
   trajectory: (lat: number, lon: number) =>
     request<TrajectoryResponse | null>(`/trajectory?lat=${lat}&lon=${lon}`),
+  ignition: (lat: number, lon: number) =>
+    request<IgnitionResponse | null>(`/ignition?lat=${lat}&lon=${lon}`),
 };
 
 export const api = usingMocks ? mockApi : realApi;
