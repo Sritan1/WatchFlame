@@ -20,6 +20,7 @@ from .routes import (  # noqa: E402
     disasters,
     fires,
     geocode,
+    ignition,
     incidents,
     risk,
     shelters,
@@ -152,3 +153,4 @@ app.include_router(shelters.router)
 app.include_router(incidents.router)
 app.include_router(disasters.router)
 app.include_router(trajectory.router)
+app.include_router(ignition.router)

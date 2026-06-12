@@ -112,6 +112,19 @@ export interface CalibrationInfo {
 //   - 'falling' → conditions improving; V4 score down > 10%
 // Backend logic in api/core/trajectory.py + api/routes/trajectory.py.
 
+export type IgnitionLevel = 'low' | 'moderate' | 'high' | 'extreme';
+
+/** Machine-learning fire-ignition-likelihood signal for a location.
+ *  `percentile` (0-100) is a calibrated index of how fire-start-like the
+ *  current conditions are — NOT an absolute probability. `as_of` is the date
+ *  the conditions are from (the Open-Meteo archive lags ~6 days). */
+export interface IgnitionResponse {
+  percentile: number;
+  probability: number;
+  level: IgnitionLevel;
+  as_of: string;
+}
+
 export type TrajectoryTier = 'rising' | 'steady' | 'falling';
 
 export interface TrajectoryFrame {
