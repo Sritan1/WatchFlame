@@ -9,6 +9,7 @@ import type {
   FireCollection,
   GeocodeHit,
   NamedIncident,
+  IgnitionResponse,
   RiskRequest,
   RiskResponse,
   Shelter,
@@ -451,6 +452,15 @@ const MOCK_TRAJECTORY: TrajectoryResponse = {
   ],
 };
 
+// Mock ignition signal — a 'high' demo consistent with Berkeley's hot/dry
+// mock conditions. The percentile is the headline; level drives the card tone.
+const MOCK_IGNITION: IgnitionResponse = {
+  percentile: 81.0,
+  probability: 0.33,
+  level: 'high',
+  as_of: '2026-05-30',
+};
+
 export const mockApi = {
   health: () => delay({ ok: true }),
   fires: (_opts?: { days?: number; bbox?: string }) => delay(MOCK_FIRES),
@@ -458,6 +468,8 @@ export const mockApi = {
   riskCalibration: () => delay(MOCK_CALIBRATION, 120),
   trajectory: (_lat: number, _lon: number): Promise<TrajectoryResponse | null> =>
     delay(MOCK_TRAJECTORY, 280),
+  ignition: (_lat: number, _lon: number): Promise<IgnitionResponse | null> =>
+    delay(MOCK_IGNITION, 300),
   weather: (_lat: number, _lon: number) => delay(MOCK_WEATHER),
   geocode: (query: string): Promise<GeocodeHit[]> => {
     const q = query.trim().toLowerCase();

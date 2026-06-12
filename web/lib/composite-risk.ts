@@ -437,6 +437,45 @@ export function compositeFromBuckets(
   return COMPOSITE_MATRIX[weatherBucket][threatKey];
 }
 
+// ─── Environmental ensemble: fire weather ⊗ ignition likelihood ────────────
+//
+// Stage 1 of the headline. Fire-weather SEVERITY (W: "how bad would a fire be")
+// and the ML IGNITION LIKELIHOOD (I: "how likely a fire starts") are two views
+// of the same environmental question, so we fold them into one tier `E` before
+// the W×T matrix — rather than adding a correlated third axis that would
+// double-count the weather they share.
+//
+// The combination is hazard = likelihood × consequence: a SYMMETRIC,
+// MULTIPLICATIVE matrix. Either factor being low pulls the product down (the
+// off-diagonal corners cap to MOD), and only when both are elevated does E
+// escalate. A useful side effect: low severity tempers an over-confident
+// ignition reading (and vice-versa), so a single signal can never run away.
+//
+// `ENV_MATRIX[W][I]` is symmetric across the diagonal (swap W and I → same
+// cell), so neither signal dominates.
+
+const ENV_MATRIX: Record<RiskLevel, Record<RiskLevel, RiskLevel>> = {
+  //              I=low       I=moderate  I=high      I=extreme
+  low:      {     low: 'low',      moderate: 'low',      high: 'moderate', extreme: 'moderate' },
+  moderate: {     low: 'low',      moderate: 'moderate', high: 'moderate', extreme: 'high'     },
+  high:     {     low: 'moderate', moderate: 'moderate', high: 'high',     extreme: 'high'     },
+  extreme:  {     low: 'moderate', moderate: 'high',     high: 'high',     extreme: 'extreme'  },
+};
+
+/** Stage-1 environmental tier from fire-weather severity + ignition likelihood.
+ *  When `ignitionBucket` is null (ML signal still loading or unavailable), the
+ *  environmental tier is just the weather bucket — so the composite degrades
+ *  cleanly to its prior W×T behavior and the headline never waits on the model.
+ *  Returns null only when the weather bucket itself isn't ready. */
+export function envFromBuckets(
+  weatherBucket: RiskLevel | null,
+  ignitionBucket: RiskLevel | null,
+): RiskLevel | null {
+  if (weatherBucket == null) return null;
+  if (ignitionBucket == null) return weatherBucket;
+  return ENV_MATRIX[weatherBucket][ignitionBucket];
+}
+
 /** Per-fire personal threat bucket. Wraps `fireThreatFactor` + `bucketOf`
  *  so every user-facing surface (Status "Active Fire Threat", Safety
  *  banner, Fire Detail "Threat to You") reads the same fire the same way.

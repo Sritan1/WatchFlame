@@ -147,17 +147,31 @@ _Each row is one state's calibrated tier bands. A probe at score **0.45** lands 
 
 ### 3. The personal-threat composite
 
-Fire weather is one axis; **how exposed you are to an active fire right now** is the other. The threat axis aggregates distance and fire size **multiplicatively** across every fire within 50 mi, then applies smooth **multiplicative modifiers** for wind alignment, containment, and detection age (no hard cliffs — and wind direction can't escalate a far fire it has no physical bearing on). The two axes resolve to a single headline tier through a published **4×5 lookup matrix**:
+Three signals fold into the single headline tier on Status — **fire weather** (`W`, how dangerous the environment is), **ignition likelihood** (`I`, the learned model below), and **active-fire threat** (`T`, how exposed you are to a fire burning right now) — through **two published lookup matrices in series**, not a weighted average.
+
+**Stage 1 — environment.** Fire-weather severity and ignition likelihood are both weather-driven, so bolting `I` on as an independent third axis would double-count it. Instead they fuse multiplicatively into one *environmental danger* tier `E = ENV[W][I]`, symmetric and reading as `consequence × likelihood`:
+
+```
+            I=low    I=mod    I=high   I=ext
+W=low       LOW      LOW      MOD      MOD
+W=mod       LOW      MOD      MOD      HIGH
+W=high      MOD      MOD      HIGH     HIGH
+W=ext       MOD      HIGH     HIGH     EXT
+```
+
+This is also what keeps the learned model honest at the headline: a high ignition reading on a *low-severity* day — a cool, windy day in a dense city — can only reach **moderate** `E`. Likelihood can't escalate the headline without real fire-weather consequence behind it.
+
+**Stage 2 — headline.** The environmental tier then meets the active-fire threat. The threat axis aggregates distance and fire size **multiplicatively** across every fire within 50 mi, then applies smooth **multiplicative modifiers** for wind alignment, containment, and detection age (no hard cliffs — and wind direction can't escalate a far fire it has no physical bearing on). `E` and `T` resolve to the headline through a published **4×5 lookup matrix** (unchanged; just fed `E` in place of `W`):
 
 ```
                 T=none   T=low    T=mod    T=high   T=ext
-W=low           LOW      LOW      LOW      MOD      HIGH
-W=mod           LOW      MOD      MOD      HIGH     HIGH
-W=high          MOD      MOD      HIGH     HIGH     EXT
-W=ext           MOD      HIGH     HIGH     EXT      EXT
+E=low           LOW      LOW      LOW      MOD      HIGH
+E=mod           LOW      MOD      MOD      HIGH     HIGH
+E=high          MOD      MOD      HIGH     HIGH     EXT
+E=ext           MOD      HIGH     HIGH     EXT      EXT
 ```
 
-**Why a matrix, not a weighted average?** An earlier version was `0.45·W + 0.55·T`, bucketed by quartile — but those weights were never fitted; they existed only to cap weather-alone risk at MODERATE. The matrix encodes that same intent directly (`W=ext × T=none → MOD`, now a single editable cell) while arguing every other cell on its own merits. Full rationale in [`docs/DECISIONS.md §6`](docs/DECISIONS.md).
+**Why matrices, not a weighted average?** An earlier version was `0.45·W + 0.55·T`, bucketed by quartile — but those weights were never fitted; they existed only to cap weather-alone risk at MODERATE. The matrices encode that intent directly (`E=ext × T=none → MOD`, a single editable cell) while arguing every other cell on its own merits, and the two-stage split keeps each grid small and individually auditable. Full rationale in [`docs/DECISIONS.md §6`](docs/DECISIONS.md).
 
 ### 4. Validation
 
@@ -180,6 +194,22 @@ The constants are **fit, not hand-picked.** The exponents, saturation scales, an
 - NDVI is averaged over a 1 km buffer — hyper-local fuel state isn't modeled. The right scale for this app; finer resolution would matter for a fielded tool.
 
 </details>
+
+---
+
+## A learned second opinion — ignition likelihood
+
+The rule-based index above asks *how bad could a fire get?* A separate, **gradient-boosted machine-learning model** answers a different question — *do today's conditions resemble the days fires actually start?* The two are orthogonal (severity vs. occurrence) and shown side by side on the Status screen.
+
+- **Trained** on 32,382 examples — 4,897 real fire-ignition days (FPA-FOD + Open-Meteo) vs. "typical day" negatives, both from the *same* fire locations **and** from 3,000 genuinely non-fire background locations, so the model learns conditions + fuel, not geography (`scripts/build_ignition_dataset.py`).
+- **Evaluated** with leakage-safe **spatial-block cross-validation** + a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488** (no-skill 0.500 / 0.151), well-calibrated after isotonic calibration (Brier 0.163 → 0.100).
+- **Independently rediscovers the physics:** permutation importance puts **VPD and drought (KBDI) on top** — the same drivers the hand-built V4 index uses. Two methods, one conclusion.
+- **Knows where there's nothing to burn (v2):** a land-cover feature (NLCD, with developed-intensity split) plus the background negatives fix the v1 over-flagging of low-fuel cities — a cool, windy spring day in dense-urban **Chicago** dropped from 76th percentile ("high") to 61st ("moderate"), while genuinely dry **Phoenix** stays high. See the [model card](docs/ignition_model_card.md#addressing-the-over-flag-v2).
+- **Served live** at `/ignition` as a calibrated percentile index, with training/serving parity (the same feature function runs in training and at request time).
+
+![Ignition model — ROC + reliability](docs/ignition_eval.png)
+
+Full write-up: [model card](docs/ignition_model_card.md) · the rule-based-vs-learned design rationale is [DECISIONS §10](docs/DECISIONS.md).
 
 ---
 
