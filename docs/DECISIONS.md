@@ -1,6 +1,6 @@
 # Design decisions
 
-These are the nine choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version of this system. Not a complete inventory of every design call — just the load-bearing ones that come up in conversations about the project.
+These are the ten choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version of this system. Not a complete inventory of every design call — just the load-bearing ones that come up in conversations about the project.
 
 For the full mathematical formulation see the [risk algorithm section in the README](../README.md#the-risk-algorithm) and [api/core/risk_algorithm.py](../api/core/risk_algorithm.py). For the personal-threat composite (which combines fire weather with active-fire proximity), see [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
 
@@ -76,6 +76,8 @@ NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for vari
 
 **Where ML would actually help.** Per-fire severity prediction conditional on weather + fuel state + topography (a labeled problem); fuel-state inference from Sentinel-2 imagery (NDVI is a weak proxy for actual fuel load); smoke-plume forecasting. Those are different problems than what this score tries to answer.
 
+**Addendum (later).** This decision stands for the rule-based *index*. A complementary *learned* model was subsequently added for a genuinely labelable, different question — fire-ignition *likelihood* (occurrence, not severity) — see §10. The rule-based core is unchanged; the two coexist by design.
+
 ---
 
 ## 6. From political weights to a published tier matrix
@@ -95,6 +97,24 @@ W=ext           MOD        HIGH       HIGH       EXT        EXT
 **Cost.** The composite-as-a-single-number disappears as a tier source — there's no longer one scalar that summarizes the whole picture. The orb's arc fill still uses the linear blend as a visual position cue (so the orb moves continuously as inputs change), but that number is decorative; the tier label is authoritative. In a handful of edge cells the arc position and the tier color can visually disagree by one band — acceptable since users read the tier label, not the precise arc position.
 
 **Where it could go.** The 4×5 grid still produces only 4 output tiers (LOW / MOD / HIGH / EXT). A 5-state action vocabulary (STAND DOWN / STANDBY / AWARE / WATCH / ACTION) would map decisions to behaviors instead of adjectives — the same change operational systems like NWS Storm Prediction Center make when they cascade Fire Weather Watch → Red Flag Warning. Out of scope for this revision; would touch the orb palette, headline copy, Safety banner styling, and the calibration ladder color scheme simultaneously.
+
+**Addendum — a stage in front (folding in ignition likelihood).** §10 added a learned ignition-likelihood signal (`I`). Folding it into the headline as a *naive third axis* of this matrix would double-count weather: fire-weather severity `W` and ignition `I` are both weather-driven and correlated. Instead the headline is now **two matrices in series**:
+
+1. **Stage 1 — environment.** `E = ENV_MATRIX[W][I]` fuses fire-weather severity `W` with ignition likelihood `I` into a single *environmental danger* tier. The matrix is **symmetric and multiplicative** — it reads as `hazard = consequence × likelihood`. Either factor being low pulls the product down; both high pushes it up.
+
+   ```
+               I=low     I=mod     I=high    I=ext
+   W=low       LOW       LOW       MOD       MOD
+   W=mod       LOW       MOD       MOD       HIGH
+   W=high      MOD       MOD       HIGH      HIGH
+   W=ext       MOD       HIGH      HIGH      EXT
+   ```
+
+2. **Stage 2 — headline.** The existing 4×5 `COMPOSITE_MATRIX` above is **unchanged**; it is simply fed `E` in place of `W`: `headline = COMPOSITE_MATRIX[E][T]`.
+
+**Why two stages, not one 3-D matrix.** Separating "how dangerous is the environment" (`W ⊗ I`) from "is a fire actually bearing down on you" (`× T`) keeps each matrix small, auditable, and individually arguable — the same reasoning that replaced the linear blend in the first place. It also avoids hand-authoring 4×4×5 = 80 cells; the two stages are 16 + 20 = 36, each with a clear semantic.
+
+**The self-tempering property (why this fixes the v1 over-flag honestly).** Because Stage 1 is multiplicative, a place with *high ignition likelihood but low fire-weather severity* — a cool, windy, low-drought day in a dense city — lands at **moderate** `E`, not high. The likelihood signal cannot escalate the headline on its own; it needs genuine fire-weather consequence behind it. So the ignition model's residual tendency to read elevated in low-severity-but-fire-shaped weather is neutralized *at the headline*, while still contributing real lift when severity *is* present. It degrades cleanly: when `I` is unavailable (loading / offshore / model absent), `E = W` and the headline is exactly the prior `COMPOSITE_MATRIX[W][T]`. See `ENV_MATRIX` + `envFromBuckets` in [web/lib/composite-risk.ts](../web/lib/composite-risk.ts), wired in [web/components/status/StatusScreen.tsx](../web/components/status/StatusScreen.tsx), explained to users in the two-stage "Why this score?" modal.
 
 ---
 
@@ -144,6 +164,20 @@ with τ = 21 mi, floor = 0.70, K = 300 ac. A fire is threatening only if it is *
 **Cost.** The displayed trajectory is a **blend of two providers** — absolute level from OWM, trend shape from Open-Meteo — not a pure single-source forecast, so a purist would call it inconsistent. It's an honest tradeoff logged as a known tension. Also: because the *threat* axis is essentially static over a 6-hour horizon, the phase-space graph plots **time** as its second axis (threat lives in a summary callout, not the plot) — an earlier weather-vs-threat version implied a threat trend that wasn't really there. The anchor ratio and the forecast horizon are chosen, not fit.
 
 **Where it could go.** Unify on one weather provider for both `/risk` and `/trajectory` (removes the blend); add a trail of historical positions or an FPA-FOD historical-fire scatter behind the phase-space plot; extend the horizon once a longer-range provider is wired in.
+
+---
+
+## 10. A complementary learned model (ignition likelihood)
+
+**Decision.** Keep the core fire-weather index rule-based (§5), but add a small **machine-learning model** alongside it for a different question: not "how bad could a fire get?" (severity — what V4 answers) but "do today's conditions look like a day a fire actually *starts*?" (occurrence). It's a gradient-boosted classifier, calibrated, served at `/ignition`, and shown next to the fire-weather tier on Status. Full write-up in the [model card](ignition_model_card.md).
+
+**Why this isn't a contradiction of §5.** §5's reasons (explainability, no training drift, the unanswerable counterfactual) hold for the *severity index* — and that stays rule-based. But ignition *occurrence* is a genuinely labelable problem: a fire either started on a given day at a given place, or it didn't. That makes it exactly the kind of question a learned model is *right* for. The honest move isn't "ML everywhere" or "ML never" — it's using each tool where it fits and being able to say why. The two signals are orthogonal and shown side by side.
+
+**How it's built (honestly).** Positives are real fire-ignition days (FPA-FOD); negatives are "typical days" from the *same* locations (controlling for fire data's spatial reporting bias by construction) plus 3,000 from genuinely non-fire locations. A land-cover feature (NLCD, developed-intensity split) lets it encode fuel. Evaluated with leakage-safe spatial-block cross-validation against a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488**, well-calibrated. Its learned feature importances independently rank **VPD + drought** on top — the same drivers V4 uses, which is a reassuring cross-check rather than a coincidence.
+
+**Cost.** A model artifact + a serving dependency (scikit-learn) the rule-based core didn't need; and the output is a *relative* likelihood index (calibrated to the training prevalence), not an absolute daily probability — so it's framed as a percentile, not a "% chance."
+
+**Where it could go.** ~~Fold the ignition signal into the composite~~ — **done**: folded as a two-stage *environmental* matrix (`W ⊗ I → E`, then `E × T → headline`), not a naive fourth axis, so it doesn't double-count weather (see §6 addendum). ~~Add richer fuel / land-cover features~~ — **done (v2)**: the model now takes an NLCD land-cover class, with developed intensity split so dense urban separates from grassy open space (see model card). Still open: unify the weather source with the rest of the app.
 
 ---
 
