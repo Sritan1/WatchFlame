@@ -70,6 +70,19 @@ export function useTrajectory(loc: LatLon | undefined) {
   });
 }
 
+/** Machine-learning fire-ignition-likelihood index for a location. Backed by
+ *  `/ignition`, which derives features from the Open-Meteo archive (lags ~6
+ *  days and changes slowly), so a long staleTime is plenty. Returns `null`
+ *  cleanly when the model can't score the location. */
+export function useIgnition(loc: LatLon | undefined) {
+  return useQuery({
+    queryKey: ['ignition', loc?.lat, loc?.lon],
+    queryFn: () => api.ignition(loc!.lat, loc!.lon),
+    enabled: !!loc,
+    staleTime: 30 * 60_000,
+  });
+}
+
 /** Per-state calibration thresholds + metadata for the Status calibration
  *  ladder. Backed by `/risk/calibration` which is essentially static —
  *  values change only when scripts/build_regional_thresholds.py re-runs,

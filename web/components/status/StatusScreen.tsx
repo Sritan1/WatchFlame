@@ -15,6 +15,7 @@ import { CompositeExplainerModal } from '@/components/status/CompositeExplainerM
 import { ConfidenceBreakdownModal, ConfidenceChip } from '@/components/status/ConfidenceChip';
 import { PhaseSpaceModal } from '@/components/status/PhaseSpaceModal';
 import { TrajectoryChip } from '@/components/status/TrajectoryChip';
+import { IgnitionCard } from '@/components/status/IgnitionCard';
 import { LocalKbdiCard } from '@/components/status/LocalKbdiCard';
 import { LocalNdviCard } from '@/components/status/LocalNdviCard';
 import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
@@ -42,12 +43,14 @@ import {
   composite,
   compositeFromBuckets,
   compositeSubtitle,
+  envFromBuckets,
   findThreatDriver,
   normalizeWeather,
   type ThreatDriver,
 } from '@/lib/composite-risk';
 import {
   useFiresAroundMe,
+  useIgnition,
   useNamedIncidentsNear,
   useRiskFromWeather,
   useTrajectory,
@@ -120,6 +123,11 @@ export function StatusScreen() {
   // phase-space modal. Backed by /trajectory which hits Open-Meteo
   // Forecast (separate endpoint + quota from the Archive used for KBDI).
   const trajectory = useTrajectory(loc.coords);
+
+  // Ignition likelihood (ML model) — the third, independent lens: "do today's
+  // conditions look like a day fires actually start here?". Backed by /ignition,
+  // which derives parity features from the Open-Meteo archive.
+  const ignition = useIgnition(loc.coords);
 
   // ── Composite score ─────────────────────────────────────────────────────
   // Two independent inputs:
@@ -197,6 +205,14 @@ export function StatusScreen() {
     : null;
   const threatBucket: RiskLevel | null = anyFireInRange ? bucketOf(threatSignal) : null;
 
+  // Ignition likelihood (ML) folds into the environmental tier as Stage 1 of
+  // the headline: E = envFromBuckets(weather severity ⊗ ignition likelihood).
+  // Deliberately NOT gated by compositeReady — when the ML signal is still
+  // loading or unavailable, envFromBuckets falls back to the weather bucket and
+  // the headline behaves exactly as before, then updates when ignition resolves.
+  const ignitionBucket: RiskLevel | null = ignition.data?.level ?? null;
+  const envBucket: RiskLevel | null = envFromBuckets(weatherBucket, ignitionBucket);
+
   // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
   // bucketOf(linear blend). Two reasons spelled out in
   // web/lib/composite-risk.ts + docs/DECISIONS.md §6: the prior 0.45/0.55
@@ -205,7 +221,7 @@ export function StatusScreen() {
   // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
   // The matrix encodes each cell's call explicitly in one published table.
   const compositeBucket: RiskLevel = compositeReady
-    ? compositeFromBuckets(weatherBucket, threatBucket) ?? 'moderate'
+    ? compositeFromBuckets(envBucket, threatBucket) ?? 'moderate'
     : 'moderate'; // placeholder while loading (skeleton hides it anyway)
 
   // `compositeScore` (linear blend, 0-1) is kept ONLY for the HeroOrb arc
@@ -213,8 +229,21 @@ export function StatusScreen() {
   // tier label. In edge cells the arc fill can sit visually in a slightly
   // different band than the tier color; that's acceptable since the user
   // reads the tier label, not the arc precise position.
-  const compositeScore: number | null = compositeReady && weatherSignal != null
-    ? composite(weatherSignal, threatSignal)
+  // Arc fill (decorative): blend ignition into the environmental score as a
+  // continuous analog of the ENV matrix — the geometric mean of weather
+  // severity and the ignition percentile (likelihood × consequence) — so the
+  // arc tracks the ENV tier. Falls back to weatherSignal alone when ignition
+  // is absent. The tier label, not the arc, remains authoritative.
+  const ignitionScore: number | null =
+    ignition.data ? ignition.data.percentile / 100 : null;
+  const envScore: number | null =
+    weatherSignal == null
+      ? null
+      : ignitionScore == null
+        ? weatherSignal
+        : Math.sqrt(Math.max(weatherSignal, 0) * Math.max(ignitionScore, 0));
+  const compositeScore: number | null = compositeReady && envScore != null
+    ? composite(envScore, threatSignal)
     : null;
 
   // Floor 'low' to 'moderate' for the page CHROME (background waves, hero
@@ -575,6 +604,23 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
+      {/* ─── Ignition Likelihood: the ML model's read on fire-start odds ── */}
+      <PageSection top={4} bottom={16}>
+        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+          <SectionEyebrow right="Machine-learning model · historical fires">
+            Ignition Likelihood
+          </SectionEyebrow>
+        </div>
+        <div className="ember-fade-up" style={{ animationDelay: '120ms' }}>
+          <IgnitionCard
+            data={ignition.data}
+            isLoading={ignition.isLoading}
+            isError={ignition.isError}
+            onRetry={() => ignition.refetch()}
+          />
+        </div>
+      </PageSection>
+
       {/* ─── Current Conditions: Wind + Temperature + Humidity ────────── */}
       <PageSection top={4} bottom={16}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
@@ -649,6 +695,9 @@ export function StatusScreen() {
         open={whyOpen}
         onClose={() => setWhyOpen(false)}
         weatherBucket={weatherBucket}
+        ignitionBucket={ignitionBucket}
+        ignitionPercentile={ignition.data?.percentile ?? null}
+        envBucket={envBucket}
         threatBucket={threatBucket}
         compositeBucket={compositeReady ? compositeBucket : null}
         weatherRawScore={risk.data?.risk_score ?? null}
