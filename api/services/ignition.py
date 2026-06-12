@@ -30,6 +30,7 @@ import pandas as pd
 
 from ..core.openmeteo import summarize_window_with_kbdi
 from ..core.validation import doy_to_season
+from .landcover import land_cover_class
 
 _MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "ignition_model.joblib"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -83,6 +84,10 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
         return None
     feat = dict(row)
     feat.setdefault("vpd_hpa", _vpd(feat["temperature_c"], feat["humidity_pct"]))
+    # land_cover is a model feature; when a caller can't supply it (lookup failed,
+    # offshore, older test fixture) fall back to "unknown" — a class the model saw
+    # in training — so scoring degrades to weather-only instead of erroring.
+    feat.setdefault("land_cover", "unknown")
     X = pd.DataFrame([feat])[art["features"]]
     prob = float(art["model"].predict_proba(X)[0, 1])
     ref = art["ref_scores"]
@@ -134,6 +139,9 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
         s = summarize_window_with_kbdi(raw, target)  # SAME function as training
         if all(s.get(c) is not None for c in _CORE):
             doy = target.timetuple().tm_yday
+            # Land cover is static per place → parity with training. None (lookup
+            # failed / offshore) becomes "unknown" inside score_features.
+            land_cover = await land_cover_class(lat, lon) or "unknown"
             scored = score_features({
                 "temperature_c": s["temperature_c"],
                 "humidity_pct": s["humidity_pct"],
@@ -142,6 +150,7 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
                 "kbdi": s.get("kbdi"),
                 "month": target.month,
                 "season": doy_to_season(doy),
+                "land_cover": land_cover,
             })
             if scored is not None:
                 result = {**scored, "as_of": target.isoformat()}

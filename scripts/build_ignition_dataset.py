@@ -29,10 +29,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import json  # noqa: E402
+
 import pandas as pd  # noqa: E402
 
-from api.core.openmeteo import _load_cache, summarize_window_with_kbdi  # noqa: E402
+from api.core.openmeteo import _key, _load_cache, summarize_window_with_kbdi  # noqa: E402
 from api.core.validation import doy_to_season  # noqa: E402
+from api.services.landcover import land_cover_class_cached  # noqa: E402
 
 # ── Tunables (mirrored in ML.md "open decisions") ────────────────────────────
 SEED = 7
@@ -44,6 +47,7 @@ BLOCK_SIZE_DEG = 2.0         # spatial-block grid for leakage-safe CV later
 CORE_WEATHER = ["temperature_c", "humidity_pct", "wind_kph", "days_since_rain"]
 
 OUT_PATH = PROJECT_ROOT / "data" / "ignition_dataset.csv"
+LC_CACHE_PATH = PROJECT_ROOT / "data" / "landcover_cache.json"  # gitignored (data/*.json)
 
 
 def vpd_hpa(temp_c: float | None, humidity_pct: float | None) -> float | None:
@@ -61,10 +65,12 @@ def spatial_block(lat: float, lon: float) -> str:
     return f"{blat}_{blon}"
 
 
-def feature_row(window: dict, target: date, lat: float, lon: float, label: int):
+def feature_row(window: dict, target: date, lat: float, lon: float, label: int,
+                land_cover: str):
     """Compute one example's features at `target` date, or None if incomplete.
     Reuses summarize_window_with_kbdi so positives + negatives are byte-for-byte
-    the same feature definitions (feature parity)."""
+    the same feature definitions (feature parity). `land_cover` is looked up once
+    per location and passed in (static per place)."""
     s = summarize_window_with_kbdi(window, target)
     if any(s.get(c) is None for c in CORE_WEATHER):
         return None
@@ -82,15 +88,19 @@ def feature_row(window: dict, target: date, lat: float, lon: float, label: int):
         "vpd_hpa": vpd_hpa(s["temperature_c"], s["humidity_pct"]),
         "season": doy_to_season(doy),
         "month": target.month,
+        "land_cover": land_cover,
         "spatial_block": spatial_block(lat, lon),
     }
 
 
-def parse_fire_keys(cache: dict) -> list[tuple[float, float, date, dict]]:
-    """Every cached 365-day window's key encodes a fire: lat|lon|firedate|365."""
+def parse_fire_keys(
+    cache: dict, exclude_keys: frozenset = frozenset()
+) -> list[tuple[float, float, date, dict]]:
+    """Every cached 365-day window's key encodes a fire: lat|lon|firedate|365.
+    `exclude_keys` drops background-negative windows that share the same cache."""
     fires: list[tuple[float, float, date, dict]] = []
     for k, v in cache.items():
-        if v is None or not k.endswith(WINDOW_TAG):
+        if v is None or not k.endswith(WINDOW_TAG) or k in exclude_keys:
             continue
         parts = k.split("|")
         if len(parts) != 4:
@@ -110,12 +120,28 @@ def main() -> int:
     rng = random.Random(SEED)
     print("loading weather cache (the big ~1.1 GB file - give it a minute)...")
     cache = _load_cache()
-    fires = parse_fire_keys(cache)
-    print(f"  found {len(fires):,} cached fire windows")
+    # Background-negative windows live in the SAME openmeteo cache; exclude them
+    # from the fire positives or parse_fire_keys would treat them as fires.
+    bg_path = PROJECT_ROOT / "data" / "background_negatives.csv"
+    bg_keys: frozenset = frozenset()
+    if bg_path.exists():
+        _bg = pd.read_csv(bg_path)
+        bg_keys = frozenset(
+            _key(float(r.lat), float(r.lon), date.fromisoformat(str(r.date)), 365)
+            for r in _bg.itertuples()
+        )
+    fires = parse_fire_keys(cache, exclude_keys=bg_keys)
+    print(f"  found {len(fires):,} fire windows (excluded {len(bg_keys):,} background)")
+
+    # Land-cover cache (one lookup per unique location; persisted between runs).
+    lc_cache: dict[str, str] = {}
+    if LC_CACHE_PATH.exists():
+        lc_cache = json.loads(LC_CACHE_PATH.read_text(encoding="utf-8"))
+    print(f"  land-cover cache: {len(lc_cache):,} locations preloaded; enriching...")
 
     rows: list[dict] = []
     n_pos = n_neg = skipped = 0
-    for lat, lon, fire_date, window in fires:
+    for fi, (lat, lon, fire_date, window) in enumerate(fires):
         times = (window.get("daily", {}) or {}).get("time", []) or []
         fire_iso = fire_date.isoformat()
         if fire_iso not in times:
@@ -123,8 +149,15 @@ def main() -> int:
             continue
         fire_idx = times.index(fire_iso)
 
+        # Land cover for this fire's location (static → one lookup, reused by the
+        # positive + all its negatives). None → "unknown" categorical.
+        land_cover = land_cover_class_cached(lat, lon, lc_cache) or "unknown"
+        if (fi + 1) % 100 == 0:
+            LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
+            print(f"    {fi + 1}/{len(fires)} fires (land-cover cache {len(lc_cache):,})")
+
         # Positive: the fire day itself.
-        pos = feature_row(window, fire_date, lat, lon, 1)
+        pos = feature_row(window, fire_date, lat, lon, 1, land_cover)
         if pos is None:
             skipped += 1
             continue
@@ -139,10 +172,31 @@ def main() -> int:
                 nd = date.fromisoformat(times[idx])
             except (ValueError, IndexError):
                 continue
-            neg = feature_row(window, nd, lat, lon, 0)
+            neg = feature_row(window, nd, lat, lon, 0, land_cover)
             if neg is not None:
                 rows.append(neg)
                 n_neg += 1
+
+    LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
+
+    # Route B: append background negatives from non-fire locations (built by
+    # scripts/build_background_negatives.py). These break the "every location is
+    # a fire location" structure so land_cover can express that developed/urban
+    # areas ignite less — fixing the over-flagging of low-fire regions.
+    bg_path = PROJECT_ROOT / "data" / "background_negatives.csv"
+    n_bg = 0
+    if bg_path.exists():
+        bg = pd.read_csv(bg_path)
+        n_bg = len(bg)
+        # Re-map land_cover with the CURRENT categorize() (codes cached in lc_cache),
+        # so background rows pick up the finer developed-intensity classes too.
+        bg["land_cover"] = [
+            land_cover_class_cached(float(r.lat), float(r.lon), lc_cache) or "unknown"
+            for r in bg.itertuples()
+        ]
+        LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
+        rows.extend(bg.to_dict("records"))
+        print(f"  + {n_bg:,} background negatives (Route B, non-fire locations)")
 
     df = pd.DataFrame(rows)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +210,11 @@ def main() -> int:
     print(f"  skipped fires:         {skipped:,}")
     print(f"  kbdi coverage:         {df['kbdi'].notna().mean():.1%}")
     print(f"  spatial blocks:        {df['spatial_block'].nunique()}")
+    print(f"  land-cover classes:    {df['land_cover'].nunique()}")
+    print("  land-cover mix (% of fire days that are each class):")
+    fire_lc = df[df.label == 1]["land_cover"].value_counts(normalize=True)
+    for cls, frac in fire_lc.items():
+        print(f"    {cls:11s} {frac:5.1%}")
 
     print("\nMean conditions - fire days vs typical days (is the signal real?):")
     cmp_cols = ["vpd_hpa", "kbdi", "wind_kph", "humidity_pct",
