@@ -33,7 +33,7 @@ DATA = PROJECT_ROOT / "data" / "ignition_dataset.csv"
 
 NUMERIC = ["temperature_c", "humidity_pct", "wind_kph", "days_since_rain",
            "kbdi", "vpd_hpa", "month"]
-CATEGORICAL = ["season"]
+CATEGORICAL = ["season", "land_cover"]
 FEATURES = NUMERIC + CATEGORICAL
 TARGET = "label"
 GROUP = "spatial_block"
