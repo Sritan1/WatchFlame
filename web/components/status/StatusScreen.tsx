@@ -9,13 +9,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { Icon, type IconName } from '@/components/Icon';
+import { Icon } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
 import { CompositeExplainerModal } from '@/components/status/CompositeExplainerModal';
 import { ConfidenceBreakdownModal, ConfidenceChip } from '@/components/status/ConfidenceChip';
 import { PhaseSpaceModal } from '@/components/status/PhaseSpaceModal';
 import { TrajectoryChip } from '@/components/status/TrajectoryChip';
-import { IgnitionCard } from '@/components/status/IgnitionCard';
+import { IntelligenceSystem } from '@/components/status/HeroSystems';
 import { LocalKbdiCard } from '@/components/status/LocalKbdiCard';
 import { LocalNdviCard } from '@/components/status/LocalNdviCard';
 import { ThreatSourceCard } from '@/components/status/ThreatSourceCard';
@@ -25,7 +25,7 @@ import { cardinal8 } from '@/components/ui/CompassRose';
 import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
-import { HeroBand } from '@/components/ui/HeroBand';
+import { WavesBackground } from '@/components/WavesBackground';
 import { HeroOrb } from '@/components/ui/HeroOrb';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
@@ -56,7 +56,7 @@ import {
   useTrajectory,
   useWeather,
 } from '@/lib/queries';
-import { floorLow, getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
+import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { formatDistance, formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 
@@ -319,8 +319,14 @@ export function StatusScreen() {
 
   return (
     <>
-      {/* ─── HERO BAND ─────────────────────────────────────────────────── */}
-      <HeroBand risk={chromeLevel} pulseSpeed={70}>
+      {/* Fixed waves backdrop — the same animated WavesBackground, pinned to the
+          viewport so it stays put while the page scrolls. All content (including
+          the hero) scrolls over it; the sections are transparent so it shows
+          through. Mirrors the reference design. */}
+      <StatusBackdrop risk={chromeLevel} />
+
+      <div style={{ position: 'relative', zIndex: 1 }}>
+      {/* ─── HERO (content scrolls over the fixed waves backdrop) ───────── */}
         <PageSection top={28} bottom={48}>
           <SectionEyebrow
             color={isAlarming ? r.color : ae.textDim}
@@ -505,86 +511,78 @@ export function StatusScreen() {
                 </Button>
                 <Button
                   variant="secondary"
-                  icon="flame"
-                  onClick={() => { window.location.href = '/risk'; }}
+                  icon="shield"
+                  onClick={() => { window.location.href = '/safety'; }}
                 >
-                  Risk Calculator
+                  Safety Plan
                 </Button>
               </div>
             </div>
           </div>
         </PageSection>
-      </HeroBand>
 
-      {/* ─── Composite breakdown: the two halves that drive the score ─── */}
-      <PageSection top={4} bottom={16}>
-        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
+      {/* ─── Wildfire Intelligence: the three "brain" signals, art-directed
+            into one cinematic stage (Fire Weather + Active Fire Threat gauges +
+            the ML Ignition core). Same underlying data as before; elevated
+            presentation. See components/status/HeroSystems.tsx. ─── */}
+      <PageSection top={16} bottom={22}>
+        <div className="ember-fade-up" style={{ marginBottom: 16 }}>
           <SectionEyebrow
             color={isAlarming ? r.color : undefined}
-            right="Computed continuously · weights documented in Risk Forecast"
+            right="Computed continuously · 3 modules"
           >
-            Score Breakdown
+            Wildfire Intelligence
           </SectionEyebrow>
         </div>
-        <div
-          className="ember-fade-up"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: 16,
-            animationDelay: '60ms',
-          }}
-        >
-          <ComponentScoreCard
-            label="Fire Weather"
-            icon="flame"
-            // Show the raw V4 risk_score (matches what the Risk Calculator
-            // displays for the same inputs) — NOT my normalized percentile.
-            score={risk.data?.risk_score ?? null}
-            bucket={weatherBucket}
-            isLoading={!compositeReady}
-            // Pass the regional thresholds so the gauge zones agree with
-            // whichever bucket the backend assigned. Falls back to the
-            // global defaults the backend uses for uncalibrated locations.
-            zoneBoundaries={
-              risk.data?.regional_thresholds
+        <div className="ember-fade-up" style={{ animationDelay: '60ms' }}>
+          <IntelligenceSystem
+            ae={ae}
+            fireWeather={{
+              // Raw V4 risk_score (matches the Risk Calculator for the same
+              // inputs). Regional thresholds drive the gauge zones so they
+              // agree with the backend bucket; global defaults otherwise.
+              score: risk.data?.risk_score ?? null,
+              bucket: weatherBucket,
+              zoneBoundaries: risk.data?.regional_thresholds
                 ? {
                     low: risk.data.regional_thresholds.low,
                     moderate: risk.data.regional_thresholds.moderate,
                     extreme: risk.data.regional_thresholds.extreme,
                   }
-                : { low: 0.3, moderate: 0.6, extreme: 0.8 }
-            }
-            scoreMax={risk.data?.regional_thresholds?.score_max ?? 1.0}
-            caption={
-              risk.data?.regional_state
+                : { low: 0.3, moderate: 0.6, extreme: 0.8 },
+              scoreMax: risk.data?.regional_thresholds?.score_max ?? 1.0,
+              caption: risk.data?.regional_state
                 ? `Calibrated for ${risk.data.regional_state} — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.`
-                : 'Global thresholds — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.'
-            }
-            emptyText="—"
-          />
-          <ComponentScoreCard
-            label="Active Fire Threat"
-            icon="pin"
-            score={anyFireInRange ? threatSignal : null}
-            bucket={threatBucket}
-            isLoading={!compositeReady}
-            // Threat axis uses my fixed composite-side band edges since
-            // there's no backend-equivalent bucketing for fire proximity.
-            zoneBoundaries={{ low: 0.25, moderate: 0.5, extreme: 0.75 }}
-            scoreMax={1.0}
-            caption={
-              anyFireInRange
+                : 'Global thresholds — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.',
+              emptyText: '—',
+              isLoading: !compositeReady,
+              howCalculatedHref: '/risk',
+            }}
+            threat={{
+              score: anyFireInRange ? threatSignal : null,
+              bucket: threatBucket,
+              // Fixed composite-side band edges (no backend bucketing for
+              // fire proximity).
+              zoneBoundaries: { low: 0.25, moderate: 0.5, extreme: 0.75 },
+              scoreMax: 1.0,
+              caption: anyFireInRange
                 ? `Worst-case among fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)} — accounts for size, containment, distance, and wind alignment.`
-                : 'No active fires within range — score is zero until a fire is detected near you.'
-            }
-            emptyText="None"
+                : 'No active fires within range — score is zero until a fire is detected near you.',
+              emptyText: 'None',
+              isLoading: !compositeReady,
+            }}
+            ignition={{
+              data: ignition.data,
+              isLoading: ignition.isLoading,
+              isError: ignition.isError,
+              onRetry: () => ignition.refetch(),
+            }}
           />
         </div>
       </PageSection>
 
       {/* ─── Threat Source: names the single fire driving the threat ──── */}
-      <PageSection top={4} bottom={16}>
+      <PageSection top={16} bottom={22}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow
             color={isAlarming ? r.color : undefined}
@@ -604,25 +602,8 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
-      {/* ─── Ignition Likelihood: the ML model's read on fire-start odds ── */}
-      <PageSection top={4} bottom={16}>
-        <div className="ember-fade-up" style={{ marginBottom: 18 }}>
-          <SectionEyebrow right="Machine-learning model · historical fires">
-            Ignition Likelihood
-          </SectionEyebrow>
-        </div>
-        <div className="ember-fade-up" style={{ animationDelay: '120ms' }}>
-          <IgnitionCard
-            data={ignition.data}
-            isLoading={ignition.isLoading}
-            isError={ignition.isError}
-            onRetry={() => ignition.refetch()}
-          />
-        </div>
-      </PageSection>
-
       {/* ─── Current Conditions: Wind + Temperature + Humidity ────────── */}
-      <PageSection top={4} bottom={16}>
+      <PageSection top={16} bottom={22}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow right="Open-Meteo · OWM · refreshed every 15 min">
             Current Conditions
@@ -656,7 +637,7 @@ export function StatusScreen() {
       </PageSection>
 
       {/* ─── Area & Vegetation: KBDI + NDVI ─────────────────────────────── */}
-      <PageSection top={4} bottom={48}>
+      <PageSection top={16} bottom={48}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow right="Tracked over the local fire season">
             Area &amp; Vegetation
@@ -683,6 +664,7 @@ export function StatusScreen() {
           />
         </div>
       </PageSection>
+      </div>
 
       <CalibrationModal
         open={calibOpen}
@@ -1237,293 +1219,44 @@ function HumidityDial({
   );
 }
 
-/** Premium breakdown card for the Score Breakdown row. Shows the score
- *  (raw V4 for Fire Weather, computed 0-1 for Active Fire Threat), a level
- *  pill, a segmented 4-zone gauge with a marker, and a contextual caption.
- *  Loading and "no data" states preserved from the previous version. */
-function ComponentScoreCard({
-  label,
-  score,
-  bucket,
-  isLoading,
-  caption,
-  emptyText,
-  icon,
-  /** Zone boundaries on the gauge: where LOW→MOD, MOD→HIGH, HIGH→EXT land.
-   *  Defaults to 0.25/0.5/0.75 (my composite-side bands); Fire Weather
-   *  passes regional thresholds so the gauge agrees with the backend bucket. */
-  zoneBoundaries,
-  /** Max value on the gauge (usually 1.0; pass score_max for regional cap). */
-  scoreMax = 1.0,
-}: {
-  label: string;
-  score: number | null;
-  bucket: RiskLevel | null;
-  isLoading: boolean;
-  caption: string | null;
-  emptyText: string;
-  icon: IconName;
-  zoneBoundaries?: { low: number; moderate: number; extreme: number };
-  scoreMax?: number;
-}) {
-  const { ae, accent } = useAesthetic();
-  const tone = bucket ? getRisk(bucket, accent) : null;
-  const palette = tone ?? { color: 'rgba(255,255,255,0.35)', glow: '255,255,255', label: '—' };
-
-  // Default zones use the composite-side bands; callers can override.
-  const z = zoneBoundaries ?? { low: 0.25, moderate: 0.5, extreme: 0.75 };
-  const zones = [
-    { until: z.low / scoreMax,           color: RISK_LEVELS.low.color,                lbl: 'Low'  },
-    { until: z.moderate / scoreMax,      color: RISK_LEVELS.moderate.color,           lbl: 'Mod'  },
-    { until: z.extreme / scoreMax,       color: getRisk('high', accent).color,        lbl: 'High' },
-    { until: 1.0,                        color: getRisk('extreme', accent).color,     lbl: 'Ext'  },
-  ];
-
-  const markerPct = score == null
-    ? 0
-    : Math.max(0.5, Math.min(99, (score / scoreMax) * 100));
-
+/** Status-only FIXED waves backdrop. The same animated WavesBackground the hero
+ *  used — pinned to the top of the viewport so it stays put while the page scrolls
+ *  (the hero text scrolls up over it). It's a HERO-HEIGHT band, NOT full-viewport:
+ *  the wave motion is tuned to its container height, so matching the hero's height
+ *  keeps the exact reference look (a 100vh canvas spreads the same waves over ~2×
+ *  the area and changes how they move). The bottom fades cleanly to the page color
+ *  so there's no darker vignette "strip" where the band ends. Offset past the
+ *  248px sidebar gutter. */
+function StatusBackdrop({ risk }: { risk: RiskLevel }) {
+  const { ae } = useAesthetic();
   return (
-    <TiltCard
-      max={3}
+    <div
+      aria-hidden
       style={{
-        position: 'relative',
-        overflow: 'hidden',
-        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
-        border: `0.5px solid rgba(${palette.glow}, 0.20)`,
-        borderRadius: ae.radiusLg,
-        boxShadow: `0 20px 60px rgba(${palette.glow}, 0.08), inset 0 1px 0 rgba(255,255,255,0.04)`,
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        left: 248,
+        height: 'clamp(600px, 72vh, 820px)',
+        zIndex: 0,
+        pointerEvents: 'none',
       }}
     >
-      {/* Top accent stripe — glow gradient pinned to the top edge */}
+      <WavesBackground risk={risk} pulseSpeed={70} />
+      {/* Fade the band's lower portion to exactly the page color, masking the
+          WavesBackground's own darker vignette/scrim so it blends seamlessly into
+          the dark page below instead of leaving a black strip. */}
       <div
-        aria-hidden
-        style={{
-          height: 2.5,
-          background: `linear-gradient(90deg, transparent, rgba(${palette.glow}, 0.75), transparent)`,
-          boxShadow: `0 0 14px ${palette.color}`,
-        }}
-      />
-      {/* Soft corner glow */}
-      <div
-        aria-hidden
         style={{
           position: 'absolute',
-          top: -50,
-          right: -50,
-          width: 240,
-          height: 240,
-          borderRadius: '50%',
-          filter: 'blur(50px)',
-          pointerEvents: 'none',
-          background: `radial-gradient(circle, rgba(${palette.glow}, 0.14), transparent 70%)`,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: '42%',
+          background: `linear-gradient(180deg, rgba(0,0,0,0), ${ae.bg})`,
         }}
       />
-      <GridPattern opacity={0.035} />
-
-      <div style={{ position: 'relative', padding: 26 }}>
-        {/* Header: icon stone + label, level pill on right */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 9,
-                flexShrink: 0,
-                background: `radial-gradient(circle at 30% 30%, rgba(${palette.glow}, 0.22), rgba(${palette.glow}, 0.05))`,
-                border: `0.5px solid rgba(${palette.glow}, 0.30)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name={icon} size={15} color={palette.color} strokeWidth={1.6} />
-            </div>
-            <Eyebrow>{label}</Eyebrow>
-          </div>
-          {isLoading ? (
-            <Skeleton width={80} height={22} rounded="full" />
-          ) : tone ? (
-            <span
-              className="px-shimmer-pill"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 10px 5px 9px',
-                borderRadius: 99,
-                background: `linear-gradient(180deg, rgba(${tone.glow}, 0.18), rgba(${tone.glow}, 0.06))`,
-                border: `0.5px solid rgba(${tone.glow}, 0.32)`,
-                fontFamily: ae.fontMono,
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.16em',
-                color: tone.color,
-                textTransform: 'uppercase',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 99,
-                  background: tone.color,
-                  boxShadow: `0 0 6px ${tone.color}`,
-                }}
-              />
-              {tone.label}
-            </span>
-          ) : null}
-        </div>
-
-        {/* Big number */}
-        <div style={{ marginTop: 18, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          {isLoading ? (
-            <Skeleton width={160} height={56} rounded="md" />
-          ) : score != null ? (
-            <>
-              <span
-                style={{
-                  fontFamily: ae.fontDisplay,
-                  fontSize: 60,
-                  fontWeight: ae.titleWeight,
-                  letterSpacing: '-0.04em',
-                  lineHeight: 0.9,
-                  color: ae.text,
-                  fontVariantNumeric: 'tabular-nums',
-                  textShadow: `0 0 32px rgba(${palette.glow}, 0.35)`,
-                }}
-              >
-                <AnimatedNumber value={score} format={(n) => n.toFixed(2)} duration={900} />
-              </span>
-              <span
-                style={{
-                  fontFamily: ae.fontMono,
-                  fontSize: 11,
-                  color: ae.textMute,
-                  letterSpacing: '0.12em',
-                }}
-              >
-                / {scoreMax.toFixed(2)}
-              </span>
-            </>
-          ) : (
-            <span
-              style={{
-                fontFamily: ae.fontDisplay,
-                fontSize: 44,
-                fontWeight: ae.titleWeight,
-                color: ae.textDim,
-                letterSpacing: '-0.025em',
-                lineHeight: 0.95,
-              }}
-            >
-              {emptyText}
-            </span>
-          )}
-        </div>
-
-        {/* Segmented gauge */}
-        <div style={{ marginTop: 22, position: 'relative' }}>
-          <div style={{ display: 'flex', gap: 3, height: 8, borderRadius: 99 }}>
-            {zones.map((zone, i) => {
-              const prev = i === 0 ? 0 : zones[i - 1].until;
-              const w = (zone.until - prev) * 100;
-              const active = score != null && (score / scoreMax) >= prev;
-              const rgb = hexToRgb(zone.color);
-              return (
-                <div
-                  // eslint-disable-next-line react/no-array-index-key
-                  key={i}
-                  style={{
-                    width: `${w}%`,
-                    background: active
-                      ? `linear-gradient(180deg, rgba(${rgb}, 0.55), rgba(${rgb}, 0.25))`
-                      : `rgba(${rgb}, 0.12)`,
-                    border: `0.5px solid rgba(${rgb}, ${active ? 0.45 : 0.18})`,
-                    borderRadius: 99,
-                    transition: 'background 0.4s ease',
-                  }}
-                />
-              );
-            })}
-          </div>
-          {/* Marker — hidden when score is null */}
-          {score != null ? (
-            <div
-              style={{
-                position: 'absolute',
-                top: -3,
-                left: `${markerPct}%`,
-                transform: 'translateX(-50%)',
-                width: 2,
-                height: 14,
-                borderRadius: 99,
-                background: '#fff',
-                boxShadow: `0 0 10px ${palette.color}`,
-                transition: 'left 0.6s cubic-bezier(0.3, 1, 0.4, 1)',
-              }}
-            />
-          ) : null}
-          {/* Zone labels — each label's container matches the width of the
-              bar segment above it (with the same 3px gap), so the centered
-              text label always sits beneath the center of its bar. This
-              matters for regional thresholds where the segments aren't
-              equal-width (e.g. CA's 30/30/20/20 split). */}
-          <div
-            style={{
-              marginTop: 10,
-              display: 'flex',
-              gap: 3,
-              fontFamily: ae.fontMono,
-              fontSize: 9.5,
-              color: ae.textMute,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {zones.map((zone, i) => {
-              const prev = i === 0 ? 0 : zones[i - 1].until;
-              const w = (zone.until - prev) * 100;
-              const isActive = tone != null && tone.color === zone.color;
-              return (
-                <span
-                  // eslint-disable-next-line react/no-array-index-key
-                  key={i}
-                  style={{
-                    width: `${w}%`,
-                    textAlign: 'center',
-                    color: isActive ? tone!.color : ae.textMute,
-                    fontWeight: isActive ? 700 : 500,
-                  }}
-                >
-                  {zone.lbl}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Caption */}
-        {caption ? (
-          <p
-            style={{
-              margin: '20px 0 0',
-              paddingTop: 16,
-              borderTop: `0.5px solid ${ae.line}`,
-              fontFamily: ae.fontBody,
-              fontSize: 13,
-              lineHeight: 1.5,
-              color: ae.textDim,
-            }}
-          >
-            {caption}
-          </p>
-        ) : null}
-      </div>
-    </TiltCard>
+    </div>
   );
 }
 

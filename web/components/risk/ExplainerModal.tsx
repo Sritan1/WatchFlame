@@ -24,7 +24,7 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         On the <strong style={{ color: ae.text }}>Status</strong> page this score is one of two
         inputs to your <strong style={{ color: ae.text }}>Personal Threat composite</strong> —
         the other being proximity, size, wind alignment, and containment of any active fires
-        near you. The Risk Calculator isolates this fire-weather half so you can see exactly
+        near you. This screen isolates that fire-weather half so you can see exactly
         how the environment is contributing.
       </p>
 
