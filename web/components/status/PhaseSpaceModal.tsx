@@ -211,7 +211,7 @@ export function PhaseSpaceModal({
         <div style={{ marginBottom: 18 }}>
           <DataErrorState
             title="Forecast unavailable"
-            message="Couldn’t load the 6-hour forecast — check your connection and try again. Your current position (the bright dot) is still accurate; only the projected trend is missing."
+            message="Couldn’t load the 6-hour forecast — check your connection and try again. Your current position (the bright dot) is still accurate — only the projected trend is missing."
             onRetry={onRetry}
           />
         </div>
@@ -225,7 +225,7 @@ export function PhaseSpaceModal({
           color: ae.textDim,
         }}
       >
-        <strong style={{ color: ae.text }}>Time</strong> runs left (now) → right (+{horizon} hr); your{' '}
+        <strong style={{ color: ae.text }}>Time</strong> runs left (now) → right (+{horizon} hr). Your{' '}
         <strong style={{ color: ae.text }}>fire-weather</strong> score runs bottom → top. The thermal
         strata are your location&apos;s <strong style={{ color: ae.text }}>calibrated tier
         thresholds</strong> — the hour the forecast curve rises into a hotter band is the hour your
@@ -959,7 +959,7 @@ function TrajectorySummary({
           fontStyle: 'italic',
         }}
       >
-        &ldquo;Now&rdquo; is your current Status reading; the +{horizon} hr projection is
+        &ldquo;Now&rdquo; is your current Status reading — the +{horizon} hr projection is
         Open-Meteo&apos;s hourly forecast, and the trajectory tier reflects its now-vs-projected
         change.
       </p>

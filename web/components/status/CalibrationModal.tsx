@@ -82,7 +82,7 @@ export function CalibrationModal({
           </a>{' '}
           — a USDA dataset combining state, federal, and tribal fire reports across 1.88M
           incidents. Days with significant fire activity are scored against the same V4
-          algorithm; the resulting distribution gives us each state&apos;s calibration cutoffs.
+          algorithm, and the resulting distribution gives us each state&apos;s calibration cutoffs.
         </p>
       </Section>
 

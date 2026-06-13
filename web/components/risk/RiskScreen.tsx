@@ -367,7 +367,7 @@ export function RiskScreen() {
           color="#E8B339"
           right={`Calibrated for ${regionDisplay}${region ? ` · Global: ${capitalize(risk.danger_level)}` : ''}`}
         >
-          Risk Forecast · What-If
+          Fire-Weather What-If
         </SectionEyebrow>
 
         <div
