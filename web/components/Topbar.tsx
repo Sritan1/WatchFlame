@@ -15,7 +15,7 @@ import { hexToRgb, RISK_LEVELS } from '@/lib/theme';
 const ROUTE_META: Record<string, { group: string; title: string }> = {
   '/':         { group: 'Operations', title: 'Command Center' },
   '/map':      { group: 'Operations', title: 'Live Map' },
-  '/risk':     { group: 'Planning',   title: 'Risk Forecast' },
+  '/risk':     { group: 'Planning',   title: 'Fire-Weather What-If' },
   '/safety':   { group: 'Planning',   title: 'Safety Plan' },
   '/settings': { group: 'Account',    title: 'Settings' },
 };

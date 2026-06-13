@@ -69,6 +69,8 @@ web-settings.jsx
 web-incident.jsx
 web-incident-map.jsx
 web-status.jsx
+web-hero-systems.jsx
+web-status-extras.jsx
 background-waves.jsx
 trajectory.jsx
 tweaks-panel.jsx

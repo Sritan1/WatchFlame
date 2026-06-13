@@ -2,7 +2,7 @@
 
 [![Validated against 500 historical fires](https://img.shields.io/badge/validated-500%20historical%20fires-3FB68B?style=flat-square)](docs/v4_validation.png) [![17-state regional calibration](https://img.shields.io/badge/calibration-17%20states-E8B339?style=flat-square)](docs/regional_thresholds.png) [![Design decisions](https://img.shields.io/badge/docs-design%20decisions-FF7A3A?style=flat-square)](docs/DECISIONS.md) [![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)](LICENSE)
 
-A wildfire-awareness web app for the US. It fuses live satellite fire detections, regionally-calibrated fire-weather scoring driven by real per-location weather and vegetation data, an active-fire proximity model, open-shelter lookup, and a transparent what-if risk calculator — all in one product-grade dashboard.
+A wildfire-awareness web app for the US. It fuses live satellite fire detections, regionally-calibrated fire-weather scoring driven by real per-location weather and vegetation data, an active-fire proximity model, open-shelter lookup, and an interactive fire-weather what-if sandbox — all in one product-grade dashboard.
 
 Built solo as a portfolio project to demonstrate end-to-end product engineering: a real, **fit-and-validated** fire-weather algorithm, live data fusion across ten government and satellite sources, and a polished UI with intentional motion design — backed by a typed FastAPI service with graceful degradation on every upstream.
 
@@ -40,7 +40,7 @@ These combine through a published **4×5 tier matrix** — not a hand-weighted a
 
 **Live Map** — NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and two distinct rails for the two data layers.
 
-**Risk Forecast (Calculator)** — A slider-driven what-if tool over temperature, humidity, wind, KBDI, and vegetation. Same algorithm as Command Center, driven by hypothetical inputs instead of live weather — useful for understanding how each factor moves the score. Works fully offline, no GPS or keys required.
+**Fire-Weather What-If** — A slider-driven sandbox over temperature, humidity, wind, KBDI, and vegetation. It drives the validated V4 fire-weather index — the *environment axis* of the Command Center composite, **not** a standalone risk score — so you can simulate any conditions, watch each factor move the score, and see where that score lands across the 17 calibrated states. Works fully offline, no GPS or keys required.
 
 **Safety Plan** — Open shelters from the live **FEMA National Shelter System** (with status and capacity) plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. Direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
 
@@ -55,7 +55,7 @@ Plus **saved locations** (Home / Work / etc., swappable from the rail) and a per
 <!-- Drop UI captures here. Suggested set:
      1. Command Center hero — orb + headline + confidence chip + trajectory chip
      2. Live Map — markers + incident rail open
-     3. Risk Forecast — sliders + score gauge
+     3. Fire-Weather What-If — sliders + score gauge
      4. Safety Plan — open shelter tile + checklist
      5. "Why this score?" matrix modal -->
 
@@ -95,7 +95,7 @@ _App UI captures are kept out of version control; the validation figures below a
 
 **Backend (`api/`)** — FastAPI on Python 3.14, async `httpx`, pydantic v2, and a **pure-Python algorithm core (no ML)**. JSON-on-disk caching for NDVI (per-coordinate, with separate TTLs for current vs. climatology) and in-memory caching for the live feeds.
 
-**Design principle — graceful degradation everywhere.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty/null payload instead of failing the request. Every feature has a fallback: regional calibration → global cutoffs, NDVI → calendar season factor, KBDI → days-since-rain proxy, open shelters → candidate locations. The Risk Forecast runs with no GPS and no keys at all.
+**Design principle — graceful degradation everywhere.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty/null payload instead of failing the request. Every feature has a fallback: regional calibration → global cutoffs, NDVI → calendar season factor, KBDI → days-since-rain proxy, open shelters → candidate locations. The Fire-Weather What-If runs with no GPS and no keys at all.
 
 ---
 
@@ -201,8 +201,9 @@ The constants are **fit, not hand-picked.** The exponents, saturation scales, an
 
 The rule-based index above asks *how bad could a fire get?* A separate, **gradient-boosted machine-learning model** answers a different question — *do today's conditions resemble the days fires actually start?* The two are orthogonal (severity vs. occurrence) and shown side by side on the Status screen.
 
+- **What it reads:** dryness (VPD, humidity, temperature), drought (KBDI + days since rain), wind, time of year, and **land cover** — the fuel actually on the ground. Location itself (lat/lon) is deliberately excluded, so it learns conditions and fuel, not geography.
 - **Trained** on 32,382 examples — 4,897 real fire-ignition days (FPA-FOD + Open-Meteo) vs. "typical day" negatives, both from the *same* fire locations **and** from 3,000 genuinely non-fire background locations, so the model learns conditions + fuel, not geography (`scripts/build_ignition_dataset.py`).
-- **Evaluated** with leakage-safe **spatial-block cross-validation** + a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488** (no-skill 0.500 / 0.151), well-calibrated after isotonic calibration (Brier 0.163 → 0.100).
+- **Evaluated** with leakage-safe **spatial-block cross-validation** + a logistic baseline: **ROC-AUC 0.840** — i.e. given a real fire day and a random typical day, it ranks the fire day higher ~84% of the time — plus **PR-AUC 0.488** (no-skill 0.500 / 0.151), well-calibrated after isotonic calibration (Brier 0.163 → 0.100).
 - **Independently rediscovers the physics:** permutation importance puts **VPD and drought (KBDI) on top** — the same drivers the hand-built V4 index uses. Two methods, one conclusion.
 - **Knows where there's nothing to burn (v2):** a land-cover feature (NLCD, with developed-intensity split) plus the background negatives fix the v1 over-flagging of low-fuel cities — a cool, windy spring day in dense-urban **Chicago** dropped from 76th percentile ("high") to 61st ("moderate"), while genuinely dry **Phoenix** stays high. See the [model card](docs/ignition_model_card.md#addressing-the-over-flag-v2).
 - **Served live** at `/ignition` as a calibrated percentile index, with training/serving parity (the same feature function runs in training and at request time).
@@ -247,11 +248,11 @@ Full write-up: [model card](docs/ignition_model_card.md) · the rule-based-vs-le
 # from repo root
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r api/requirements.txt
+pip install -r api/requirements-dev.txt   # prod deps + tests/lint/notebooks
 
 copy api\.env.example api\.env     # fill in OWM_API_KEY, FIRMS_API_KEY, CDSE_*
 
-python -m pytest api/ -q           # → 143 passed
+python -m pytest api/ -q           # → 150 passed
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 # → http://localhost:8000/docs   (Swagger UI)
 ```

@@ -162,7 +162,7 @@ export function SettingsScreen() {
           eyebrowIcon="crosshair"
           accentRgb={CHROME_RGB}
           title="Display units"
-          description="Distances, wind speeds, and temperatures across Command Center, Live Map, Risk Forecast, Safety Plan, and the Full Details page all respect these."
+          description="Distances, wind speeds, and temperatures across Command Center, Live Map, Fire-Weather What-If, Safety Plan, and the Full Details page all respect these."
           meta={[
             { label: 'Locale', value: 'Auto · US' },
             { label: 'Conversion', value: 'Live' },
