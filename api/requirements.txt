@@ -1,3 +1,7 @@
+# Production runtime — exactly what the deployed FastAPI backend needs to serve.
+# Dev/test/notebook tooling lives in requirements-dev.txt and is NOT shipped to
+# production. Local dev:  pip install -r api/requirements-dev.txt
+
 fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.27
@@ -6,27 +10,15 @@ pydantic-settings>=2.5
 slowapi>=0.1.9
 python-dotenv>=1.0
 geojson>=3.1
+
+# ML serving — the ignition-likelihood model is loaded + scored at request time
+# (api/services/ignition.py uses pandas/numpy + a joblib'd scikit-learn model).
 pandas>=2.2.4
 numpy>=2.2
-scikit-learn>=1.5   # ML: ignition-likelihood model (train + serve)
-joblib>=1.4         # model serialization for serving the trained model
-pytest>=8.3
-ruff>=0.7
-pip-audit>=2.7
+scikit-learn>=1.5
+joblib>=1.4
 
 # Security floors for transitive runtime deps flagged by pip-audit (OSV).
-# Both ship in production: starlette is FastAPI's ASGI core, idna is pulled by
-# httpx for hostname encoding.
+# starlette is FastAPI's ASGI core; idna is pulled by httpx for hostname encoding.
 starlette>=1.0.1   # PYSEC-2026-161
 idna>=3.15         # CVE-2026-45409
-
-# Validation notebook (dev-only, not needed for production deploy)
-jupyter>=1.0
-jupyter-server>=2.18.0   # PYSEC-2026-67/68/69, CVE-2026-40110 (dev-only)
-ipykernel>=6.29
-nbformat>=5.10
-nbconvert>=7.16
-mistune>=3.2.1           # CVE-2026-33079/44897/44898/44899, PYSEC-2026-168 (dev-only)
-matplotlib>=3.9
-seaborn>=0.13
-scipy>=1.14

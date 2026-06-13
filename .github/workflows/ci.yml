@@ -20,12 +20,14 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install dependencies
-        run: pip install -r api/requirements.txt
+        # Dev file = prod (requirements.txt) + test/lint/audit/notebook tooling.
+        run: pip install -r api/requirements-dev.txt
       - name: Run tests
         run: python -m pytest api/ -q
       - name: Dependency audit (advisory)
-        # Surfaces known CVEs without hard-failing every PR on an upstream
-        # advisory; review the report and pin/upgrade as needed.
+        # Audits the PRODUCTION dependency set specifically (requirements.txt) —
+        # i.e. exactly what deploys. Surfaces known CVEs without hard-failing
+        # every PR on an upstream advisory; review and pin/upgrade as needed.
         continue-on-error: true
         run: pip-audit -r api/requirements.txt
 
