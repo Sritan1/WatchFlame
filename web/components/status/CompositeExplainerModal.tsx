@@ -159,7 +159,7 @@ export function CompositeExplainerModal({
       <Section ae={ae} title="Step 2 — Your headline">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
           Your environmental tier then combines with the worst active fire near you. Your cell is
-          highlighted; the row and column you fell on are emphasized.
+          highlighted, with the row and column you fell on emphasized.
         </p>
         <CompositeMatrixGrid weatherBucket={envBucket} threatBucket={threatBucket} />
         <AxisLabels ae={ae} left="ROWS · ENVIRONMENT" right="COLS · ACTIVE FIRE THREAT" />

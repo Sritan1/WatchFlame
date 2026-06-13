@@ -49,7 +49,7 @@ export function StatePickerModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Risk Forecast" title="Calibration scope" maxWidth={560}>
+    <Modal open={open} onClose={onClose} eyebrow="Fire-Weather What-If" title="Calibration scope" maxWidth={560}>
       <p
         style={{
           margin: 0,

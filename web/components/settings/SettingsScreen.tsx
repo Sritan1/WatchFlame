@@ -278,8 +278,8 @@ export function SettingsScreen() {
               ae={ae}
               num={5}
               accentRgb={WARN_RGB}
-              title="Project context"
-              body="This is a personal portfolio project, not a commercial product. There is no SLA, no guarantee of accuracy, and no on-call team."
+              title="What this is"
+              body="An independent, informational tool — not a commercial or operational emergency service. No SLA, no guarantee of accuracy, and no on-call team behind it."
             />
           </div>
         </SettingsRow>
@@ -313,6 +313,8 @@ export function SettingsScreen() {
             <SourceChip ae={ae} code="MapTiler" kind="Cartography" label="Map tiles" />
             <SourceChip ae={ae} code="OpenStreetMap" kind="Geodata" label="Base map & POI" />
             <SourceChip ae={ae} code="NCES" kind="Public DB" label="School database" />
+            <SourceChip ae={ae} code="NLCD" kind="Land cover" label="Fuel type (ignition model)" />
+            <SourceChip ae={ae} code="FPA-FOD" kind="Historical" label="Fire records (calibration)" />
           </div>
 
           <p
@@ -330,8 +332,9 @@ export function SettingsScreen() {
             <strong style={{ color: ae.text, fontWeight: 600 }}>Cal Fire</strong>. Current conditions from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>OpenWeatherMap</strong>, with drought (KBDI) history from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>Open-Meteo</strong> and live vegetation stress (NDVI) from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index — based on the Fosberg, Hot-Dry-Windy, and McArthur indices — calibrated per state against historical fire records, using{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong> geographies. Federal disaster declarations and open shelters from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index — based on the Fosberg, Hot-Dry-Windy, and McArthur indices — calibrated per state against historical fire records (<strong style={{ color: ae.text, fontWeight: 600 }}>FPA-FOD</strong>), using{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong> geographies. The machine-learning ignition model also reads land cover (fuel type) from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>NLCD / EnviroAtlas</strong>. Federal disaster declarations and open shelters from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>FEMA</strong>. Map tiles by{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>MapTiler</strong> with{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>OpenStreetMap</strong> data.
