@@ -11,9 +11,9 @@ import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { ae } = useAesthetic();
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="How is the risk score calculated?" maxWidth={620}>
+    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="How is the fire-weather score calculated?" maxWidth={620}>
       <p style={textBody(ae)}>
-        The risk score is the <strong style={{ color: ae.text }}>fire-weather</strong> half of
+        This score is the <strong style={{ color: ae.text }}>fire-weather</strong> half of
         the picture — a rule-based, weighted index of the local environment. No machine learning.
         Three meteorological factors combine multiplicatively, then a vegetation signal scales
         the result. The weights below were <strong style={{ color: ae.text }}>fit against ~500
@@ -21,11 +21,11 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         National Weather Service uses.
       </p>
       <p style={{ ...textBody(ae), marginTop: 10 }}>
-        On the <strong style={{ color: ae.text }}>Status</strong> page this score is one of two
-        inputs to your <strong style={{ color: ae.text }}>Personal Threat composite</strong> —
-        the other being proximity, size, wind alignment, and containment of any active fires
-        near you. This screen isolates that fire-weather half so you can see exactly
-        how the environment is contributing.
+        On the <strong style={{ color: ae.text }}>Status</strong> page this is one input to your{' '}
+        <strong style={{ color: ae.text }}>Personal Threat composite</strong> — combined there
+        with a machine-learning ignition-likelihood estimate and the proximity, size, wind
+        alignment, and containment of any active fires near you. This screen isolates the
+        fire-weather part so you can see exactly how the environment is contributing.
       </p>
 
       <Section title="The three base factors" ae={ae}>
@@ -54,7 +54,7 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
           When Sentinel-2 satellite imagery is available, the weighted score is scaled by an{' '}
           <strong style={{ color: ae.text }}>NDVI anomaly</strong> — how stressed the live
           vegetation is right now compared to the 3-year average for this month. Drier than
-          normal pushes the multiplier above 1.0; greener than normal pulls it below. If a
+          normal pushes the multiplier above 1.0, while greener than normal pulls it below. If a
           cloud-blocked pass leaves NDVI unavailable, the app falls back to a coarse season
           factor (<Mono ae={ae}>winter 0.40</Mono>, <Mono ae={ae}>spring 0.80</Mono>,{' '}
           <Mono ae={ae}>summer 1.00</Mono>, <Mono ae={ae}>fall 0.90</Mono>).
