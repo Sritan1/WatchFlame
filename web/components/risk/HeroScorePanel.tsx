@@ -108,7 +108,7 @@ export function HeroScorePanel({
             textShadow: '0 0 8px rgba(255,255,255,0.06)',
           }}
         >
-          What-If Risk Score
+          Fire-Weather What-If
         </h1>
         {/* Hairline divider — short, centered, fading at edges. */}
         <div

@@ -26,7 +26,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: '/',       icon: 'grid',   label: 'Command Center', group: 'Operations' },
   { href: '/map',    icon: 'map',    label: 'Live Map' },
-  { href: '/risk',   icon: 'flame',  label: 'Risk Forecast',  group: 'Planning' },
+  { href: '/risk',   icon: 'flame',  label: 'Fire-Weather What-If',  group: 'Planning' },
   { href: '/safety', icon: 'shield', label: 'Safety Plan' },
 ];
 
