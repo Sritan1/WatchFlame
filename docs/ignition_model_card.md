@@ -38,6 +38,8 @@ Leakage-safe **spatial-block cross-validation** (whole 2° regions held out at o
 
 It beats the logistic baseline (0.798 ROC-AUC) and is well-calibrated after isotonic calibration. Charts: [`docs/ignition_eval.png`](ignition_eval.png) (ROC + reliability), [`docs/ignition_interpret.png`](ignition_interpret.png) (importance + regional map).
 
+**Validated across time, not just space.** Spatial CV holds out whole regions but still mixes years, so it can train on a 2015 fire-day and test on a 2005 one. A stricter **out-of-time** holdout — train on every row before 2010, test on 2010–2015 (n=4,893) — matches what the model actually faces in production (only the past is available). ROC-AUC is essentially unchanged: **0.832 out-of-time vs 0.840 spatial-CV**, PR-AUC 0.481 (base rate 0.149). The drivers are stable enough that a 6-year forward gap barely moves discrimination. Reproduce with `scripts/temporal_validation.py`; chart [`docs/temporal_validation.png`](temporal_validation.png).
+
 **Interpretability (permutation importance):** the model independently puts **VPD and KBDI on top** — the same drivers the physics-based V4 index relies on. A confound check confirms it holds at ~0.83 ROC-AUC on weather/drought features *with the calendar removed*, so it reads conditions, not just "it's summer."
 
 ### Addressing the over-flag (v2)
@@ -68,6 +70,7 @@ python scripts/build_background_negatives.py     # non-fire background negatives
 python scripts/build_ignition_dataset.py        # dataset (fire + background, land-cover enriched)
 python scripts/train_ignition_model.py          # baseline + GBM + spatial-CV scores
 python scripts/evaluate_ignition_model.py        # calibration + ROC/reliability chart
+python scripts/temporal_validation.py            # out-of-time holdout (train<2010, test>=2010)
 python scripts/interpret_ignition_model.py       # permutation importance + regional map
 python scripts/train_final_ignition_model.py     # final calibrated artifact -> api/models/
 ```
