@@ -6,7 +6,7 @@ A wildfire-awareness web app for the US. It fuses live satellite fire detections
 
 Built solo, end to end: a **fit-and-validated** fire-weather algorithm, a **machine-learning ignition model** trained and served alongside it, live data fusion across eleven government and satellite sources, and a polished, motion-designed UI — all on a typed FastAPI service that degrades gracefully on every upstream.
 
-> **The app is "Ember Watch" — the repository is `wildfire-app`.** The primary surface is the **Next.js web app** (`web/`). A parallel Expo/React Native client (`app/`) shares the same backend and algorithm and is feature-tracked but deferred.
+> **The app is "Ember Watch" — the repository is `wildfire-app`.** The frontend is a **Next.js web app** (`web/`) on a typed FastAPI backend (`api/`).
 
 ---
 
@@ -67,15 +67,13 @@ _App UI captures are kept out of version control. The validation figures below a
 ## Architecture
 
 ```
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│   Web app  (Next.js, primary)│        │  Mobile  (Expo RN, deferred) │
-│   Command · Map · Risk ·     │        │   same screens, same algo    │
-│   Safety · Settings          │        │                              │
-└──────────────┬───────────────┘        └───────────────┬──────────────┘
-               │     TanStack Query (dedup + cache)      │
-               └────────────────────┬────────────────────┘
-                                    │ HTTPS
-                                    ▼
+                    ┌───────────────────────────────────┐
+                    │   Web app — Next.js (web/)         │
+                    │   Command · Map · Risk ·           │
+                    │   Safety · Settings                │
+                    └──────────────────┬────────────────┘
+                                       │ TanStack Query · HTTPS
+                                       ▼
                     ┌───────────────────────────────────┐
                     │      FastAPI backend (uvicorn)     │
                     │  /healthz /fires /risk /weather    │
@@ -276,15 +274,6 @@ npm run dev
 
 > Set `NEXT_PUBLIC_USE_MOCKS=true` to run the entire UI against bundled fixtures with no backend. The MapTiler key is inlined into the browser bundle by design — **domain-lock it in the MapTiler dashboard before any public deploy.**
 
-### Mobile app (deferred, optional)
-
-```powershell
-cd app
-copy .env.example .env             # EXPO_PUBLIC_API_URL = your laptop LAN IP
-npm install
-npx expo start                     # scan the QR with Expo Go (same Wi-Fi)
-```
-
 ---
 
 ## Project layout
@@ -307,7 +296,6 @@ npx expo start                     # scan the QR with Expo Go (same Wi-Fi)
 │   ├── app/                  #   App Router pages
 │   ├── components/           #   Screen + UI components
 │   └── lib/                  #   Hooks, API client, composite-risk math, theme
-├── app/                      # Expo React Native app (deferred)
 ├── scripts/                  # Fitting, calibration, chart generation
 ├── docs/                     # DECISIONS.md + validation charts
 └── notebooks/                # Validation + calibration analysis
@@ -339,16 +327,14 @@ The frontend uses TypeScript strict mode. Type-check with `cd web && npx tsc --n
 - ✅ Three-signal personal-threat composite — fire weather, ignition likelihood, and active-fire threat resolved through two published lookup matrices (the threat axis is multiplicative distance × size with smoothed wind / containment / staleness)
 - ✅ 6-hour fire-weather trajectory + atmospheric "risk strata" phase-space graph
 - ✅ Live FEMA National Shelter System open-shelter layer, integrated into the Safety UI
-- ✅ Full Next.js web app — all five screens, plus Fire Detail and saved locations — sharing the backend with the Expo client
+- ✅ Full Next.js web app — all five screens, plus Fire Detail and saved locations
 - ✅ Security hardening — CORS allowlist + prod fail-fast, per-IP rate limiting, input/bbox validation, security headers + CSP, secret-redacting logging, CI audits (`pip-audit`/`npm audit`/`gitleaks`)
 
 **Deferred**
 
 - Public deploy (web → Vercel, API → Railway) + custom domain
-- Mobile parity for the composite, trajectory, and open-shelter layers (currently web-only)
 - Lightning vs. human-caused ignition split (separate fitted thresholds)
-- Push notifications when a fire is detected near a saved location (needs a dev build)
-- App Store submission path (EAS Build, privacy policy)
+- Push notifications when a fire is detected near a saved location
 
 ---
 
