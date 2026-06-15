@@ -21,8 +21,12 @@ web-build/
 .DS_Store
 
 # Local env
-app/.env
-app/.env.local
+web/.env
+web/.env.local
+
+# Mobile app — removed from the repo (Expo/React Native client, kept locally
+# only). Untracked; do not push.
+app/
 
 # Data (raw downloads + caches — all too large for git; >100 MB hits GitHub's hard limit)
 data/raw/
