@@ -14,23 +14,18 @@
 
 import type { RegionalThresholds, RiskRequest, RiskResponse } from '@/lib/api';
 import { thresholdsForState } from '@/lib/regional-thresholds';
-import { V4_WEIGHTS } from '@/lib/v4-weights';
+import { SEASON_MULT, V4_SCALES, V4_WEIGHTS } from '@/lib/v4-weights';
 
-// V4 saturation scales + floors — mirror api/core/risk_algorithm.py RiskParams
-// (DEFAULT_PARAMS), fit against a 500-fire FPA-FOD hindcast. The exponents live
-// in v4-weights.ts; keep these in sync with the backend if the model is re-fit.
-const VPD_SCALE_HPA = 40.32;
-const WIND_SCALE_KPH = 52.31;
-const DROUGHT_TAU_DAYS = 15.0;
-const WIND_FLOOR = 0.0458;
-const DROUGHT_FLOOR = 0.2786;
-
-export const SEASON_MULT: Record<RiskRequest['season'], number> = {
-  winter: 0.4,
-  spring: 0.8,
-  summer: 1.0,
-  fall: 0.9,
-};
+// V4 saturation scales + floors now live in v4-weights.ts (the single TS source
+// of truth for the fitted constants). Alias them to the local names this scorer
+// already uses.
+const {
+  vpdScaleHpa: VPD_SCALE_HPA,
+  windScaleKph: WIND_SCALE_KPH,
+  droughtTauDays: DROUGHT_TAU_DAYS,
+  windFloor: WIND_FLOOR,
+  droughtFloor: DROUGHT_FLOOR,
+} = V4_SCALES;
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));

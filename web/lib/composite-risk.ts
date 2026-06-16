@@ -321,9 +321,15 @@ export function fireThreatFactor(args: {
   );
 }
 
-/** Aggregate threat across every nearby fire — take the max single-fire
- *  factor across NIFC/Cal Fire incidents AND FIRMS pixels within
- *  THREAT_RADIUS_MI. Returns 0 when no fires are in range. */
+/** Aggregate threat across every nearby fire — the max single-fire factor
+ *  across NIFC/Cal Fire incidents AND FIRMS pixels within THREAT_RADIUS_MI.
+ *  Returns 0 when no fires are in range.
+ *
+ *  This is exactly the driving fire's factor, so it delegates to
+ *  `findThreatDriver` rather than re-walking every fire in a parallel loop —
+ *  one source of truth means the orb's threat value and the Threat Source
+ *  card can never disagree. (Callers that need BOTH should call
+ *  findThreatDriver once and read `.threat`, not call both functions.) */
 export function aggregateThreat(args: {
   userLoc: LatLon;
   namedIncidents: NamedIncident[];
@@ -333,47 +339,7 @@ export function aggregateThreat(args: {
   /** Override "now" for testability. Defaults to Date.now(). */
   nowMs?: number;
 }): number {
-  const {
-    userLoc,
-    namedIncidents,
-    firmsHits,
-    windDeg,
-    windSpeedKph,
-    nowMs = Date.now(),
-  } = args;
-
-  let worst = 0;
-
-  for (const inc of namedIncidents) {
-    if (inc.distance_mi > THREAT_RADIUS_MI) continue;
-    const t = fireThreatFactor({
-      distanceMi: inc.distance_mi,
-      acres: inc.acres,
-      firmsAgeHours: null,
-      windDeg,
-      bearingToFireDeg: bearingTo(userLoc, { lat: inc.lat, lon: inc.lon }),
-      windSpeedKph,
-      containedPct: inc.contained_pct,
-    });
-    if (t > worst) worst = t;
-  }
-
-  for (const f of firmsHits) {
-    const fireLoc = { lat: f.properties.lat, lon: f.properties.lon };
-    const d = distanceMiles(userLoc, fireLoc);
-    if (d > THREAT_RADIUS_MI) continue;
-    const t = fireThreatFactor({
-      distanceMi: d,
-      acres: null,
-      firmsAgeHours: firmsAgeHours(f.properties.acq_date, f.properties.acq_time, nowMs),
-      windDeg,
-      bearingToFireDeg: bearingTo(userLoc, fireLoc),
-      windSpeedKph,
-    });
-    if (t > worst) worst = t;
-  }
-
-  return worst;
+  return findThreatDriver(args)?.threat ?? 0;
 }
 
 /** Composite score (0–1) — linear blend used ONLY for the Status orb arc
@@ -540,9 +506,9 @@ export type ThreatDriver =
     };
 
 /** Find which fire is driving the user's threat score — i.e. the fire whose
- *  individual `t` is the max across all in-range candidates. Mirrors the
- *  loop inside `aggregateThreat` (kept separate so the formula function
- *  stays a pure number-returner).
+ *  individual `t` is the max across all in-range candidates. `aggregateThreat`
+ *  is derived from this (its `.threat`), so this single loop is the one source
+ *  of truth for both the orb's threat value and the Threat Source card.
  *
  *  Tiebreak: when the winning candidate is a FIRMS pixel, scan named
  *  incidents for one within FIRMS_TO_INCIDENT_TIEBREAK_MI of the pixel.
