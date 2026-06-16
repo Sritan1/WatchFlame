@@ -95,7 +95,14 @@ export function formatSpeed(kph: number, unit: SpeedUnit, digits = 0): string {
   return `${n.toFixed(digits)} ${unit}`;
 }
 
+/** Miles → the user's distance unit, as a number (no formatting). Use this when
+ *  the unit label is rendered separately (e.g. a differently-styled <span>);
+ *  otherwise prefer formatDistance, which returns the value + unit as one
+ *  string. Keeps the mi↔km constant in a single place. */
+export function convertDistance(miles: number, unit: DistanceUnit): number {
+  return unit === 'km' ? miles * 1.60934 : miles;
+}
+
 export function formatDistance(miles: number, unit: DistanceUnit, digits = 1): string {
-  const n = unit === 'km' ? miles * 1.60934 : miles;
-  return `${n.toFixed(digits)} ${unit}`;
+  return `${convertDistance(miles, unit).toFixed(digits)} ${unit}`;
 }

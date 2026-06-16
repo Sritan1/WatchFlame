@@ -38,7 +38,6 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { dangerToRisk } from '@/lib/api';
 import { computeConfidence } from '@/lib/confidence';
 import {
-  aggregateThreat,
   bucketOf,
   composite,
   compositeFromBuckets,
@@ -148,19 +147,6 @@ export function StatusScreen() {
   );
   const windDeg = weather.data?.wind_deg ?? null;
   const windSpeedKph = weather.data?.wind_speed ?? null;
-  const threatSignal: number = useMemo(
-    () =>
-      incidents.data != null && fires.data != null
-        ? aggregateThreat({
-            userLoc: loc.coords,
-            namedIncidents: incidents.data,
-            firmsHits: fires.data.features,
-            windDeg,
-            windSpeedKph,
-          })
-        : 0,
-    [incidents.data, fires.data, loc.coords, windDeg, windSpeedKph],
-  );
   // The single fire driving the threat score — for the Threat Source card.
   // Applies the FIRMS→named-incident tiebreak inside findThreatDriver so a
   // satellite pixel sitting on top of a real Cal Fire incident surfaces the
@@ -178,6 +164,9 @@ export function StatusScreen() {
         : null,
     [incidents.data, fires.data, loc.coords, windDeg, windSpeedKph],
   );
+  // Aggregate threat IS the driving fire's factor (0 when none), so derive it
+  // from the driver rather than walking every fire a second time.
+  const threatSignal: number = threatDriver?.threat ?? 0;
   // True when there's at least one fire that contributed to the threat
   // signal — i.e. within THREAT_RADIUS_MI. Derived from the actual
   // computation, NOT from the raw dataset (useFiresAroundMe pulls a 250 mi
@@ -256,7 +245,6 @@ export function StatusScreen() {
   const pillTone = getRisk(compositeBucket, accent);
   const isAlarming = compositeBucket === 'high' || compositeBucket === 'extreme';
 
-  const heroReady = compositeReady;
   const headlineLines: [string, string] = compositeReady
     ? HEADLINE[compositeBucket]
     : ['Loading', '…'];
@@ -377,7 +365,7 @@ export function StatusScreen() {
                   <Skeleton width={96} height={28} rounded="full" />
                 )}
               </div>
-              {heroReady ? (
+              {compositeReady ? (
                 <h1
                   key={headlineLines.join('-')}
                   style={{
@@ -399,7 +387,7 @@ export function StatusScreen() {
                   <Skeleton width={'45%'} height={56} rounded="md" />
                 </div>
               )}
-              {heroReady ? (
+              {compositeReady ? (
                 <p
                   key={headlineLines.join('-') + '-p'}
                   className="ember-fade-up"

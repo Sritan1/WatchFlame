@@ -64,6 +64,18 @@ def test_pick_hour_index_unknown_iso_falls_back_to_zero():
     assert _pick_hour_index(times, "2099-01-01T00:00", 6) == 6
 
 
+def test_pick_hour_index_tolerates_format_drift():
+    """Regression: an exact-string-only match silently anchored 'now' at
+    midnight whenever current.time wasn't byte-identical to an hourly slot
+    (e.g. a seconds suffix). The hour-prefix fallback must still find the
+    right hour."""
+    times = [f"2026-05-30T{h:02d}:00" for h in range(12)]
+    # current.time carrying a seconds suffix → must match hour 5, not fall to 0.
+    assert _pick_hour_index(times, "2026-05-30T05:00:00", 0) == 5
+    # and the +offset still applies from the matched anchor (clamped to last).
+    assert _pick_hour_index(times, "2026-05-30T05:00:00", 6) == 11
+
+
 def test_vpd_proxy_dry_air_is_higher_than_humid():
     dry = _vpd_proxy(35.0, 15.0)
     humid = _vpd_proxy(35.0, 85.0)

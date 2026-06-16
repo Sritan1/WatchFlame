@@ -150,7 +150,10 @@ def regional_level(
         state = lookup_state(lat, lon)
     if state and state in _STATES:
         thresholds = _STATES[state].get("thresholds")
-        if thresholds:
+        # _bucket indexes low/moderate/extreme directly; a truthy-but-partial
+        # block (stale/partial JSON) would KeyError into a 500. Require the keys
+        # and otherwise fall back to global, mirroring lookup_state's defensiveness.
+        if thresholds and all(k in thresholds for k in ("low", "moderate", "extreme")):
             return _bucket(score, thresholds), state
     return _bucket(score, _GLOBAL), None
 

@@ -24,3 +24,24 @@ export const V4_WEIGHT_PCT = {
   wind: Math.round(V4_WEIGHTS.wind * 100), // 43
   drought: Math.round(V4_WEIGHTS.drought * 100), // 12
 } as const;
+
+/** The rest of the fitted RiskParams — saturation scales, floors, and the
+ *  days-since-rain drying time-constant. Same authority + sync rule as the
+ *  exponents above. Kept here so every TS consumer (offline scorer, mocks)
+ *  reads ONE copy. */
+export const V4_SCALES = {
+  vpdScaleHpa: 40.32,
+  windScaleKph: 52.31,
+  droughtTauDays: 15.0,
+  windFloor: 0.0458,
+  droughtFloor: 0.2786,
+} as const;
+
+/** Calendar-season vegetation multiplier, used when an NDVI anomaly isn't
+ *  available. Mirrors api/core/risk_algorithm.py `_SEASON_MULT`. */
+export const SEASON_MULT: Record<'winter' | 'spring' | 'summer' | 'fall', number> = {
+  winter: 0.4,
+  spring: 0.8,
+  summer: 1.0,
+  fall: 0.9,
+};

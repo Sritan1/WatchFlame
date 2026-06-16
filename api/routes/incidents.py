@@ -1,25 +1,15 @@
 import asyncio
 import logging
-from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, Query
 
+from ..core.geo import haversine_mi
 from ..services.calfire import fetch_active_incidents as fetch_calfire
 from ..services.nifc import fetch_all_incidents as fetch_nifc
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 logger = logging.getLogger(__name__)
-
-
-def _haversine_mi(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
-    R = 3958.7613
-    dLat = radians(b_lat - a_lat)
-    dLon = radians(b_lon - a_lon)
-    lat1 = radians(a_lat)
-    lat2 = radians(b_lat)
-    h = sin(dLat / 2) ** 2 + sin(dLon / 2) ** 2 * cos(lat1) * cos(lat2)
-    return 2 * R * asin(sqrt(h))
 
 
 @router.get("/near")
@@ -55,7 +45,7 @@ async def get_incidents_near(
         logger.warning("calfire query failed: %s", calfire_res)
     else:
         for inc in calfire_res:
-            d = _haversine_mi(lat, lon, inc.lat, inc.lon)
+            d = haversine_mi(lat, lon, inc.lat, inc.lon)
             if d > radius_mi:
                 continue
             rows.append(
@@ -84,7 +74,7 @@ async def get_incidents_near(
         logger.warning("nifc query failed: %s", nifc_res)
     else:
         for inc in nifc_res:
-            d = _haversine_mi(lat, lon, inc.lat, inc.lon)
+            d = haversine_mi(lat, lon, inc.lat, inc.lon)
             if d > radius_mi:
                 continue
             rows.append(
@@ -123,7 +113,7 @@ async def get_incidents_near(
                 i
                 for i, prev in enumerate(merged)
                 if _normalize_name(str(prev["name"])) == norm
-                and _haversine_mi(rl_lat, rl_lon, float(prev["lat"]), float(prev["lon"]))  # type: ignore[arg-type]
+                and haversine_mi(rl_lat, rl_lon, float(prev["lat"]), float(prev["lon"]))  # type: ignore[arg-type]
                 < 5.0
             ),
             None,
