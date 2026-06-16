@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, Query, Request
 
+from ..core.geo import haversine_mi
 from ..core.rate_limit import EXPENSIVE, limiter
 from ..services.nces import fetch_schools
 from ..services.open_shelters import fetch_open_shelters
@@ -12,16 +12,6 @@ from ..services.overpass import fetch_shelters
 router = APIRouter(prefix="/shelters", tags=["shelters"])
 
 logger = logging.getLogger(__name__)
-
-
-def _haversine_mi(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
-    R = 3958.7613  # miles
-    dLat = radians(b_lat - a_lat)
-    dLon = radians(b_lon - a_lon)
-    lat1 = radians(a_lat)
-    lat2 = radians(b_lat)
-    h = sin(dLat / 2) ** 2 + sin(dLon / 2) ** 2 * cos(lat1) * cos(lat2)
-    return 2 * R * asin(sqrt(h))
 
 
 @router.get("")
@@ -69,7 +59,7 @@ async def get_shelters(
         logger.warning("open-shelters query failed: %s", open_res)
     else:
         for s in open_res:
-            d = _haversine_mi(lat, lon, s.lat, s.lon)
+            d = haversine_mi(lat, lon, s.lat, s.lon)
             if d > radius_mi:
                 continue
             rows.append(
@@ -97,7 +87,7 @@ async def get_shelters(
         logger.warning("overpass query failed: %s", overpass_res)
     else:
         for s in overpass_res:
-            d = _haversine_mi(lat, lon, s.lat, s.lon)
+            d = haversine_mi(lat, lon, s.lat, s.lon)
             if d > radius_mi:
                 continue
             rows.append(
@@ -117,7 +107,7 @@ async def get_shelters(
         logger.warning("nces query failed: %s", nces_res)
     else:
         for sch in nces_res:
-            d = _haversine_mi(lat, lon, sch.lat, sch.lon)
+            d = haversine_mi(lat, lon, sch.lat, sch.lon)
             if d > radius_mi:
                 continue
             rows.append(

@@ -9,7 +9,7 @@ import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { NamedIncident } from '@/lib/api';
 import { getRisk, type RiskLevel } from '@/lib/theme';
-import { useUnits } from '@/lib/use-units';
+import { convertDistance, useUnits } from '@/lib/use-units';
 
 /** Synthesize a severity bucket from distance + size — the backend doesn't
  *  attach one. Distance dominates: nearby = scarier. Acres adds tiebreaker. */
@@ -25,8 +25,8 @@ export function severityOf(f: NamedIncident): RiskLevel {
 export function ClosestFiresList({ fires }: { fires: NamedIncident[] }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
-  // Distances from /incidents/near are always in miles; we convert at display time.
-  const distConverted = (mi: number) => (units.distance === 'km' ? mi * 1.60934 : mi);
+  // Distances from /incidents/near are always in miles; we convert at display time
+  // (unit label is rendered in a separate styled span below, so convert-only).
   if (fires.length === 0) {
     return (
       <div
@@ -130,7 +130,7 @@ export function ClosestFiresList({ fires }: { fires: NamedIncident[] }) {
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {distConverted(f.distance_mi).toFixed(1)}
+                {convertDistance(f.distance_mi, units.distance).toFixed(1)}
                 <span style={{ fontSize: 11, color: ae.textMute, fontWeight: 400, marginLeft: 3 }}>
                   {units.distance}
                 </span>

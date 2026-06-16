@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .risk_algorithm import RiskResult, compute_risk
+from .risk_algorithm import RiskResult, compute_risk, vapor_pressure_deficit_hpa
 from .validation import doy_to_season
 
 Tier = Literal["rising", "steady", "falling"]
@@ -71,10 +71,17 @@ def _pick_hour_index(times: list[str], from_iso: str | None, hours_ahead: int) -
     into `times`. Clamps to the last available index."""
     if not times:
         return 0
-    if from_iso is None or from_iso not in times:
-        anchor_idx = 0
-    else:
+    if from_iso and from_iso in times:
         anchor_idx = times.index(from_iso)
+    elif from_iso:
+        # Tolerate minor format drift (a seconds / offset suffix) by matching on
+        # the YYYY-MM-DDTHH hour prefix; only then fall back to index 0. An
+        # exact-string-only match would silently anchor at midnight on any
+        # format change, reintroducing the pre-dawn "now" bug.
+        hour_key = from_iso[:13]
+        anchor_idx = next((i for i, t in enumerate(times) if t[:13] == hour_key), 0)
+    else:
+        anchor_idx = 0
     target_idx = anchor_idx + hours_ahead
     return min(target_idx, len(times) - 1)
 
@@ -177,10 +184,9 @@ def compute_trajectory(
     # match (preserves legacy / test behavior).
     current = forecast.get("current") or {}
     current_iso = current.get("time") if isinstance(current, dict) else None
-    if current_iso and current_iso in times:
-        now_idx = times.index(current_iso)
-    else:
-        now_idx = 0
+    # Anchor "now" via the shared (format-tolerant) index helper rather than a
+    # second inline match — keeps the projected-index logic and this one in sync.
+    now_idx = _pick_hour_index(times, current_iso, 0)
 
     # Guard against any-null entries at the chosen indices — Open-Meteo
     # occasionally returns null for stations that didn't report. We
@@ -257,10 +263,8 @@ def compute_trajectory(
 
 
 def _vpd_proxy(temp_c: float, rh_pct: float) -> float:
-    """Approximate VPD in hPa for driver-identification purposes only.
-    The official VPD math is in risk_algorithm; reusing the exact
-    formula here would force a circular-ish import. This proxy is
-    close enough for ranking which driver moved most."""
-    from math import exp
-    e_s = 6.1078 * exp(17.27 * temp_c / (temp_c + 237.3))
-    return e_s * (1.0 - max(0.0, min(100.0, rh_pct)) / 100.0)
+    """VPD in hPa, used here only to rank which driver moved most. Delegates to
+    the canonical formula in risk_algorithm so the two can't drift (the prior
+    'circular import' concern was unfounded — this module already imports from
+    risk_algorithm)."""
+    return vapor_pressure_deficit_hpa(temp_c, rh_pct)

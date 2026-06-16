@@ -12,7 +12,7 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
-import { useUnits } from '@/lib/use-units';
+import { convertDistance, useUnits } from '@/lib/use-units';
 
 /** Minimal shape for AdvisoryRow's closest-fire display — works for both
  *  NamedIncident (NIFC/Cal Fire) and synthesized FIRMS satellite detections. */
@@ -45,7 +45,6 @@ export function AdvisoryRow({
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
-  const distConverted = (mi: number) => (units.distance === 'km' ? mi * 1.60934 : mi);
   // Palette for the banner — driven by `banner.level`. Use the raw RISK_LEVELS
   // (not getRisk with accent override) so 'low' stays green even when the
   // user's accent is amber/orange/red.
@@ -164,7 +163,7 @@ export function AdvisoryRow({
                     lineHeight: 1,
                   }}
                 >
-                  {distConverted(closestFire.distance_mi).toFixed(1)}{' '}
+                  {convertDistance(closestFire.distance_mi, units.distance).toFixed(1)}{' '}
                   <span style={{ fontSize: 14, color: ae.textDim, fontWeight: 400 }}>
                     {units.distance} {closestBearingLabel}
                   </span>

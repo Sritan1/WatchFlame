@@ -13,16 +13,10 @@ import { InputPanel } from '@/components/risk/InputPanel';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { Season } from '@/lib/api';
+import { SEASON_MULT } from '@/lib/v4-weights';
 
 const AMBER = '#E8B339';
 const AMBER_RGB = '232, 179, 57';
-
-const SEASON_MULT: Record<Season, number> = {
-  winter: 0.4,
-  spring: 0.8,
-  summer: 1.0,
-  fall: 0.9,
-};
 
 export type VegMode = 'season' | 'ndvi';
 
