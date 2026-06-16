@@ -168,15 +168,6 @@ export function CompositeExplainerModal({
       {compositeBucket ? (
         <OutcomeCallout ae={ae} envBucket={envBucket} threatBucket={threatBucket} compositeBucket={compositeBucket} />
       ) : null}
-
-      <Section ae={ae} title="Why matrices, not a weighted average">
-        <p style={textBody(ae)}>
-          Each cell is argued on its own merits, with no hidden coefficients. Folding ignition into
-          the environmental tier (rather than adding it as a third axis) avoids double-counting the
-          weather that fire weather and the ignition model both read. See{' '}
-          <Mono ae={ae}>docs/DECISIONS.md §6 + §10</Mono> for the full rationale.
-        </p>
-      </Section>
     </Modal>
   );
 }
@@ -333,24 +324,6 @@ function Section({ ae, title, children }: { ae: ReturnType<typeof useAesthetic>[
       </h3>
       {children}
     </div>
-  );
-}
-
-function Mono({ ae, children }: { ae: ReturnType<typeof useAesthetic>['ae']; children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        fontFamily: ae.fontMono,
-        fontSize: 11.5,
-        background: 'rgba(255, 255, 255, 0.05)',
-        padding: '1px 6px',
-        borderRadius: 4,
-        border: `0.5px solid ${ae.line}`,
-        color: ae.text,
-      }}
-    >
-      {children}
-    </code>
   );
 }
 

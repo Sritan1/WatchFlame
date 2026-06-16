@@ -1,0 +1,122 @@
+[
+  {
+    "input": {
+      "temperatureC": 35.0,
+      "humidityPct": 15.0,
+      "windKph": 30.0,
+      "daysSinceRain": 10,
+      "season": "summer",
+      "kbdi": 600.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.7014
+  },
+  {
+    "input": {
+      "temperatureC": 20.0,
+      "humidityPct": 60.0,
+      "windKph": 10.0,
+      "daysSinceRain": 2,
+      "season": "spring",
+      "kbdi": 200.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.1551
+  },
+  {
+    "input": {
+      "temperatureC": 40.0,
+      "humidityPct": 8.0,
+      "windKph": 45.0,
+      "daysSinceRain": 30,
+      "season": "summer",
+      "kbdi": 750.0,
+      "ndviAnomaly": -0.1
+    },
+    "expectedScore": 0.8169
+  },
+  {
+    "input": {
+      "temperatureC": 10.0,
+      "humidityPct": 80.0,
+      "windKph": 5.0,
+      "daysSinceRain": 0,
+      "season": "winter",
+      "kbdi": 50.0,
+      "ndviAnomaly": 0.05
+    },
+    "expectedScore": 0.0607
+  },
+  {
+    "input": {
+      "temperatureC": 28.0,
+      "humidityPct": 35.0,
+      "windKph": 18.0,
+      "daysSinceRain": 7,
+      "season": "fall",
+      "kbdi": null,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.3629
+  },
+  {
+    "input": {
+      "temperatureC": 30.0,
+      "humidityPct": 25.0,
+      "windKph": 22.0,
+      "daysSinceRain": 5,
+      "season": "summer",
+      "kbdi": null,
+      "ndviAnomaly": -0.08
+    },
+    "expectedScore": 0.4372
+  },
+  {
+    "input": {
+      "temperatureC": 15.0,
+      "humidityPct": 95.0,
+      "windKph": 0.0,
+      "daysSinceRain": 0,
+      "season": "winter",
+      "kbdi": 0.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.016
+  },
+  {
+    "input": {
+      "temperatureC": 45.0,
+      "humidityPct": 5.0,
+      "windKph": 60.0,
+      "daysSinceRain": 40,
+      "season": "summer",
+      "kbdi": 800.0,
+      "ndviAnomaly": -0.3
+    },
+    "expectedScore": 1.0
+  },
+  {
+    "input": {
+      "temperatureC": 25.0,
+      "humidityPct": 50.0,
+      "windKph": 15.0,
+      "daysSinceRain": 3,
+      "season": "spring",
+      "kbdi": 300.0,
+      "ndviAnomaly": 0.2
+    },
+    "expectedScore": 0.181
+  },
+  {
+    "input": {
+      "temperatureC": 33.0,
+      "humidityPct": 20.0,
+      "windKph": 25.0,
+      "daysSinceRain": 14,
+      "season": "fall",
+      "kbdi": 500.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.5608
+  }
+]
