@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from ..core.parse import safe_float
+
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 # Defense-in-depth: `area` is interpolated into the FIRMS URL path, so it must
@@ -87,12 +89,12 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
                 "properties": {
                     "lat": lat,
                     "lon": lon,
-                    "brightness": _safe_float(row.get("bright_ti4") or row.get("brightness")),
+                    "brightness": safe_float(row.get("bright_ti4") or row.get("brightness")),
                     "confidence": row.get("confidence"),
                     "acq_date": row.get("acq_date"),
                     "acq_time": row.get("acq_time"),
                     "satellite": row.get("satellite"),
-                    "frp": _safe_float(row.get("frp")),
+                    "frp": safe_float(row.get("frp")),
                     "daynight": row.get("daynight"),
                 },
             }
@@ -103,8 +105,3 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     return fc
 
 
-def _safe_float(v: Any) -> float | None:
-    try:
-        return float(v) if v not in (None, "") else None
-    except (TypeError, ValueError):
-        return None

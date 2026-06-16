@@ -26,10 +26,11 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from math import cos, radians
 from typing import Any
 
 import httpx
+
+from ..core.geo import bbox_around
 
 logger = logging.getLogger(__name__)
 
@@ -221,11 +222,10 @@ async def _fetch_nss_open_shelters(
 
     # Bounding-box envelope around the point (the route trims to the exact
     # radius with haversine afterward, so a slightly-larger box is fine).
-    dlat = radius_mi / 69.0
-    dlon = radius_mi / (69.0 * max(0.1, cos(radians(lat))))
+    min_lon, min_lat, max_lon, max_lat = bbox_around(lat, lon, radius_mi)
     params = {
         "where": "1=1",
-        "geometry": f"{lon - dlon},{lat - dlat},{lon + dlon},{lat + dlat}",
+        "geometry": f"{min_lon},{min_lat},{max_lon},{max_lat}",
         "geometryType": "esriGeometryEnvelope",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",

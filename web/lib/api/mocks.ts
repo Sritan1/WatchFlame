@@ -4,7 +4,6 @@
 // · moderate risk overall. All RNG is seeded by lat/lon so the mock is stable.
 
 import type {
-  CalibrationInfo,
   DisastersNearResponse,
   FireCollection,
   GeocodeHit,
@@ -16,6 +15,13 @@ import type {
   TrajectoryResponse,
   WeatherResponse,
 } from './types';
+
+import {
+  CALIBRATION_INFO,
+  lookupStateLocal,
+  thresholdsForState,
+} from '@/lib/regional-thresholds';
+import { globalDangerLevel, regionalBucket, scoreV4 } from '@/lib/risk-local';
 
 /** Pretend we made a network request — useful so callers see loading states. */
 function delay<T>(value: T, ms = 220): Promise<T> {
@@ -215,41 +221,6 @@ const MOCK_SHELTERS: Shelter[] = [
   { id: '3', name: 'Emeryville Recreation Center', lat: 37.8316, lon: -122.2855, type: 'community_centre', distance_mi: 2.9, address: '4300 San Pablo Ave, Emeryville, CA', activated: false },
 ];
 
-function clamp01(v: number): number { return Math.max(0, Math.min(1, v)); }
-function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
-
-/** Tetens / Magnus saturation vapor pressure (hPa). Matches api/core/risk_algorithm.py. */
-function saturationVaporPressureHpa(tC: number): number {
-  return 6.1078 * Math.exp((17.27 * tC) / (tC + 237.3));
-}
-
-/** Coarse state inference from a CONUS lat/lon — used to populate
- *  regional calibration on the Status flow, which sends coords without an
- *  explicit state. Only covers the 17 fitted states; everything else returns
- *  null so the response falls back to global cutoffs (matches mobile behavior). */
-function inferStateFromCoords(lat: number, lon: number): string | null {
-  // CA is the demo home; widen its box a bit so saved locations like Boulder
-  // (CO) and Reno (NV) still resolve to their own states.
-  if (lat >= 32 && lat <= 42 && lon >= -125 && lon <= -114) return 'CA';
-  if (lat >= 25 && lat <= 31 && lon >= -88 && lon <= -80)  return 'FL';
-  if (lat >= 31 && lat <= 37 && lon >= -114.8 && lon <= -109) return 'AZ';
-  if (lat >= 37 && lat <= 41 && lon >= -109.1 && lon <= -102) return 'CO';
-  if (lat >= 32 && lat <= 37 && lon >= -109.1 && lon <= -103) return 'NM';
-  if (lat >= 35 && lat <= 42 && lon >= -120 && lon <= -114) return 'NV';
-  if (lat >= 41.9 && lat <= 49 && lon >= -117 && lon <= -111) return 'MT';
-  if (lat >= 42 && lat <= 49 && lon >= -117 && lon <= -111) return 'ID';
-  if (lat >= 41 && lat <= 45 && lon >= -111 && lon <= -104) return 'WY';
-  if (lat >= 37 && lat <= 42 && lon >= -114.1 && lon <= -109) return 'UT';
-  if (lat >= 33.5 && lat <= 37.1 && lon >= -103 && lon <= -94.4) return 'OK';
-  if (lat >= 25.8 && lat <= 36.5 && lon >= -106.7 && lon <= -93.5) return 'TX';
-  if (lat >= 30.5 && lat <= 35.1 && lon >= -85.6 && lon <= -80.8) return 'GA';
-  if (lat >= 33.8 && lat <= 36.6 && lon >= -84.3 && lon <= -75.4) return 'NC';
-  if (lat >= 32 && lat <= 35.3 && lon >= -83.4 && lon <= -78.5) return 'SC';
-  if (lat >= 42 && lat <= 46.3 && lon >= -124.6 && lon <= -116.5) return 'OR';
-  if (lat >= 45.5 && lat <= 49.1 && lon >= -124.7 && lon <= -116.9) return 'WA';
-  return null;
-}
-
 /** Plausible KBDI value seeded by coords — drier inland/south, wetter coastal
  *  PNW. Real backend fetches this from Open-Meteo's 60-day archive. */
 function syntheticKbdi(lat: number, _lon: number): number {
@@ -263,155 +234,53 @@ function syntheticKbdi(lat: number, _lon: number): number {
 /** Plausible NDVI anomaly seeded by coords — slightly drier than normal
  *  for CA spring (Berkeley demo). Mobile fetches this from CDSE Sentinel-2. */
 function syntheticNdviAnomaly(lat: number, lon: number): number {
-  const state = inferStateFromCoords(lat, lon);
+  const state = lookupStateLocal(lat, lon);
   if (state === 'CA') return -0.05; // matches Berkeley demo scenario
   if (state === 'FL' || state === 'GA') return 0.02;
   if (state === 'AZ' || state === 'NV') return -0.09;
   return -0.02;
 }
 
-// V4 calibration constants — mirror api/core/risk_algorithm.py RiskParams
-// (DEFAULT_PARAMS), fit against a 500-fire FPA-FOD hindcast
-// (scripts/fit_v4_params.py). Keep in sync with the backend if re-fit.
-const VPD_SCALE_HPA = 40.32;
-const WIND_SCALE_KPH = 52.31;
-const DROUGHT_TAU_DAYS = 15.0;
-const WIND_FLOOR = 0.0458;
-const DROUGHT_FLOOR = 0.2786;
-const EXP_VPD = 0.4534;
-const EXP_WIND = 0.4262;
-const EXP_DROUGHT = 0.1204;
-
-const SEASON_MULT: Record<RiskRequest['season'], number> = {
-  winter: 0.4,
-  spring: 0.8,
-  summer: 1.0,
-  fall: 0.9,
-};
-
-/** Plausible per-state regional thresholds — mirrors the shape of
- *  api/data/regional_thresholds.json (real backend returns exact percentile
- *  cutoffs from FPA-FOD fitting). These are demo-ballpark only. */
-const REGIONAL_THRESHOLDS: Record<string, NonNullable<RiskResponse['regional_thresholds']>> = {
-  CA: { low: 0.25, moderate: 0.29, high: 0.33, extreme: 0.39, score_max: 0.45 },
-  FL: { low: 0.20, moderate: 0.25, high: 0.30, extreme: 0.32, score_max: 0.37 },
-  AZ: { low: 0.31, moderate: 0.37, high: 0.41, extreme: 0.45, score_max: 0.49 },
-  CO: { low: 0.29, moderate: 0.34, high: 0.42, extreme: 0.49, score_max: 0.52 },
-  NM: { low: 0.28, moderate: 0.39, high: 0.50, extreme: 0.57, score_max: 0.65 },
-  NV: { low: 0.31, moderate: 0.37, high: 0.42, extreme: 0.45, score_max: 0.50 },
-  MT: { low: 0.22, moderate: 0.30, high: 0.37, extreme: 0.49, score_max: 0.52 },
-  ID: { low: 0.24, moderate: 0.33, high: 0.39, extreme: 0.46, score_max: 0.49 },
-  WY: { low: 0.27, moderate: 0.37, high: 0.48, extreme: 0.52, score_max: 0.63 },
-  UT: { low: 0.32, moderate: 0.38, high: 0.44, extreme: 0.49, score_max: 0.58 },
-  OK: { low: 0.23, moderate: 0.29, high: 0.37, extreme: 0.40, score_max: 0.48 },
-  TX: { low: 0.23, moderate: 0.29, high: 0.37, extreme: 0.44, score_max: 0.54 },
-  GA: { low: 0.18, moderate: 0.22, high: 0.28, extreme: 0.31, score_max: 0.41 },
-  NC: { low: 0.19, moderate: 0.23, high: 0.29, extreme: 0.31, score_max: 0.32 },
-  SC: { low: 0.20, moderate: 0.24, high: 0.28, extreme: 0.34, score_max: 0.37 },
-  OR: { low: 0.24, moderate: 0.28, high: 0.34, extreme: 0.38, score_max: 0.41 },
-  WA: { low: 0.21, moderate: 0.29, high: 0.35, extreme: 0.41, score_max: 0.59 },
-};
-
-function regionalBucket(
-  score: number,
-  th: NonNullable<RiskResponse['regional_thresholds']>,
-): RiskResponse['danger_level'] {
-  // Per api/core/regional_calibration.py: HIGH→EXT boundary is th.extreme
-  // (97th percentile). th.high (90th percentile) is informational only.
-  if (score < th.low) return 'LOW';
-  if (score < th.moderate) return 'MODERATE';
-  if (score < th.extreme) return 'HIGH';
-  return 'EXTREME';
-}
-
-/** V4 fire-weather index — mirrors api/core/risk_algorithm.py exactly.
- *  Inputs match the wire contract: temperature °C, humidity %, wind in
- *  km/h, kbdi 0–800, days_since_rain int, season. */
+/** Mock POST /risk. Mirrors the backend's flow — synthesize kbdi/ndvi/state from
+ *  coords when supplied (the real backend gathers these from KBDI / NDVI / a
+ *  Census state lookup) — then score with the SAME scorer (scoreV4) and the
+ *  SAME bundled calibration data the offline calculator uses. No private copy of
+ *  the algorithm, constants, state-inference rectangles, or thresholds. */
 function computeMockRisk(req: RiskRequest): RiskResponse {
-  // Synthesize realistic kbdi/ndvi/state when coords supplied — mirrors the
-  // real backend's asyncio.gather over KBDI / NDVI / Census-state lookups.
   const hasCoords = req.lat != null && req.lon != null;
   const effectiveKbdi = req.kbdi ?? (hasCoords ? syntheticKbdi(req.lat!, req.lon!) : null);
   const effectiveNdvi = req.ndvi_anomaly ?? (hasCoords ? syntheticNdviAnomaly(req.lat!, req.lon!) : null);
-  const inferredState = req.state ?? (hasCoords ? inferStateFromCoords(req.lat!, req.lon!) : null);
+  const inferredState = req.state ?? (hasCoords ? lookupStateLocal(req.lat!, req.lon!) : null);
 
-  // VPD factor — Tetens / 40 hPa scale, clamp [0, 1]
-  const vpdHpa = saturationVaporPressureHpa(req.temperature) * (1 - clamp(req.humidity, 0, 100) / 100);
-  const vpdFactor = clamp01(vpdHpa / VPD_SCALE_HPA);
+  const { score, factors } = scoreV4({
+    temperatureC: req.temperature,
+    humidityPct: req.humidity,
+    windKph: req.wind_speed,
+    kbdi: effectiveKbdi,
+    daysSinceRain: req.days_since_rain,
+    season: req.season,
+    ndviAnomaly: effectiveNdvi,
+  });
 
-  // Wind factor — power law (kph/40)^1.5 with 0.2 floor. The wire field
-  // `wind_speed` is km/h (matches api/routes/risk.py and /weather, and the
-  // web Risk Calculator's km/h slider) — no mph conversion.
-  const windKph = Math.max(0, req.wind_speed);
-  const windBase = Math.pow(windKph / WIND_SCALE_KPH, 1.5);
-  const windFactor = clamp(WIND_FLOOR + (1 - WIND_FLOOR) * windBase, WIND_FLOOR, 1);
-
-  // Drought factor — KBDI if supplied, else exp drying. 0.1 floor.
-  let droughtFactor: number;
-  if (effectiveKbdi != null) {
-    droughtFactor = clamp(DROUGHT_FLOOR + (1 - DROUGHT_FLOOR) * (effectiveKbdi / 800), DROUGHT_FLOOR, 1);
-  } else {
-    const expBase = 1 - Math.exp(-Math.max(0, req.days_since_rain) / DROUGHT_TAU_DAYS);
-    droughtFactor = clamp(DROUGHT_FLOOR + (1 - DROUGHT_FLOOR) * expBase, DROUGHT_FLOOR, 1);
-  }
-
-  // Seasonal/vegetation multiplier — NDVI overrides season when available.
-  // ndvi_factor = clamp(0.80 - anomaly, 0.40, 1.00). Sign convention:
-  // negative anomaly (drier than normal) → higher factor → higher risk.
-  const seasonal = effectiveNdvi != null
-    ? clamp(0.8 - effectiveNdvi, 0.4, 1)
-    : SEASON_MULT[req.season];
-
-  // V4 multiplicative
-  const raw = Math.pow(vpdFactor, EXP_VPD) * Math.pow(windFactor, EXP_WIND) * Math.pow(droughtFactor, EXP_DROUGHT);
-  const score = clamp01(seasonal * raw);
-
-  const level: RiskResponse['danger_level'] =
-    score < 0.3 ? 'LOW' :
-    score < 0.6 ? 'MODERATE' :
-    score < 0.8 ? 'HIGH' : 'EXTREME';
-
-  const thresholds = inferredState ? REGIONAL_THRESHOLDS[inferredState] : null;
+  const thresholds = thresholdsForState(inferredState ?? undefined);
   const regionalLevel = thresholds ? regionalBucket(score, thresholds) : null;
 
   return {
     risk_score: Number(score.toFixed(4)),
-    danger_level: level,
+    danger_level: globalDangerLevel(score),
     factors: {
-      vpd: Number(vpdFactor.toFixed(4)),
-      wind: Number(windFactor.toFixed(4)),
-      drought: Number(droughtFactor.toFixed(4)),
-      season: Number(seasonal.toFixed(4)),
+      vpd: Number(factors.vpd.toFixed(4)),
+      wind: Number(factors.wind.toFixed(4)),
+      drought: Number(factors.drought.toFixed(4)),
+      season: Number(factors.season.toFixed(4)),
     },
     regional_level: regionalLevel,
     regional_state: inferredState,
-    regional_thresholds: thresholds ?? null,
+    regional_thresholds: thresholds,
     kbdi: effectiveKbdi,
     ndvi_anomaly: effectiveNdvi,
   };
 }
-
-// Compact mirror of api/data/regional_thresholds.json — used only when
-// mocks are enabled so the Status calibration ladder still renders without
-// a backend. Trimmed to the four fields the UI actually reads.
-const MOCK_CALIBRATION: CalibrationInfo = {
-  version: 'v4',
-  fitted_at: '2026-05-31',
-  algorithm_version: 'v4-mock',
-  states_calibrated: ['AZ', 'CA', 'CO', 'FL', 'GA', 'NC', 'NV', 'WA'],
-  global_thresholds: { low: 0.3, moderate: 0.6, high: 0.8, extreme: 0.8 },
-  states: {
-    CA: { n_fires: 100, bbox: [-124, 32, -114, 42], centroid: [37, -120],
-          thresholds: { low: 0.25, moderate: 0.29, high: 0.33, extreme: 0.39 },
-          score_summary: { min: 0.06, median: 0.25, mean: 0.25, max: 0.45 } },
-    FL: { n_fires: 100, bbox: [-87, 24, -80, 31], centroid: [28, -83],
-          thresholds: { low: 0.20, moderate: 0.25, high: 0.30, extreme: 0.32 },
-          score_summary: { min: 0.08, median: 0.20, mean: 0.21, max: 0.37 } },
-    AZ: { n_fires: 100, bbox: [-115, 31, -109, 37], centroid: [34, -112],
-          thresholds: { low: 0.31, moderate: 0.37, high: 0.41, extreme: 0.45 },
-          score_summary: { min: 0.13, median: 0.31, mean: 0.30, max: 0.49 } },
-  },
-};
 
 // Mock trajectory — defaults to a 'rising' scenario consistent with
 // Berkeley's mock weather (slowly heating + drying through the afternoon).
@@ -465,7 +334,7 @@ export const mockApi = {
   health: () => delay({ ok: true }),
   fires: (_opts?: { days?: number; bbox?: string }) => delay(MOCK_FIRES),
   risk: (body: RiskRequest) => delay(computeMockRisk(body), 320),
-  riskCalibration: () => delay(MOCK_CALIBRATION, 120),
+  riskCalibration: () => delay(CALIBRATION_INFO, 120),
   trajectory: (_lat: number, _lon: number): Promise<TrajectoryResponse | null> =>
     delay(MOCK_TRAJECTORY, 280),
   ignition: (_lat: number, _lon: number): Promise<IgnitionResponse | null> =>

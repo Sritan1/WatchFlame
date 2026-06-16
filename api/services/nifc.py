@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from ..core.parse import safe_float, safe_int
+
 WFIGS_URL = (
     "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/"
     "WFIGS_Incident_Locations_Current/FeatureServer/0/query"
@@ -88,13 +90,17 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
         props = feat.get("properties") or {}
         geom = feat.get("geometry") or {}
         coords = geom.get("coordinates")
-        # Prefer geometry; fall back to InitialLat/Lon fields.
+        # Prefer geometry; fall back to InitialLat/Lon fields. Coordinates can
+        # be present-but-null on incidents with unset geometry, so coerce
+        # defensively and skip the single row rather than aborting the whole
+        # feed (the route swallows our exceptions via gather()).
+        lon = lat = None
         if coords and len(coords) >= 2:
-            lon, lat = float(coords[0]), float(coords[1])
-        elif props.get("InitialLatitude") and props.get("InitialLongitude"):
-            lat = float(props["InitialLatitude"])
-            lon = float(props["InitialLongitude"])
-        else:
+            lon, lat = safe_float(coords[0]), safe_float(coords[1])
+        if lat is None or lon is None:
+            lat = safe_float(props.get("InitialLatitude"))
+            lon = safe_float(props.get("InitialLongitude"))
+        if lat is None or lon is None:
             continue
         name = (props.get("IncidentName") or "").strip() or "Unnamed incident"
         raw_rows.append(
@@ -103,9 +109,9 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
                 "name": name,
                 "lat": lat,
                 "lon": lon,
-                "acres": _safe_float(props.get("IncidentSize")),
-                "contained_pct": _safe_float(props.get("PercentContained")),
-                "personnel": _safe_int(props.get("TotalIncidentPersonnel")),
+                "acres": safe_float(props.get("IncidentSize")),
+                "contained_pct": safe_float(props.get("PercentContained")),
+                "personnel": safe_int(props.get("TotalIncidentPersonnel")),
                 "cause": props.get("FireCause"),
                 "discovered": _iso_from_arcgis(props.get("FireDiscoveryDateTime")),
                 "agency": props.get("POOJurisdictionalAgency"),
@@ -120,20 +126,6 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
 
 def _to_inc(r: dict[str, Any]) -> NifcIncident:
     return NifcIncident(**r)
-
-
-def _safe_float(v: Any) -> float | None:
-    try:
-        return float(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_int(v: Any) -> int | None:
-    try:
-        return int(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
 
 
 def _iso_from_arcgis(v: Any) -> str | None:

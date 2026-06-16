@@ -7,7 +7,9 @@ visualization.
 Request: GET /trajectory?lat=&lon=
 Response: see TrajectoryResponse below.
 """
+import asyncio
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
@@ -39,12 +41,14 @@ class TrajectoryResponse(BaseModel):
     score from `now` to `projected`; `dominant_driver` names the input
     that shifted the most ("vpd" / "wind" / "humidity") so the UI can
     surface a one-line context like "VPD up 18% by 3pm"."""
-    tier: str = Field(..., description="rising | steady | falling")
+    tier: Literal["rising", "steady", "falling"] = Field(
+        ..., description="rising | steady | falling"
+    )
     delta_pct: float
     horizon_hours: int
     now: TrajectoryFrameOut
     projected: TrajectoryFrameOut
-    dominant_driver: str
+    dominant_driver: Literal["vpd", "wind", "humidity"]
     # Hour-by-hour series (now .. +horizon_hours). frames[0] == now and
     # frames[-1] == projected; powers the phase-space hour-by-hour curve.
     frames: list[TrajectoryFrameOut]
@@ -71,13 +75,18 @@ async def get_trajectory(
     # Both move on timescales >> 6 hr (KBDI integrates daily; NDVI
     # cadence is multi-day). Using the same value for now and projected
     # means the score delta reflects only the meteorological trajectory.
-    kbdi_info = await fetch_kbdi_today(lat, lon)
+    #
+    # These three fetches are independent of each other, so fan them out
+    # concurrently (same pattern as the /risk route) instead of serially —
+    # on a cold NDVI cache the serial path is ~12-22s per Status load.
+    # NDVI anomaly = current - same-month climatology; climatology cache is
+    # keyed by month, mirroring the /risk pipeline.
+    kbdi_info, ndvi_now, ndvi_clim = await asyncio.gather(
+        fetch_kbdi_today(lat, lon),
+        get_ndvi_current(lat, lon),
+        get_ndvi_climatology(lat, lon, date.today().month),
+    )
     kbdi = float(kbdi_info["kbdi"]) if kbdi_info else None
-
-    # NDVI anomaly = current - same-month climatology. Climatology cache
-    # is keyed by month, mirroring the /risk pipeline.
-    ndvi_now = await get_ndvi_current(lat, lon)
-    ndvi_clim = await get_ndvi_climatology(lat, lon, date.today().month)
     ndvi_anomaly: float | None = None
     if ndvi_now is not None and ndvi_clim is not None:
         ndvi_anomaly = float(ndvi_now - ndvi_clim)
