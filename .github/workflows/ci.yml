@@ -22,6 +22,8 @@ jobs:
       - name: Install dependencies
         # Dev file = prod (requirements.txt) + test/lint/audit/notebook tooling.
         run: pip install -r api/requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check api/
       - name: Run tests
         run: python -m pytest api/ -q
       - name: Dependency audit (advisory)
@@ -56,6 +58,16 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Type-check
         run: npx tsc --noEmit
+      - name: Lint (advisory)
+        # eslint surfaces issues (incl. the new react-hooks/set-state-in-effect
+        # rule) but isn't a merge gate yet — several findings are legitimate
+        # localStorage-hydration patterns pending a dedicated cleanup.
+        continue-on-error: true
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: npm audit --audit-level=high

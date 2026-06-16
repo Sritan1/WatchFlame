@@ -442,6 +442,7 @@ export function HeroScorePanel({
             data={CALIBRATION_INFO}
             userState={region}
             userScore={score}
+            liveLocation={false}
           />
         </div>
       </Modal>

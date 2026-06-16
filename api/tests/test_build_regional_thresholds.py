@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from scripts.build_regional_thresholds import run_calibration, write_progress
 

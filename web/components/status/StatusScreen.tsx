@@ -985,6 +985,12 @@ function Thermometer({
   );
 }
 
+/** Title-case a string — uppercase the first letter of each word. OWM returns
+ *  the weather description all-lowercase ("scattered clouds"). */
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function HumidityCard({
   humidity,
   conditions,
@@ -1122,7 +1128,7 @@ function HumidityCard({
               }}
             >
               Conditions:{' '}
-              <span style={{ color: ae.text, fontWeight: 600 }}>{conditions}</span>.
+              <span style={{ color: ae.text, fontWeight: 600 }}>{titleCase(conditions)}</span>.
             </span>
           </div>
         ) : isLoading ? (
