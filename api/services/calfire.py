@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from ..core.parse import safe_float
+
 CALFIRE_URL = "https://incidents.fire.ca.gov/umbraco/api/IncidentApi/List"
 
 _CACHE: dict[str, Any] = {"ts": 0.0, "data": []}
@@ -93,8 +95,8 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
                 "name": (inc.get("Name") or "Unnamed incident").strip(),
                 "lat": lat,
                 "lon": lon,
-                "acres": _safe_float(inc.get("AcresBurned")),
-                "contained_pct": _safe_float(inc.get("PercentContained")),
+                "acres": safe_float(inc.get("AcresBurned")),
+                "contained_pct": safe_float(inc.get("PercentContained")),
                 "started": inc.get("Started") or inc.get("StartedDateOnly"),
                 "county": inc.get("County"),
                 "location": inc.get("Location"),
@@ -114,8 +116,3 @@ def _to_inc(r: dict[str, Any]) -> CalFireIncident:
     return CalFireIncident(**r)
 
 
-def _safe_float(v: Any) -> float | None:
-    try:
-        return float(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None

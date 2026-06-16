@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from ..core.geo import bbox_around, in_us
+
 NCES_FEATURESERVER = (
     "https://services1.arcgis.com/Ua5sjt3LWTPigjyD/arcgis/rest/services/"
     "Public_School_Locations_Current/FeatureServer/0/query"
@@ -31,15 +33,6 @@ def _ttl() -> int:
     return int(os.getenv("NCES_CACHE_TTL_SECONDS", "3600"))
 
 
-# US bbox guard (matches overpass.py)
-_US_BBOX = (-180.0, 18.0, -66.0, 72.0)
-
-
-def _in_us(lat: float, lon: float) -> bool:
-    minLon, minLat, maxLon, maxLat = _US_BBOX
-    return minLat <= lat <= maxLat and minLon <= lon <= maxLon
-
-
 @dataclass
 class School:
     id: str
@@ -49,22 +42,12 @@ class School:
     address: str | None
 
 
-def _bbox_around(lat: float, lon: float, radius_mi: float) -> tuple[float, float, float, float]:
-    """Square-ish bbox in degrees around a point. Approximate — the API filters
-    by intersecting envelope, so over-fetching slightly is fine."""
-    # 1 degree latitude ≈ 69 mi; longitude depends on lat.
-    import math
-    dLat = radius_mi / 69.0
-    dLon = radius_mi / (69.0 * max(math.cos(math.radians(lat)), 0.1))
-    return (lon - dLon, lat - dLat, lon + dLon, lat + dLat)
-
-
 async def fetch_schools(
     lat: float,
     lon: float,
     radius_mi: float = 50.0,
 ) -> list[School]:
-    if not _in_us(lat, lon):
+    if not in_us(lat, lon):
         return []
 
     cache_key = f"{round(lat, 2)}|{round(lon, 2)}|{round(radius_mi)}"
@@ -73,7 +56,7 @@ async def fetch_schools(
     if cached and now - cached[0] < _ttl():
         return [_to_school(r) for r in cached[1]]
 
-    minLon, minLat, maxLon, maxLat = _bbox_around(lat, lon, radius_mi)
+    minLon, minLat, maxLon, maxLat = bbox_around(lat, lon, radius_mi)
     params = {
         "where": "1=1",
         "geometry": f"{minLon},{minLat},{maxLon},{maxLat}",
@@ -112,6 +95,13 @@ async def fetch_schools(
         coords = geom.get("coordinates")
         if not coords or len(coords) < 2:
             continue
+        # Coordinates can be present-but-null for a school with unset geometry;
+        # skip the row rather than aborting the whole feed (the route swallows
+        # our exceptions via gather()).
+        try:
+            lat, lon = float(coords[1]), float(coords[0])
+        except (TypeError, ValueError):
+            continue
         addr_parts = []
         if props.get("STREET"):
             addr_parts.append(str(props["STREET"]).strip())
@@ -123,8 +113,8 @@ async def fetch_schools(
             {
                 "id": str(props.get("NCESSCH") or feat.get("id") or ""),
                 "name": (props.get("NAME") or "Public school").strip(),
-                "lat": float(coords[1]),
-                "lon": float(coords[0]),
+                "lat": lat,
+                "lon": lon,
                 "address": ", ".join(addr_parts) or None,
             }
         )

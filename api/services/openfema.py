@@ -108,13 +108,18 @@ async def fetch_active_for_county(
     for s in summaries:
         area = (s.get("designatedArea") or "").lower()
         if needle and needle in area:
-            num = s.get("disasterNumber")
+            # disasterNumber can be null/non-numeric on a matched record; skip
+            # rather than raising out of the whole parse loop.
+            try:
+                num = int(s.get("disasterNumber"))
+            except (TypeError, ValueError):
+                continue
             if num in seen_disasters:
                 continue
             seen_disasters.add(num)
             matched.append(
                 {
-                    "disaster_number": int(num),
+                    "disaster_number": num,
                     "declaration_type": s.get("declarationType") or "",
                     "declaration_date": s.get("declarationDate") or "",
                     "incident_type": s.get("incidentType") or "",

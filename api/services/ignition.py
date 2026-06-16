@@ -134,8 +134,11 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
     raw = await _fetch_window(lat, lon)
     result: dict[str, Any] | None = None
     times = (raw or {}).get("daily", {}).get("time", []) if raw else []
-    if raw is not None and times:
-        target = date.fromisoformat(times[-1])  # latest available archived day
+    try:
+        target = date.fromisoformat(times[-1]) if times else None  # latest archived day
+    except (TypeError, ValueError):
+        target = None  # malformed time entry → degrade to null, per contract
+    if raw is not None and target is not None:
         s = summarize_window_with_kbdi(raw, target)  # SAME function as training
         if all(s.get(c) is not None for c in _CORE):
             doy = target.timetuple().tm_yday

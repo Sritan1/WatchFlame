@@ -336,6 +336,28 @@ def test_get_state_calibration_missing_threshold_key_returns_none(monkeypatch):
     assert rc.get_state_calibration("PARTIAL") is None
 
 
+def test_regional_level_partial_thresholds_falls_back_to_global(monkeypatch):
+    """Regression: regional_level only truthiness-checked `thresholds`, but
+    _bucket indexes low/moderate/extreme directly — a truthy-but-incomplete
+    block (stale/partial JSON) KeyError'd into a 500 on /risk. It must instead
+    fall back to global cutoffs, mirroring lookup_state's defensiveness."""
+    _install_fake_data(
+        monkeypatch,
+        states={
+            "PARTIAL": {
+                "bbox": [-120, 35, -110, 45],
+                "centroid": [40, -115],
+                "thresholds": {"low": 0.20, "moderate": 0.45},  # missing extreme
+            },
+        },
+        global_t={"low": 0.3, "moderate": 0.6, "high": 0.8, "extreme": 1.0},
+    )
+    # Point squarely inside PARTIAL's bbox: must NOT raise, must use globals.
+    level, state = rc.regional_level(0.55, 40.0, -115.0)
+    assert state is None
+    assert level == "MODERATE"  # 0.3 ≤ 0.55 < 0.6 in globals
+
+
 def test_loader_handles_missing_file(tmp_path, monkeypatch):
     # Point _DATA_PATH at a non-existent file and call _load() directly.
     # We don't importlib.reload — that re-runs module-level code and would

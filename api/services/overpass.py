@@ -23,6 +23,8 @@ from typing import Any
 
 import httpx
 
+from ..core.geo import in_us
+
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
@@ -93,15 +95,6 @@ def _shelter_type_for(tags: dict[str, str]) -> str | None:
 
 # ----- US bbox guard --------------------------------------------------------
 
-# Generous bbox covering all 50 states + territories.
-_US_BBOX = (-180.0, 18.0, -66.0, 72.0)  # (minLon, minLat, maxLon, maxLat)
-
-
-def _in_us(lat: float, lon: float) -> bool:
-    minLon, minLat, maxLon, maxLat = _US_BBOX
-    return minLat <= lat <= maxLat and minLon <= lon <= maxLon
-
-
 # ----- Public API -----------------------------------------------------------
 
 @dataclass
@@ -124,7 +117,7 @@ async def fetch_shelters(
     Returns up to ~hundreds of nodes; the route handler will sort by distance
     and trim. Caching is by (rounded lat, rounded lon, rounded radius).
     Outside US returns []."""
-    if not _in_us(lat, lon):
+    if not in_us(lat, lon):
         return []
 
     radius_m = int(min(max(radius_km, 5.0), 200.0) * 1000)
@@ -177,12 +170,18 @@ out body 600;
         kind = _shelter_type_for(tags)
         if kind is None:
             continue
+        # A node missing/with non-numeric lat/lon would abort the whole parse
+        # (the route swallows our exceptions via gather()); skip the row instead.
+        try:
+            lat, lon = float(el["lat"]), float(el["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
         raw_rows.append(
             {
                 "id": str(el.get("id")),
                 "name": tags.get("name") or tags.get("operator") or kind,
-                "lat": float(el["lat"]),
-                "lon": float(el["lon"]),
+                "lat": lat,
+                "lon": lon,
                 "type": kind,
                 "tags": tags,
             }
