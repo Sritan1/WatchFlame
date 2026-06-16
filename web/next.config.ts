@@ -15,6 +15,10 @@ const API_ORIGIN = (() => {
 
 const MAPTILER = "https://api.maptiler.com https://*.maptiler.com";
 
+// 'unsafe-eval' is needed only by the dev toolchain (HMR / react-refresh). The
+// production bundle doesn't use eval, so keep it OUT of the prod CSP.
+const DEV = process.env.NODE_ENV !== "production";
+
 // Content-Security-Policy. Shipped as *report-only* for now: the app relies on
 // MapTiler tiles + browser geolocation + Next's inline hydration bootstrap, so
 // this is enforced only after verifying zero console violations in a real
@@ -26,8 +30,9 @@ const csp = [
   "frame-ancestors 'none'",
   "form-action 'self'",
   `img-src 'self' data: blob: ${MAPTILER}`,
-  // 'unsafe-inline' for Next's hydration bootstrap; 'unsafe-eval' for dev only.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // 'unsafe-inline' for Next's inline hydration bootstrap; 'unsafe-eval' is
+  // added in dev only (HMR), never in production.
+  `script-src 'self' 'unsafe-inline'${DEV ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   `connect-src 'self' ${API_ORIGIN} ${MAPTILER}`.trim(),
