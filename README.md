@@ -252,7 +252,7 @@ pip install -r api/requirements-dev.txt   # prod deps + tests/lint/notebooks
 
 copy api\.env.example api\.env     # fill in OWM_API_KEY, FIRMS_API_KEY, CDSE_*
 
-python -m pytest api/ -q           # → 150 passed
+python -m pytest api/ -q           # → 153 passed
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 # → http://localhost:8000/docs   (Swagger UI)
 ```
@@ -291,7 +291,7 @@ npm run dev
 │   ├── services/             # Async clients per upstream (firms, owm, cdse, ignition, landcover, …)
 │   ├── models/               # Committed ignition-model artifact (joblib)
 │   ├── data/                 # regional_thresholds.json + backups
-│   └── tests/                # 150 backend tests
+│   └── tests/                # 153 backend tests
 ├── web/                      # Next.js 16 web app (primary surface)
 │   ├── app/                  #   App Router pages
 │   ├── components/           #   Screen + UI components
@@ -307,12 +307,14 @@ npm run dev
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m pytest api/ -q       # → 150 passed
+python -m pytest api/ -q       # → 153 passed
 ```
 
-Backend coverage spans algorithm correctness (factor floors, KBDI/NDVI overrides, score-bounds sweeps), the KBDI and NDVI math, regional-calibration lookup (including the Reno border-overlap regression), Open-Meteo fetch resilience across 200/4xx/429, the FEMA NSS shelter parser, the calibration build script (circuit breaker + incremental save), end-to-end route tests against every endpoint with mocked upstreams, and a security suite (CORS/config fail-fast, input + bbox validation, rate limiting, safe errors). CI also runs `pip-audit`, `npm audit`, and `gitleaks` — see [SECURITY.md](SECURITY.md).
+Backend coverage spans algorithm correctness (factor floors, KBDI/NDVI overrides, score-bounds sweeps), the KBDI and NDVI math, regional-calibration lookup (including the Reno border-overlap regression and partial-threshold fallback), Open-Meteo fetch resilience across 200/4xx/429, defensive parsing of malformed upstream rows, the FEMA NSS shelter parser, the calibration build script (circuit breaker + incremental save), end-to-end route tests against every endpoint with mocked upstreams, and a security suite (CORS/config fail-fast, input + bbox validation, rate limiting, safe errors).
 
-The frontend uses TypeScript strict mode. Type-check with `cd web && npx tsc --noEmit`.
+The frontend is TypeScript strict (`tsc --noEmit`) plus a **Vitest** suite over the pure logic — the composite/threat math, the offline V4 scorer, confidence, and FEMA matching — including a **Python→TypeScript parity test** that asserts the in-browser scorer reproduces the backend's `compute_risk` exactly (fixture from `scripts/export_v4_fixture.py`). Run with `cd web && npm test`.
+
+CI gates on `ruff` + backend tests (api), and `tsc` + Vitest + a production `next build` (web); `eslint`, `pip-audit`, `npm audit`, and `gitleaks` run as advisory/secret-scan checks — see [SECURITY.md](SECURITY.md).
 
 ---
 

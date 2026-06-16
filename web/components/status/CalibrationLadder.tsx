@@ -69,6 +69,7 @@ export function CalibrationLadder({
   data,
   userState,
   userScore,
+  liveLocation = true,
 }: {
   data: CalibrationInfo;
   /** State code (e.g. "CA") for the user's current location. Null when the
@@ -76,6 +77,12 @@ export function CalibrationLadder({
   userState: string | null;
   /** User's current raw V4 score. Null while risk data is loading. */
   userScore: number | null;
+  /** True (default) when userState comes from an auto-resolved live location
+   *  (Status), so a null state with no score yet means "still resolving".
+   *  Pass false for the what-if calculator — the region is an explicit choice
+   *  and a score is always present, so the "unresolved" copy never applies and
+   *  the footnote always reads as either the global cutoffs or a picked state. */
+  liveLocation?: boolean;
 }) {
   const { ae } = useAesthetic();
 
@@ -99,6 +106,12 @@ export function CalibrationLadder({
   const userIsCalibrated =
     userState != null && Boolean(data.states[userState]);
 
+  // With no calibrated home row (Global, or a not-yet-fitted state), draw the
+  // score marker on EVERY row so the reader sees where their score lands in
+  // each state. A calibrated state pins the marker to just its row. Never drawn
+  // while the score is unresolved.
+  const showAllMarkers = userScore != null && !userIsCalibrated;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {/* Header strip — anchors the vertical alignment of the score chip
@@ -110,27 +123,67 @@ export function CalibrationLadder({
         userScore={userScore}
       />
 
-      {/* State rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {ordered.map((s) => (
-          <LadderRow
-            key={s.code}
-            ae={ae}
-            code={s.code}
-            thresholds={s.thresholds}
-            isUser={s.code === userState}
-            userScore={userScore}
-          />
-        ))}
+      {/* State rows. With a calibrated state picked, that row shows its own
+          score dash. In Global mode (no single home state) a single straight
+          line is overlaid across every row at the score's position instead of
+          a separate dash per row. */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {ordered.map((s) => (
+            <LadderRow
+              key={s.code}
+              ae={ae}
+              code={s.code}
+              thresholds={s.thresholds}
+              isUser={s.code === userState}
+              userScore={userScore}
+              showMarker={s.code === userState}
+            />
+          ))}
+        </div>
+        {showAllMarkers && userScore != null ? (
+          // Overlay grid mirrors the row template (incl. the rows' 8px h-padding)
+          // so the line lands exactly in the bar column. Spans top→bottom for a
+          // single continuous straight line through all states.
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              padding: '0 8px',
+              display: 'grid',
+              gridTemplateColumns: ROW_TEMPLATE,
+              columnGap: ROW_GAP,
+              pointerEvents: 'none',
+            }}
+          >
+            <span />
+            <div style={{ position: 'relative' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(100, Math.max(0, userScore * 100))}%`,
+                  top: 0,
+                  bottom: 0,
+                  transform: 'translateX(-50%)',
+                  width: 2.5,
+                  borderRadius: 99,
+                  background: '#fff',
+                  boxShadow: '0 0 10px rgba(255,255,255,0.45)',
+                }}
+              />
+            </div>
+            <span />
+          </div>
+        ) : null}
       </div>
 
-      {/* Global-fallback footnote when the user isn't in one of the 17 */}
-      {!userIsCalibrated && userState == null ? (
-        <p style={{ ...captionStyle(ae), marginTop: 14 }}>
-          Your location hasn&apos;t resolved yet — once it does, your state&apos;s
-          row will be highlighted.
-        </p>
-      ) : !userIsCalibrated ? (
+      {/* Footnote when no fitted-state row is highlighted. A calibrated state
+          needs none (its row is highlighted). Otherwise: a resolved-but-not-yet-
+          fitted state names itself; a genuinely unresolved LIVE location (no
+          score yet) says so; everything else (Global / the what-if calculator)
+          reads as the global cutoffs. */}
+      {userIsCalibrated ? null : userState != null ? (
         <p style={{ ...captionStyle(ae), marginTop: 14 }}>
           {userState} isn&apos;t one of the 17 fitted states yet. Your score
           buckets via the global cutoffs (LOW &lt;{data.global_thresholds.low.toFixed(2)} ·
@@ -138,7 +191,19 @@ export function CalibrationLadder({
           EXT &ge;{data.global_thresholds.extreme.toFixed(2)}) until calibration
           extends to your region.
         </p>
-      ) : null}
+      ) : liveLocation && userScore == null ? (
+        <p style={{ ...captionStyle(ae), marginTop: 14 }}>
+          Your location hasn&apos;t resolved yet — once it does, your state&apos;s
+          row will be highlighted.
+        </p>
+      ) : (
+        <p style={{ ...captionStyle(ae), marginTop: 14 }}>
+          No state calibration applies — your score buckets via the global
+          cutoffs (LOW &lt;{data.global_thresholds.low.toFixed(2)} ·
+          MOD &lt;{data.global_thresholds.moderate.toFixed(2)} ·
+          EXT &ge;{data.global_thresholds.extreme.toFixed(2)}).
+        </p>
+      )}
     </div>
   );
 }
@@ -207,12 +272,16 @@ function LadderRow({
   thresholds,
   isUser,
   userScore,
+  showMarker,
 }: {
   ae: ReturnType<typeof useAesthetic>['ae'];
   code: string;
   thresholds: StateCalibration['thresholds'];
   isUser: boolean;
   userScore: number | null;
+  /** Draw the score marker on this row. True for the home row, or for every
+   *  row in Global mode; always false while the score is unresolved. */
+  showMarker: boolean;
 }) {
   const segments = stateSegments(thresholds);
   const tier = tierAt(userScore, thresholds);
@@ -293,8 +362,9 @@ function LadderRow({
           })}
         </div>
 
-        {/* Score marker — only on the user's home row, in the user's tier color */}
-        {isUser && userScore != null ? (
+        {/* Score marker — on the home row, or on every row in Global mode
+            (no single home state). Hidden while the score is unresolved. */}
+        {showMarker && userScore != null ? (
           <div
             style={{
               position: 'absolute',
