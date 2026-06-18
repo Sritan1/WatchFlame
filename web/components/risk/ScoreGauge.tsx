@@ -55,9 +55,23 @@ export function ScoreGauge({
 
   const markerX = pad + Math.min(1, Math.max(0, score)) * innerW;
 
+  // Which band the score lands in — for the text alternative. Mirrors the
+  // boundary math above (LOW < low, MOD < moderate, HIGH < extreme, else EXT).
+  const activeZone =
+    zones.find((z) => score < z.until) ?? zones[zones.length - 1];
+
   return (
     <div style={{ position: 'relative', width: W, maxWidth: '100%', height: H, margin: '0 auto' }}>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+      {/* role="img" + aria-label collapses the SVG's loose LOW/MOD/HIGH/EXT/SCORE
+          text fragments into one meaningful announcement for screen readers. */}
+      <svg
+        width="100%"
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label={`Risk score ${score.toFixed(2)} of 1.00 — ${activeZone.label} band.`}
+      >
         {segments.map((s, i) => {
           const x = pad + s.from * innerW;
           const rgb = hexRgb(s.color);

@@ -371,6 +371,7 @@ export function RiskScreen() {
         </SectionEyebrow>
 
         <div
+          className="app-stack"
           style={{
             // Asymmetric editorial split — the score panel reads as the
             // headline, the factor breakdown as a side caption. Pushing the
@@ -448,7 +449,7 @@ export function RiskScreen() {
          *  sticky side rail. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Row 1: three numeric sliders side-by-side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          <div className="app-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             {/* Slider state is stored in °C/mph (backend's expected units).
              *  Display-only conversion: when units.temp === 'F' the slider's
              *  value, min, max are converted to °F and reads of onChange are
@@ -496,7 +497,7 @@ export function RiskScreen() {
 
           {/* Row 2: vegetation (left) + drought (right) — order matches the
            *  reference. Both have segmented mode toggles + amber callouts. */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="app-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <VegetationPanel
               mode={vegMode}
               onModeChange={setVegMode}

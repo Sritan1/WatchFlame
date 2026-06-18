@@ -6,6 +6,7 @@
 // control well. Important Notice + About are full-bleed variants.
 // No auth/profile yet, so this is the limit of mutable preferences.
 
+import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
@@ -282,6 +283,22 @@ export function SettingsScreen() {
               body="An independent, informational tool — not a commercial or operational emergency service. No SLA, no guarantee of accuracy, and no on-call team behind it."
             />
           </div>
+          <p
+            style={{
+              marginTop: 14,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              letterSpacing: '0.04em',
+              color: ae.textDim,
+            }}
+          >
+            Full details:{' '}
+            <Link href="/terms" style={{ color: WARN }}>Terms of Use</Link>
+            {' · '}
+            <Link href="/privacy" style={{ color: WARN }}>Privacy Policy</Link>
+            {' · '}
+            <Link href="/accessibility" style={{ color: WARN }}>Accessibility</Link>
+          </p>
         </SettingsRow>
 
         {/* ───── Data sources (full-bleed) ─────────────────────── */}
@@ -475,6 +492,7 @@ function SettingsRow({
       />
 
       <div
+        className="app-stack"
         style={{
           display: 'grid',
           gridTemplateColumns: fullBleed

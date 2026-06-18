@@ -98,6 +98,10 @@ export function LocalNdviCard({
                 display: 'flex',
                 alignItems: 'baseline',
                 justifyContent: 'space-between',
+                // Wrap so the level pill drops below the value instead of being
+                // clipped by the card's overflow on narrow (mobile) widths. The
+                // ≥380px desktop card has room, so it never wraps there.
+                flexWrap: 'wrap',
                 gap: 12,
               }}
             >

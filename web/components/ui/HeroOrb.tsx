@@ -61,6 +61,7 @@ export function HeroOrb({
   score,
   thresholds,
   pulseSpeed = 70,
+  ariaLabel,
 }: {
   risk: RiskLevel;
   /** Actual numeric risk score 0–1. When provided, drives the arc fill so
@@ -72,6 +73,9 @@ export function HeroOrb({
    *  pegs the dial at 97% even though absolute score is lower). */
   thresholds?: RegionalThresholds | null;
   pulseSpeed?: number;
+  /** Text alternative for assistive tech. When set, the orb is announced as a
+   *  single labeled image (role="img") instead of its meaningless SVG tree. */
+  ariaLabel?: string;
 }) {
   const { ae, accent } = useAesthetic();
   const r = getRisk(risk, accent);
@@ -122,6 +126,8 @@ export function HeroOrb({
   return (
     <CursorParallax strength={8}>
       <div
+        role={ariaLabel ? 'img' : undefined}
+        aria-label={ariaLabel}
         style={{
           position: 'relative',
           width: SIZE,
