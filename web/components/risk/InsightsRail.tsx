@@ -91,6 +91,7 @@ export function InsightsRail({
       />
 
       <div
+        className="app-stack"
         style={{
           position: 'relative',
           zIndex: 1,

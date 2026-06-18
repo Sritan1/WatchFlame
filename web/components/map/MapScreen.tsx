@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { FilterChips, type FireFilter } from '@/components/map/FilterChips';
-import { IncidentsRail } from '@/components/map/IncidentsRail';
+import { IncidentsRail, type RailTab } from '@/components/map/IncidentsRail';
 import type { MapSelection } from '@/components/map/MapImpl';
 import { severityOf } from '@/components/status/ClosestFiresList';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -78,6 +78,9 @@ export function MapScreen() {
 
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [filter, setFilter] = useState<FireFilter>('all');
+  // Which feed the right rail's list is showing. Lifted here (not local to the
+  // rail) so a selection made ON THE MAP can surface the matching tab.
+  const [railTab, setRailTab] = useState<RailTab>('incidents');
 
   // Map state for the floating scale bar. Defaults to MapImpl's initial
   // (zoom 8 at the user's center) so the bar renders correctly even before
@@ -137,21 +140,50 @@ export function MapScreen() {
     [fires, filter],
   );
 
-  // Clear selection if the selected incident was filtered out (only applies
-  // to incident selections — satellite selections aren't filtered). Done in
-  // an effect, not a render-phase queueMicrotask, so it doesn't schedule a
+  // Clear a selection that's no longer valid for the current data. Done in an
+  // effect (not a render-phase queueMicrotask) so it doesn't schedule a
   // setState on every render while the condition holds.
+  //   - incident: cleared when it's filtered out of `visibleFires`.
+  //   - satellite ('fire'): cleared when its pixel is no longer in the FIRMS
+  //     feed — e.g. after changing location. Without this the detail footer
+  //     lingers with a distance measured to the OLD pixel from the NEW
+  //     location (thousands of miles). Matched by coordinate since a refetch
+  //     returns fresh FireFeature objects (no reference equality).
   useEffect(() => {
-    if (
-      selection?.kind === 'incident' &&
-      !visibleFires.find((f) => f.id === selection.id)
-    ) {
-      setSelection(null);
+    if (!selection) return;
+    if (selection.kind === 'incident') {
+      if (!visibleFires.find((f) => f.id === selection.id)) setSelection(null);
+      return;
     }
-  }, [selection, visibleFires]);
+    const { lat, lon } = selection.feature.properties;
+    const stillPresent = satellites.some(
+      (s) => s.properties.lat === lat && s.properties.lon === lon,
+    );
+    if (!stillPresent) setSelection(null);
+  }, [selection, visibleFires, satellites]);
+
+  // Surface the rail tab that matches what's selected on the map, so the
+  // selected item's card is in view (and gets auto-scrolled into focus). Only
+  // reacts to an actual selection change — tapping the rail tabs to browse
+  // still wins, since that doesn't alter `selection`.
+  useEffect(() => {
+    if (selection?.kind === 'fire') setRailTab('hotspots');
+    else if (selection?.kind === 'incident') setRailTab('incidents');
+  }, [selection]);
+
+  // Manually switching the rail's feed tab clears the current selection: the
+  // detail footer belongs to the feed you were viewing, so it'd be stale (and
+  // the wrong kind) against the feed you just switched to. Map-pin selections
+  // surface their tab via the effect above — NOT through this handler — so they
+  // keep their selection.
+  const changeRailTab = (t: RailTab) => {
+    if (t !== railTab) setSelection(null);
+    setRailTab(t);
+  };
 
   return (
     <div
+      className="app-map-layout"
       style={{
         position: 'relative',
         width: '100%',
@@ -304,7 +336,10 @@ export function MapScreen() {
           incidentsQ.refetch();
           firesQ.refetch();
         }}
-        satelliteCount={satellites.length}
+        satellites={satellites}
+        satellitesLoading={firesQ.isLoading}
+        tab={railTab}
+        onTabChange={changeRailTab}
         userCoords={loc.coords}
         radiusMi={INCIDENT_RADIUS_MI}
       />
