@@ -327,6 +327,7 @@ export function StatusScreen() {
 
           {/* 2-col: orb left, headline + subtitle + CTAs right */}
           <div
+            className="app-stack"
             style={{
               display: 'grid',
               gridTemplateColumns: 'minmax(380px, 480px) 1fr',
@@ -354,6 +355,15 @@ export function StatusScreen() {
                 score={compositeScore}
                 thresholds={null}
                 pulseSpeed={70}
+                ariaLabel={
+                  compositeReady
+                    ? `Overall wildfire risk: ${compositeBucket.toUpperCase()}${
+                        compositeScore != null
+                          ? `, composite index ${Math.round(compositeScore * 100)} of 100`
+                          : ''
+                      }.`
+                    : 'Overall wildfire risk: loading.'
+                }
               />
             </div>
 
@@ -453,24 +463,13 @@ export function StatusScreen() {
                   gap: 14,
                 }}
               >
-                {risk.data?.regional_level && risk.data?.regional_state ? (
-                  <button
-                    type="button"
-                    onClick={() => setCalibOpen(true)}
-                    className="ember-fade-up"
-                    aria-label="What does calibrated for this state mean?"
-                    style={metaTriggerStyle(ae, '500ms')}
-                  >
-                    Calibrated for {risk.data.regional_state}
-                    {risk.data.regional_level !== risk.data.danger_level
-                      ? ` · national: ${risk.data.danger_level}`
-                      : ''}
-                    <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
-                  </button>
-                ) : null}
+                {/* "Calibrated for <state>" moved into the Fire Weather card
+                    (HeroScoreCard) — next to the fire-weather score it actually
+                    describes — since here, beside the composite headline, it
+                    misleadingly read as explaining the composite tier. */}
 
-                {/* Sibling trigger — opens the matrix explainer. Always
-                    available; doesn't require regional calibration. */}
+                {/* Opens the matrix explainer. Always available; doesn't require
+                    regional calibration. */}
                 {compositeReady ? (
                   <button
                     type="button"
@@ -540,11 +539,26 @@ export function StatusScreen() {
                 : { low: 0.3, moderate: 0.6, extreme: 0.8 },
               scoreMax: risk.data?.regional_thresholds?.score_max ?? 1.0,
               caption: risk.data?.regional_state
-                ? `Calibrated for ${risk.data.regional_state} — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.`
+                ? 'Fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.'
                 : 'Global thresholds — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.',
               emptyText: '—',
               isLoading: !compositeReady,
               howCalculatedHref: '/risk',
+              // "Calibrated for <state>" lives HERE (next to the fire-weather
+              // score it describes) instead of by the composite headline, where
+              // it misleadingly read as explaining the composite tier.
+              calibrationLabel:
+                risk.data?.regional_level && risk.data?.regional_state
+                  ? `Calibrated for ${risk.data.regional_state}${
+                      risk.data.regional_level !== risk.data.danger_level
+                        ? ` · national: ${risk.data.danger_level}`
+                        : ''
+                    }`
+                  : undefined,
+              onCalibration:
+                risk.data?.regional_level && risk.data?.regional_state
+                  ? () => setCalibOpen(true)
+                  : undefined,
             }}
             threat={{
               score: anyFireInRange ? threatSignal : null,
@@ -598,7 +612,7 @@ export function StatusScreen() {
           </SectionEyebrow>
         </div>
         <div
-          className="ember-fade-up"
+          className="ember-fade-up app-stack"
           style={{
             display: 'grid',
             gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)',
@@ -632,7 +646,7 @@ export function StatusScreen() {
           </SectionEyebrow>
         </div>
         <div
-          className="ember-fade-up"
+          className="ember-fade-up app-stack"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
@@ -734,6 +748,7 @@ function BlockingErrorOverlay({
   return (
     <div
       role="presentation"
+      className="app-left-inset"
       style={{
         // Cover the content area only (left offset = Shell's 248px sidebar
         // gutter) so the failure is non-dismissible over Status but the sidebar
@@ -1226,6 +1241,7 @@ function StatusBackdrop({ risk }: { risk: RiskLevel }) {
   return (
     <div
       aria-hidden
+      className="app-left-inset"
       style={{
         position: 'fixed',
         top: 0,

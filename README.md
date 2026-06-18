@@ -39,15 +39,15 @@ The app is organized as five screens. Each one is built on the same shared backe
 
 These resolve through **two published lookup matrices, not a hand-weighted average**. Fire weather and ignition likelihood combine first into an environmental-danger tier, which then meets the active-fire threat to set the headline. Four click-to-open modals document the math end to end: a **calibration ladder** (where your score lands across all 17 fitted states), a two-stage **"Why this score?"** matrix explainer, an **ignition-model** explainer, and a **confidence breakdown** (the freshness of every upstream signal). The screen also surfaces drought (KBDI), live vegetation stress (NDVI), a 6-hour fire-weather **trajectory**, nearby fires, and a FEMA advisory when one is active.
 
-**Live Map** — NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and two distinct rails for the two data layers.
+**Live Map** — NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and a single rail with two co-equal tabs — named incidents and browsable satellite detections.
 
 **Fire-Weather What-If** — A slider-driven sandbox over temperature, humidity, wind, KBDI, and vegetation. It drives the validated V4 fire-weather index — the *environment axis* of the Command Center composite, **not** a standalone risk score — so you can simulate any conditions, watch each factor move the score, and see where that score lands across the 17 calibrated states. Works fully offline, no GPS or keys required.
 
 **Safety Plan** — Open shelters from the live **FEMA National Shelter System** (with status and capacity) plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. Direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
 
-**Settings** — Three coordinated dark themes, unit preferences (all browser-local, no account), a full disclaimer, and the complete data-source attribution.
+**Settings** — Three coordinated dark themes, unit preferences (all browser-local, no account), a full disclaimer, dedicated Terms / Privacy / Accessibility pages, and the complete data-source attribution.
 
-Plus **saved locations** (Home / Work / etc., swappable from the rail) and a per-incident **Fire Detail** page.
+Plus **saved locations** (Home / Work / etc., swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive down to mobile** and built to **WCAG 2.1 AA** (contrast, focus management, chart text alternatives).
 
 ---
 
@@ -331,6 +331,7 @@ CI gates on `ruff` + backend tests (api), and `tsc` + Vitest + a production `nex
 - ✅ Live FEMA National Shelter System open-shelter layer, integrated into the Safety UI
 - ✅ Full Next.js web app — all five screens, plus Fire Detail and saved locations
 - ✅ Security hardening — CORS allowlist + prod fail-fast, per-IP rate limiting, input/bbox validation, security headers + CSP, secret-redacting logging, CI audits (`pip-audit`/`npm audit`/`gitleaks`)
+- ✅ Responsive mobile web + **WCAG 2.1 AA** accessibility pass, plus Terms / Privacy / Accessibility pages
 
 **Deferred**
 
