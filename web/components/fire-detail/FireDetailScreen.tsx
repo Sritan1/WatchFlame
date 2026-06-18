@@ -31,6 +31,7 @@ import {
   firmsAgeHours,
   personalThreatBucket,
 } from '@/lib/composite-risk';
+import { firmsPlatform } from '@/lib/firms';
 import {
   useFiresNear,
   useNamedIncidentsNear,
@@ -285,7 +286,7 @@ export function FireDetailScreen() {
   const detectionMetaRows = [
     { label: 'Detected', value: acqDate ?? '—' },
     { label: 'Acquisition time', value: acqTime ? `${acqTime} UTC` : '—' },
-    { label: 'Satellite', value: satellite ?? '—' },
+    { label: 'Satellite', value: firmsPlatform(satellite) ?? satellite ?? '—' },
     { label: 'Day / night', value: daynight === 'D' ? 'Day' : daynight === 'N' ? 'Night' : '—' },
     { label: 'Latitude', value: fireLat.toFixed(4) },
     { label: 'Longitude', value: fireLon.toFixed(4) },
@@ -309,6 +310,7 @@ export function FireDetailScreen() {
 
       {/* ─── Main grid ───────────────────────────────────────────── */}
       <div
+        className="app-stack app-detail-grid"
         style={{
           marginTop: 36,
           display: 'grid',
@@ -388,7 +390,7 @@ export function FireDetailScreen() {
 
           {/* Detection Metadata — FIRMS-only */}
           {hasFirmsDetection ? (
-            <IncPanel ae={ae} eyebrow="Detection Metadata" right="FIRMS / VIIRS" padding={22}>
+            <IncPanel ae={ae} eyebrow="Detection Metadata" right="FIRMS / VIIRS" padding={22} className="app-detail-late">
               <MetadataList ae={ae} rows={detectionMetaRows} />
             </IncPanel>
           ) : null}
@@ -436,7 +438,7 @@ export function FireDetailScreen() {
                         color: ae.textDim,
                       }}
                     >
-                      sat {p.properties.satellite ?? '—'}
+                      sat {firmsPlatform(p.properties.satellite) ?? p.properties.satellite ?? '—'}
                     </span>
                   </div>
                 ))}
@@ -458,7 +460,7 @@ export function FireDetailScreen() {
 
           {/* Incident details — matched only */}
           {matched ? (
-            <IncPanel ae={ae} eyebrow="Incident details" padding={22}>
+            <IncPanel ae={ae} eyebrow="Incident details" padding={22} className="app-detail-late">
               {matched.county ? <DetailRow ae={ae} k="County" v={matched.county} /> : null}
               {matched.state && !matched.county ? (
                 <DetailRow ae={ae} k="State" v={matched.state} />
@@ -599,7 +601,7 @@ export function FireDetailScreen() {
           ) : null}
 
           {/* Open in Maps CTA */}
-          <OpenInMapsButton ae={ae} href={openInMaps} />
+          <OpenInMapsButton ae={ae} href={openInMaps} className="app-detail-last" />
         </div>
       </div>
     </PageSection>
@@ -819,6 +821,7 @@ function IncPanel({
   children,
   padding = 22,
   glow,
+  className,
 }: {
   ae: Ae;
   eyebrow?: string;
@@ -826,10 +829,12 @@ function IncPanel({
   children: ReactNode;
   padding?: number;
   glow?: string;
+  /** Extra class for mobile reordering hooks (desktop ignores it). */
+  className?: string;
 }) {
   return (
     <div
-      className="inc-panel"
+      className={`inc-panel${className ? ` ${className}` : ''}`}
       style={{
         position: 'relative',
         background: `linear-gradient(180deg, ${ae.surface}, ${ae.surface2})`,
@@ -1713,13 +1718,13 @@ function SpreadArrow({
   );
 }
 
-function OpenInMapsButton({ ae, href }: { ae: Ae; href: string }) {
+function OpenInMapsButton({ ae, href, className }: { ae: Ae; href: string; className?: string }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inc-open-btn"
+      className={`inc-open-btn${className ? ` ${className}` : ''}`}
       style={{
         height: 56,
         width: '100%',

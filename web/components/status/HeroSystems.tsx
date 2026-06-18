@@ -363,6 +363,8 @@ export function HeroScoreCard({
   emptyText = '—',
   isLoading = false,
   howCalculatedHref,
+  calibrationLabel,
+  onCalibration,
 }: {
   label: string;
   icon: IconName;
@@ -375,6 +377,12 @@ export function HeroScoreCard({
   isLoading?: boolean;
   /** When set, renders a "How it's calculated" button that navigates here. */
   howCalculatedHref?: string;
+  /** When both are set, renders a "Calibrated for <state>" trigger that opens
+   *  the calibration modal — placed here (next to the fire-weather score it
+   *  describes) rather than by the composite headline, where it misleadingly
+   *  read as explaining the composite tier. */
+  calibrationLabel?: string;
+  onCalibration?: () => void;
 }) {
   const { ae, accent } = useAesthetic();
   // Chrome floors to moderate (amber base); the chip shows the true tier.
@@ -439,7 +447,7 @@ export function HeroScoreCard({
         </div>
 
         {/* body: gauge + readout */}
-        <div style={{ flex: 1, marginTop: 10, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 22, alignItems: 'center' }}>
+        <div className="app-stack" style={{ flex: 1, marginTop: 10, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 22, alignItems: 'center' }}>
           <HsRiskGauge
             ae={ae}
             frac={frac}
@@ -517,6 +525,35 @@ export function HeroScoreCard({
             <p style={{ margin: 0, paddingTop: 14, borderTop: `0.5px solid ${ae.line}`, fontFamily: ae.fontBody, fontSize: 12.5, lineHeight: 1.5, color: ae.textDim }}>
               {caption}
             </p>
+
+            {calibrationLabel && onCalibration ? (
+              <button
+                type="button"
+                onClick={onCalibration}
+                aria-label="What does calibrated for this state mean?"
+                style={{
+                  alignSelf: 'flex-start',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginTop: -6,
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  color: ae.textMute,
+                  cursor: 'pointer',
+                  fontFamily: ae.fontMono,
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                  textAlign: 'left',
+                }}
+              >
+                {calibrationLabel}
+                <Icon name="info" size={9} color={ae.textMute} strokeWidth={1.8} />
+              </button>
+            ) : null}
 
             {howCalculatedHref ? (
               <button
@@ -817,7 +854,7 @@ export function IgnitionCoreCard({
       <HsBeam color={tone.color} />
       <HsHudCorners color={tone.color} />
 
-      <div style={{ position: 'relative', zIndex: 2, padding: '28px 30px 24px' }}>
+      <div className="app-card-pad" style={{ position: 'relative', zIndex: 2, padding: '28px 30px 24px' }}>
         {/* header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -904,7 +941,7 @@ export function IgnitionCoreCard({
         </div>
 
         {/* main: core + distribution */}
-        <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'minmax(260px, 320px) 1fr', gap: 30, alignItems: 'center' }}>
+        <div className="app-stack" style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'minmax(260px, 320px) 1fr', gap: 30, alignItems: 'center' }}>
           <HsAICore ae={ae} value={pctNum} suffix={ordinalSuffix(pctNum)} tone={tone} highlight={highlight} band={band} bandTone={trueTone} loading={loading} />
 
           <div style={{ minWidth: 0 }}>
@@ -972,6 +1009,8 @@ export function IntelligenceSystem({
     emptyText?: string;
     isLoading: boolean;
     howCalculatedHref?: string;
+    calibrationLabel?: string;
+    onCalibration?: () => void;
   };
   threat: {
     score: number | null;
@@ -992,12 +1031,12 @@ export function IntelligenceSystem({
   const coreTone = RISK_LEVELS[chromeBucketOf(ignition.data ? ignition.data.level : null)];
 
   return (
-    <div style={{ position: 'relative', borderRadius: ae.radiusLg + 12, padding: 22 }}>
+    <div className="app-intel-pad" style={{ position: 'relative', borderRadius: ae.radiusLg + 12, padding: 22 }}>
       <HsSystemField tone={coreTone} leftTone={fwPal} rightTone={thPal} />
       <HsHudCorners color={`rgba(${coreTone.glow}, 0.7)`} inset={10} len={24} />
 
       <div style={{ position: 'relative', zIndex: 2 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 22 }}>
+        <div className="app-stack" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 22 }}>
           <HeroScoreCard
             label="Fire Weather"
             icon="flame"
@@ -1009,6 +1048,8 @@ export function IntelligenceSystem({
             emptyText={fireWeather.emptyText}
             isLoading={fireWeather.isLoading}
             howCalculatedHref={fireWeather.howCalculatedHref}
+            calibrationLabel={fireWeather.calibrationLabel}
+            onCalibration={fireWeather.onCalibration}
           />
           <HeroScoreCard
             label="Active Fire Threat"

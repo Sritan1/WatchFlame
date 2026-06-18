@@ -16,6 +16,7 @@ export function SectionEyebrow({
   const { ae } = useAesthetic();
   return (
     <div
+      className="app-eyebrow"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -64,6 +65,7 @@ export function SectionEyebrow({
       />
       {right ? (
         <span
+          className="app-eyebrow-meta"
           style={{
             fontFamily: ae.fontMono,
             fontSize: 10.5,

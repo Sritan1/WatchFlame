@@ -13,52 +13,67 @@
 // inside cards (per design spec).
 
 import Link from 'next/link';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { FireFieldsExplainerModal } from '@/components/map/FireFieldsExplainerModal';
 import type { MapSelection } from '@/components/map/MapImpl';
+import { cardinal8 } from '@/components/ui/CompassRose';
 import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
-import { distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
+import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
+import { satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
+/** Which feed the rail list is showing. Both are co-equal citizens now:
+ *  'incidents' = named NIFC/Cal Fire incidents, 'hotspots' = FIRMS satellite
+ *  detections (previously map-click-only). */
+export type RailTab = 'incidents' | 'hotspots';
+
 export function IncidentsRail({
   fires,
+  satellites,
   selection,
   onSelect,
   locationLabel,
   severityOf,
   isLoading = false,
+  satellitesLoading = false,
   incidentsError = false,
   satellitesError = false,
   onRetry,
-  satelliteCount = 0,
+  tab,
+  onTabChange,
   userCoords,
   radiusMi = 30,
 }: {
   fires: NamedIncident[];
+  /** FIRMS satellite hot-pixels in view (already capped + shown on the map).
+   *  Now also rendered as browsable cards under the Hotspots tab. */
+  satellites: FireFeature[];
   selection: MapSelection | null;
   onSelect: (sel: MapSelection | null) => void;
   locationLabel: string;
   severityOf: (f: NamedIncident) => RiskLevel;
   isLoading?: boolean;
-  /** The named-incident feed (NIFC/Cal Fire) failed to load — show an error
-   *  state in the rail instead of the misleading "0 fires in region" empty. */
+  /** The FIRMS satellite feed is still loading (drives the Hotspots tab's
+   *  skeletons + count placeholder). */
+  satellitesLoading?: boolean;
+  /** The named-incident feed (NIFC/Cal Fire) failed to load. */
   incidentsError?: boolean;
-  /** The FIRMS satellite feed failed to load — show a targeted note in the
-   *  satellite callout. Independent of incidentsError: the two are separate
-   *  feeds, so one failing still shows the other (the map layers are independent
-   *  too). */
+  /** The FIRMS satellite feed failed to load. Independent of incidentsError:
+   *  the two are separate feeds, so one failing still shows the other. */
   satellitesError?: boolean;
   onRetry?: () => void;
-  /** Number of FIRMS satellite hot-pixels in view. */
-  satelliteCount?: number;
-  /** User's current focus point — needed to compute distance to the
-   *  selected satellite hit (named incidents carry their own distance). */
+  /** Active feed tab. Lifted to MapScreen so a map selection can surface the
+   *  matching tab. */
+  tab: RailTab;
+  onTabChange: (t: RailTab) => void;
+  /** User's current focus point — needed to compute distance to satellite
+   *  hits (named incidents carry their own distance). */
   userCoords: LatLon;
   /** Search radius shown in the subtitle ("Within N mi of …"). */
   radiusMi?: number;
@@ -69,23 +84,56 @@ export function IncidentsRail({
   const selected = selectedIncidentId ? fires.find((f) => f.id === selectedIncidentId) ?? null : null;
   const selectedSev = selected ? severityOf(selected) : null;
   const selectedRisk = selectedSev ? getRisk(selectedSev, accent) : null;
+  const selectedSatKey = selection?.kind === 'fire' ? satKey(selection.feature) : null;
   const [explainerOpen, setExplainerOpen] = useState(false);
 
-  // Auto-scroll the selected card into view inside the rail. Fires whenever
-  // the selected incident changes — including selections originated by map
-  // pin clicks, where the card may be off-screen below the fold. `block:
-  // 'nearest'` makes this a no-op when the card is already visible, so
-  // clicking a card the user can already see doesn't yank the scroll.
+  // Hotspot list — same capped set the map shows, but ordered by distance
+  // (most useful for a list; the map orders by brightness). Same members, so
+  // every dot on the map still has a corresponding card here.
+  const satList = useMemo(
+    () =>
+      [...satellites].sort(
+        (a, b) =>
+          distanceMiles(userCoords, { lat: a.properties.lat, lon: a.properties.lon }) -
+          distanceMiles(userCoords, { lat: b.properties.lat, lon: b.properties.lon }),
+      ),
+    [satellites, userCoords],
+  );
+
+  // Source-aware subtitle — always describes the ACTIVE feed honestly, so
+  // "0 reported" reads in context next to the satellite hotspots that ARE on
+  // the map (the old single "No active incidents within range" was the bug).
+  const railSubtitle = (() => {
+    if (tab === 'incidents') {
+      if (incidentsError) return 'Incident feed unavailable';
+      if (isLoading && fires.length === 0) return 'Loading incidents…';
+      if (fires.length === 0) return 'No active incidents reported within range';
+      return `Within ${formatDistance(radiusMi, units.distance, 0)} of ${locationLabel} · sorted by distance`;
+    }
+    if (satellitesError) return 'Satellite feed unavailable';
+    if (satellitesLoading && satellites.length === 0) return 'Loading detections…';
+    if (satellites.length === 0) return 'No satellite detections within range';
+    return 'NASA FIRMS · last 24h · may include controlled burns';
+  })();
+
+  // Auto-scroll the selected card into view inside the rail — for either feed.
+  // Fires on selection OR tab change (so when a map-click flips the tab, the
+  // just-revealed card scrolls into focus). `block: 'nearest'` makes it a
+  // no-op when the card is already visible.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!selectedIncidentId) return;
     const container = scrollContainerRef.current;
     if (!container) return;
-    const el = container.querySelector<HTMLElement>(
-      `[data-incident-id="${CSS.escape(selectedIncidentId)}"]`,
-    );
+    let sel: string | null = null;
+    if (selection?.kind === 'incident') {
+      sel = `[data-incident-id="${CSS.escape(selection.id)}"]`;
+    } else if (selection?.kind === 'fire') {
+      sel = `[data-sat-key="${CSS.escape(satKey(selection.feature))}"]`;
+    }
+    if (!sel) return;
+    const el = container.querySelector<HTMLElement>(sel);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selectedIncidentId]);
+  }, [selection, tab]);
 
   return (
     <aside
@@ -198,7 +246,7 @@ export function IncidentsRail({
                 textTransform: ae.chipUpper ? 'uppercase' : 'none',
               }}
             >
-              Active Incidents
+              Fire Activity
             </span>
           </div>
 
@@ -258,163 +306,52 @@ export function IncidentsRail({
           </div>
         </div>
 
-        {incidentsError ? (
-          <div
-            style={{
-              marginTop: 10,
-              fontFamily: ae.fontMono,
-              fontSize: 11,
-              color: ae.textDim,
-              letterSpacing: '0.06em',
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-            }}
-          >
-            Incident feed unavailable
-          </div>
-        ) : isLoading && fires.length === 0 ? (
-          <>
-            <div style={{ marginTop: 8 }}>
-              <Skeleton width={'70%'} height={28} rounded="md" />
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <Skeleton width={'90%'} height={11} rounded="sm" />
-            </div>
-          </>
-        ) : (
-          <>
-            <h2
-              style={{
-                margin: 0,
-                fontFamily: ae.fontDisplay,
-                fontSize: 26,
-                fontWeight: ae.titleWeight,
-                letterSpacing: '-0.025em',
-                color: ae.text,
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 10,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fires.length}</span>
-              <span
-                style={{
-                  fontSize: 16,
-                  fontWeight: 500,
-                  color: ae.textDim,
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                {fires.length === 1 ? 'fire in region' : 'fires in region'}
-              </span>
-            </h2>
+        {/* Dual-feed segmented control. Replaces the old single "N fires in
+            region" headline that hid the satellite layer entirely and made a
+            bare "0" read as "nothing here" even with the map full of FIRMS
+            dots. Both feeds are now co-equal, browsable, and counted. */}
+        <RailTabs
+          tab={tab}
+          onTabChange={onTabChange}
+          incidentCount={fires.length}
+          satelliteCount={satellites.length}
+          incidentsLoading={isLoading && fires.length === 0}
+          satellitesLoading={satellitesLoading && satellites.length === 0}
+          incidentsError={incidentsError}
+          satellitesError={satellitesError}
+        />
 
-            <div
-              style={{
-                marginTop: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                fontFamily: ae.fontMono,
-                fontSize: 10.5,
-                color: ae.textDim,
-                letterSpacing: '0.06em',
-                textTransform: ae.chipUpper ? 'uppercase' : 'none',
-                flexWrap: 'wrap',
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={ae.textMute}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M12 22s7-7.5 7-13a7 7 0 10-14 0c0 5.5 7 13 7 13z" />
-                  <circle cx="12" cy="9" r="2.5" />
-                </svg>
-                {fires.length > 0
-                  ? `Within ${formatDistance(radiusMi, units.distance, 0)} of ${locationLabel}`
-                  : 'No active incidents within range.'}
-              </span>
-              {fires.length > 0 ? (
-                <>
-                  <span style={{ opacity: 0.45 }}>·</span>
-                  <span>sorted by distance</span>
-                </>
-              ) : null}
-            </div>
-
-          </>
-        )}
-
-        {/* Satellite feed status — INDEPENDENT of the incident feed (separate
-            source + separate map layer), so it renders even when incidents are
-            errored, and shows its own failure note rather than vanishing. */}
-        {satellitesError ? (
-          <div
-            style={{
-              marginTop: 12,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              padding: '4px 10px',
-              borderRadius: 99,
-              background: 'rgba(148, 163, 184, 0.10)',
-              border: '0.5px solid rgba(148, 163, 184, 0.30)',
-              fontFamily: ae.fontMono,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.10em',
-              color: ae.textDim,
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-            }}
+        {/* Source-aware subtitle for the active feed. */}
+        <div
+          style={{
+            marginTop: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: ae.fontMono,
+            fontSize: 10.5,
+            color: ae.textDim,
+            letterSpacing: '0.06em',
+            textTransform: ae.chipUpper ? 'uppercase' : 'none',
+          }}
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={ae.textMute}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            style={{ flexShrink: 0 }}
           >
-            <Icon name="warn" size={11} color="#E8B339" strokeWidth={1.8} />
-            Satellite feed unavailable
-          </div>
-        ) : satelliteCount > 0 ? (
-          <div
-            style={{
-              marginTop: 12,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              borderRadius: 99,
-              background: 'rgba(255, 122, 58, 0.10)',
-              border: '0.5px solid rgba(255, 122, 58, 0.30)',
-              fontFamily: ae.fontMono,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.10em',
-              color: '#ff7a3a',
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: 99,
-                background: '#ff7a3a',
-                boxShadow: '0 0 6px #ff7a3a',
-              }}
-            />
-            {satelliteCount} satellite{satelliteCount === 1 ? '' : 's'} detected
-          </div>
-        ) : null}
+            <path d="M12 22s7-7.5 7-13a7 7 0 10-14 0c0 5.5 7 13 7 13z" />
+            <circle cx="12" cy="9" r="2.5" />
+          </svg>
+          <span style={{ minWidth: 0 }}>{railSubtitle}</span>
+        </div>
       </div>
 
       {/* ── List ───────────────────────────────────────────────────── */}
@@ -429,77 +366,69 @@ export function IncidentsRail({
           zIndex: 1,
         }}
       >
-        {incidentsError ? (
-          <DataErrorState
-            compact
-            title="Incident feed unavailable"
-            message="Couldn't load NIFC/Cal Fire incidents. Satellite detections (if any) still show on the map. Try again."
-            onRetry={onRetry}
-          />
-        ) : null}
-        {!incidentsError && isLoading && fires.length === 0
-          ? Array.from({ length: 4 }).map((_, i) => (
-              // eslint-disable-next-line react/no-array-index-key
-              <div
-                key={i}
-                style={{
-                  padding: '14px 16px 14px 18px',
-                  marginBottom: 8,
-                  borderRadius: ae.radius,
-                  background: `linear-gradient(180deg, ${ae.surface}, ${ae.surface2})`,
-                  border: `0.5px solid ${ae.line}`,
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 10,
-                  }}
-                >
-                  <Skeleton width={70} height={20} rounded="full" />
-                  <Skeleton width={42} height={11} rounded="sm" />
-                </div>
-                <Skeleton width={'80%'} height={18} rounded="md" />
-                <div style={{ marginTop: 6 }}>
-                  <Skeleton width={'55%'} height={11} rounded="sm" />
-                </div>
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: 8,
-                  }}
-                >
-                  <Skeleton width={'100%'} height={32} rounded="md" />
-                  <Skeleton width={'100%'} height={32} rounded="md" />
-                  <Skeleton width={'100%'} height={32} rounded="md" />
-                </div>
-              </div>
-            ))
-          : null}
-        {fires.map((f, i) => {
-          const sev = severityOf(f);
-          const fr = getRisk(sev, accent);
-          const isSel = selectedIncidentId === f.id;
-          const isUrgent = sev === 'extreme' || sev === 'high';
-          return (
-            <IncidentCard
-              key={f.id}
-              fire={f}
-              risk={fr}
-              severity={sev}
-              index={i}
-              isSelected={isSel}
-              isUrgent={isUrgent}
-              distanceUnit={units.distance}
-              onClick={() => onSelect(isSel ? null : { kind: 'incident', id: f.id })}
-            />
-          );
-        })}
+        {tab === 'incidents' ? (
+          <>
+            {incidentsError ? (
+              <DataErrorState
+                compact
+                title="Incident feed unavailable"
+                message="Couldn't load NIFC/Cal Fire incidents. Satellite hotspots (if any) still show on the map and the Hotspots tab. Try again."
+                onRetry={onRetry}
+              />
+            ) : null}
+            {!incidentsError && isLoading && fires.length === 0 ? <SkeletonCards /> : null}
+            {fires.map((f, i) => {
+              const sev = severityOf(f);
+              const fr = getRisk(sev, accent);
+              const isSel = selectedIncidentId === f.id;
+              const isUrgent = sev === 'extreme' || sev === 'high';
+              return (
+                <IncidentCard
+                  key={f.id}
+                  fire={f}
+                  risk={fr}
+                  severity={sev}
+                  index={i}
+                  isSelected={isSel}
+                  isUrgent={isUrgent}
+                  distanceUnit={units.distance}
+                  onClick={() => onSelect(isSel ? null : { kind: 'incident', id: f.id })}
+                />
+              );
+            })}
+          </>
+        ) : (
+          <>
+            {satellitesError ? (
+              <DataErrorState
+                compact
+                title="Satellite feed unavailable"
+                message="Couldn't load NASA FIRMS detections. Named incidents (if any) still show on the Incidents tab. Try again."
+                onRetry={onRetry}
+              />
+            ) : null}
+            {!satellitesError && satellitesLoading && satellites.length === 0 ? (
+              <SkeletonCards />
+            ) : null}
+            {satList.map((s, i) => {
+              const key = satKey(s);
+              const isSel = selectedSatKey === key;
+              const coords = { lat: s.properties.lat, lon: s.properties.lon };
+              return (
+                <SatelliteCard
+                  key={key}
+                  feature={s}
+                  index={i}
+                  isSelected={isSel}
+                  distanceMi={distanceMiles(userCoords, coords)}
+                  directionLabel={cardinal8(bearingTo(userCoords, coords))}
+                  distanceUnit={units.distance}
+                  onClick={() => onSelect(isSel ? null : { kind: 'fire', feature: s })}
+                />
+              );
+            })}
+          </>
+        )}
       </div>
 
       {/* ── Kind-aware detail footer ───────────────────────────────────
@@ -521,7 +450,7 @@ export function IncidentsRail({
       {selection?.kind === 'fire' ? (
         <DetailFooter
           label="Selected"
-          name="Satellite Detection"
+          name={satelliteTitle(selection.feature.properties.satellite)}
           distanceLabel={formatDistance(
             distanceMiles(userCoords, {
               lat: selection.feature.properties.lat,
@@ -912,6 +841,411 @@ function Stat({
   );
 }
 
+// ─── Dual-feed tabs ────────────────────────────────────────────────────────
+
+/** Stable key for a FIRMS satellite pixel — matches MapImpl's marker key so
+ *  the rail's selection and the map's selection point at the same dot. */
+function satKey(f: FireFeature): string {
+  return `${f.properties.lat.toFixed(5)},${f.properties.lon.toFixed(5)}`;
+}
+
+/** Two co-equal feed tabs (Reported incidents / Satellite hotspots), each
+ *  showing its own live count. Per-feed loading shows a count skeleton and
+ *  per-feed error shows a neutral "—" + amber dot — so neither feed's state
+ *  can be misread as the other's. */
+function RailTabs({
+  tab,
+  onTabChange,
+  incidentCount,
+  satelliteCount,
+  incidentsLoading,
+  satellitesLoading,
+  incidentsError,
+  satellitesError,
+}: {
+  tab: RailTab;
+  onTabChange: (t: RailTab) => void;
+  incidentCount: number;
+  satelliteCount: number;
+  incidentsLoading: boolean;
+  satellitesLoading: boolean;
+  incidentsError: boolean;
+  satellitesError: boolean;
+}) {
+  return (
+    <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
+      <RailTabButton
+        active={tab === 'incidents'}
+        onClick={() => onTabChange('incidents')}
+        count={incidentCount}
+        loading={incidentsLoading}
+        error={incidentsError}
+        label="Active incidents reported"
+        color="#9aa6b2"
+        glow="154, 166, 178"
+      />
+      <RailTabButton
+        active={tab === 'hotspots'}
+        onClick={() => onTabChange('hotspots')}
+        count={satelliteCount}
+        loading={satellitesLoading}
+        error={satellitesError}
+        label="Satellite detections"
+        color="#ff7a3a"
+        glow="255, 122, 58"
+      />
+    </div>
+  );
+}
+
+function RailTabButton({
+  active,
+  onClick,
+  count,
+  loading,
+  error,
+  label,
+  color,
+  glow,
+}: {
+  active: boolean;
+  onClick: () => void;
+  count: number;
+  loading: boolean;
+  error: boolean;
+  label: string;
+  color: string;
+  glow: string;
+}) {
+  const { ae } = useAesthetic();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        textAlign: 'left',
+        cursor: 'pointer',
+        padding: '12px 14px',
+        borderRadius: ae.radius,
+        background: active
+          ? `linear-gradient(180deg, rgba(${glow}, 0.12), rgba(${glow}, 0.02))`
+          : 'rgba(255,255,255,0.02)',
+        border: `0.5px solid ${active ? `rgba(${glow}, 0.45)` : ae.line}`,
+        boxShadow: active
+          ? `inset 0 1px 0 rgba(255,255,255,0.05), 0 6px 18px rgba(${glow}, 0.12)`
+          : 'none',
+        transition: 'background .25s ease, border-color .25s ease',
+        fontFamily: 'inherit',
+        color: 'inherit',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', minHeight: 32 }}>
+        {loading ? (
+          <Skeleton width={42} height={28} rounded="md" />
+        ) : (
+          <span
+            style={{
+              fontFamily: ae.fontDisplay,
+              fontSize: 28,
+              fontWeight: ae.titleWeight,
+              lineHeight: 1,
+              letterSpacing: '-0.02em',
+              color: error ? ae.textMute : active ? ae.text : ae.textDim,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {error ? '—' : count}
+          </span>
+        )}
+      </div>
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 99,
+            flexShrink: 0,
+            marginTop: 3,
+            background: error ? '#E8B339' : color,
+            boxShadow: active && !error ? `0 0 8px ${color}` : 'none',
+          }}
+        />
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontFamily: ae.fontMono,
+            fontSize: 9.5,
+            fontWeight: 700,
+            lineHeight: 1.35,
+            letterSpacing: '0.12em',
+            color: active ? ae.textDim : ae.textMute,
+            textTransform: ae.chipUpper ? 'uppercase' : 'none',
+          }}
+        >
+          {error ? 'Unavailable' : label}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/** Four placeholder cards — shared by both feeds' loading state (same footprint
+ *  as a real card so the swap when data lands doesn't jolt the list height). */
+function SkeletonCards() {
+  const { ae } = useAesthetic();
+  return (
+    <>
+      {Array.from({ length: 4 }).map((_, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <div
+          key={i}
+          style={{
+            padding: '14px 16px 14px 18px',
+            marginBottom: 8,
+            borderRadius: ae.radius,
+            background: `linear-gradient(180deg, ${ae.surface}, ${ae.surface2})`,
+            border: `0.5px solid ${ae.line}`,
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <Skeleton width={70} height={20} rounded="full" />
+            <Skeleton width={42} height={11} rounded="sm" />
+          </div>
+          <Skeleton width={'80%'} height={18} rounded="md" />
+          <div style={{ marginTop: 6 }}>
+            <Skeleton width={'55%'} height={11} rounded="sm" />
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 8,
+            }}
+          >
+            <Skeleton width={'100%'} height={32} rounded="md" />
+            <Skeleton width={'100%'} height={32} rounded="md" />
+            <Skeleton width={'100%'} height={32} rounded="md" />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ─── Satellite Hotspot Card ─────────────────────────────────────────────────
+
+/** A FIRMS satellite detection rendered as a card (orange, no severity tier —
+ *  hot-pixels aren't NIFC-bucketed). Mirrors IncidentCard's rhythm so the two
+ *  feeds read as siblings. Clicking selects the same pixel on the map. */
+function SatelliteCardImpl({
+  feature,
+  index,
+  isSelected,
+  distanceMi,
+  directionLabel,
+  distanceUnit,
+  onClick,
+}: {
+  feature: FireFeature;
+  index: number;
+  isSelected: boolean;
+  distanceMi: number;
+  /** Compass sector from the user to this pixel (e.g. "NE"), used to give each
+   *  otherwise-nameless detection a distinguishable, location-based title. */
+  directionLabel: string;
+  distanceUnit: 'mi' | 'km';
+  onClick: () => void;
+}) {
+  const { ae } = useAesthetic();
+  const color = '#ff7a3a';
+  const glow = '255, 122, 58';
+  const p = feature.properties;
+  const distLabel = formatDistance(distanceMi, distanceUnit, 1);
+  const brightLabel = p.brightness != null ? Math.round(p.brightness).toString() : '—';
+  const confLabel = confidenceLabel(p.confidence);
+  // No name exists for a FIRMS pixel — title it by where it is relative to the
+  // user so each card is distinguishable (they'd otherwise all read the same
+  // satellite platform). The platform name still appears in the detail footer.
+  const name = `${distLabel} ${directionLabel}`;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-selected={isSelected ? 'true' : 'false'}
+      data-sat-key={satKey(feature)}
+      className={`inc-card${isSelected ? ' inc-card-sel' : ''}`}
+      style={{
+        ['--ic-color' as string]: color,
+        ['--ic-glow' as string]: glow,
+        width: '100%',
+        padding: '14px 16px 14px 18px',
+        marginBottom: 8,
+        textAlign: 'left',
+        position: 'relative',
+        background: isSelected
+          ? `linear-gradient(180deg, rgba(${glow}, 0.12), rgba(${glow}, 0.04) 60%, ${ae.surface})`
+          : `linear-gradient(180deg, ${ae.surface}, ${ae.surface2})`,
+        border: isSelected ? `0.5px solid rgba(${glow}, 0.45)` : `0.5px solid ${ae.line}`,
+        borderRadius: ae.radius,
+        cursor: 'pointer',
+        overflow: 'hidden',
+        animation: `ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) ${index * 40}ms both`,
+        boxShadow: isSelected
+          ? `0 0 0 0.5px rgba(${glow}, 0.20), 0 14px 32px rgba(${glow}, 0.18), inset 0 1px 0 rgba(255,255,255,0.04)`
+          : 'inset 0 1px 0 rgba(255,255,255,0.03), 0 1px 0 rgba(0,0,0,0.3)',
+        transition:
+          'border-color .25s ease, box-shadow .25s ease, transform .22s cubic-bezier(0.2, 0.7, 0.3, 1), background .3s ease',
+        color: 'inherit',
+        fontFamily: 'inherit',
+      }}
+    >
+      <span aria-hidden className="inc-card-shine" />
+
+      {/* Left bar */}
+      <span
+        aria-hidden
+        className="inc-card-bar"
+        style={{
+          position: 'absolute',
+          top: 14,
+          bottom: 14,
+          left: 7,
+          width: 2.5,
+          borderRadius: 2,
+          background: `linear-gradient(180deg, ${color}, rgba(${glow}, 0.45))`,
+          boxShadow: isSelected ? `0 0 10px rgba(${glow}, 0.65)` : 'none',
+          opacity: isSelected ? 1 : 0.75,
+          transition: 'opacity .25s ease, box-shadow .3s ease',
+        }}
+      />
+
+      {/* Row 1: SATELLITE chip + chevron */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'relative',
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '4px 9px 4px 8px',
+            borderRadius: 999,
+            background: `rgba(${glow}, 0.12)`,
+            border: `0.5px solid rgba(${glow}, 0.32)`,
+          }}
+        >
+          <span
+            style={{
+              width: 5.5,
+              height: 5.5,
+              borderRadius: 99,
+              background: color,
+              boxShadow: `0 0 8px ${color}`,
+            }}
+          />
+          <span
+            style={{
+              fontFamily: ae.fontMono,
+              fontSize: 9.5,
+              fontWeight: 700,
+              color,
+              letterSpacing: '0.16em',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            Satellite
+          </span>
+        </div>
+
+        <span
+          className="inc-card-chev"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            color: isSelected ? color : ae.textMute,
+            transition: 'color .25s ease, transform .25s ease',
+          }}
+        >
+          <Icon name="chevron" size={12} strokeWidth={2} />
+        </span>
+      </div>
+
+      {/* Row 2: name */}
+      <div style={{ marginTop: 10 }}>
+        <div
+          style={{
+            fontFamily: ae.fontDisplay,
+            fontSize: 16.5,
+            fontWeight: 600,
+            color: ae.text,
+            letterSpacing: ae.titleTracking,
+            lineHeight: 1.15,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {name}
+        </div>
+      </div>
+
+      {/* Row 3: 3-stat grid (Dist / Bright / Seen) */}
+      <div
+        style={{
+          marginTop: 12,
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          padding: '10px 2px',
+          background: 'rgba(255,255,255,0.02)',
+          border: `0.5px solid ${ae.line}`,
+          borderRadius: 8,
+        }}
+      >
+        <Stat ae={ae} label="Dist" value={distLabel} dividerLeft={false} />
+        <Stat
+          ae={ae}
+          label="Bright"
+          value={brightLabel}
+          unit={brightLabel !== '—' ? 'K' : undefined}
+          dividerLeft
+        />
+        <Stat ae={ae} label="Conf" value={confLabel} dividerLeft />
+      </div>
+    </button>
+  );
+}
+
+const SatelliteCard = memo(
+  SatelliteCardImpl,
+  (prev, next) =>
+    prev.feature === next.feature &&
+    prev.index === next.index &&
+    prev.isSelected === next.isSelected &&
+    prev.distanceMi === next.distanceMi &&
+    prev.directionLabel === next.directionLabel &&
+    prev.distanceUnit === next.distanceUnit,
+);
+
 // onClick is a fresh inline closure on every parent render — we know that's
 // expected (it captures isSelected + onSelect from the parent). Skip it in
 // the comparator so the card can bail when nothing visible actually changed.
@@ -964,6 +1298,7 @@ function DetailFooter({
   const { ae } = useAesthetic();
   return (
     <div
+      className="app-map-detail-footer"
       style={{
         position: 'relative',
         zIndex: 1,
@@ -990,6 +1325,7 @@ function DetailFooter({
 
       {/* Selected fire summary above the button */}
       <div
+        className="app-map-footer-summary"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1056,6 +1392,7 @@ function DetailFooter({
 
       {stats && stats.length > 0 ? (
         <div
+          className="app-map-footer-stats"
           style={{
             marginBottom: 12,
             display: 'grid',

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 
+import { DisclaimerGate } from '@/components/DisclaimerGate';
 import { AestheticProvider } from '@/lib/aesthetic';
 import { QueryProvider } from '@/lib/query-provider';
 import { SavedLocationsProvider } from '@/lib/use-saved-locations';
@@ -31,6 +32,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // width=device-width + initial-scale=1 is required for responsive breakpoints
+  // to engage on mobile (and in DevTools device mode). A custom viewport export
+  // that omits these drops the default, so the page renders at a ~980px desktop
+  // width and @media (max-width:…) never matches.
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#0B0E12',
 };
 
@@ -43,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <QueryProvider>
           <AestheticProvider>
+            <DisclaimerGate />
             <UnitsProvider>
               <SavedLocationsProvider>{children}</SavedLocationsProvider>
             </UnitsProvider>
