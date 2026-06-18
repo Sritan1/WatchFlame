@@ -85,6 +85,7 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
 
   return (
     <aside
+      className="app-sidebar"
       style={{
         position: 'fixed',
         top: 14,

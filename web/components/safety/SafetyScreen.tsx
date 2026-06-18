@@ -231,6 +231,7 @@ export function SafetyScreen() {
 
       {/* 2-col body */}
       <div
+        className="app-stack"
         style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)',
@@ -238,7 +239,6 @@ export function SafetyScreen() {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <ChecklistCard riskLevel={chromeLevel} />
           {safetyDataFailed ? (
             <DataErrorState
               title="Safety data unavailable"
@@ -258,6 +258,7 @@ export function SafetyScreen() {
               isLoading={bannerLoading}
             />
           )}
+          <ChecklistCard riskLevel={chromeLevel} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

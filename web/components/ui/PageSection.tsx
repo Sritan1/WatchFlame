@@ -18,6 +18,7 @@ export function PageSection({
 }) {
   return (
     <section
+      className="app-section"
       style={{
         padding: `${top}px ${gutter}px ${bottom}px`,
         maxWidth,

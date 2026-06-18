@@ -73,6 +73,7 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
         }}
       />
       <div
+        className="app-flex-col"
         style={{
           position: 'relative',
           padding: '24px 32px',

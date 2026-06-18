@@ -55,7 +55,8 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
     lineStrong: 'rgba(255,255,255,0.14)',
     text: '#F2F4F7',
     textDim: 'rgba(255,255,255,0.62)',
-    textMute: 'rgba(255,255,255,0.42)',
+    // 0.52 (~5.7:1 on the dark bg) clears WCAG AA 4.5:1 for small text (0.42 ≈ 4.2:1).
+    textMute: 'rgba(255,255,255,0.52)',
     fontDisplay: 'var(--font-display), -apple-system, system-ui, sans-serif',
     fontBody: 'var(--font-body), -apple-system, system-ui, sans-serif',
     fontMono: 'var(--font-mono), ui-monospace, "SF Mono", monospace',
@@ -78,7 +79,7 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
     lineStrong: 'rgba(255,255,255,0.12)',
     text: '#F8F4EE',
     textDim: 'rgba(248,244,238,0.65)',
-    textMute: 'rgba(248,244,238,0.42)',
+    textMute: 'rgba(248,244,238,0.52)',
     fontDisplay: 'var(--font-display), -apple-system, system-ui, sans-serif',
     fontBody: 'var(--font-body), -apple-system, system-ui, sans-serif',
     fontMono: 'var(--font-mono), ui-monospace, monospace',

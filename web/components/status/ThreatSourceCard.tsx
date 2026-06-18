@@ -81,6 +81,7 @@ export function ThreatSourceCard({
             <Skeleton width={130} height={32} rounded="full" />
           </div>
           <div
+            className="app-grid-4to2"
             style={{
               marginTop: 22,
               display: 'grid',
@@ -266,6 +267,7 @@ export function ThreatSourceCard({
             <div style={{ minWidth: 0 }}>
               <Eyebrow color={tone.color}>Threat Source</Eyebrow>
               <h2
+                className="app-wrap"
                 style={{
                   margin: '6px 0 0',
                   fontFamily: ae.fontDisplay,
@@ -333,6 +335,7 @@ export function ThreatSourceCard({
 
         {/* 4-stat grid */}
         <div
+          className="app-grid-4to2"
           style={{
             marginTop: 22,
             display: 'grid',

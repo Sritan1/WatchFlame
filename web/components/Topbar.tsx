@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { LocationsModal } from '@/components/location/LocationsModal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { hexToRgb, RISK_LEVELS } from '@/lib/theme';
 
@@ -33,6 +34,9 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
 
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  // Mobile-only location entry — the sidebar's "Watching" picker is hidden on
+  // mobile, so the Topbar surfaces the same LocationsModal there.
+  const [locOpen, setLocOpen] = useState(false);
 
   // Live wall-clock — initialized lazily so SSR doesn't mismatch.
   const [now, setNow] = useState<string>('');
@@ -108,6 +112,7 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
         {/* Breadcrumb — group label · chevron · active pill */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
           <span
+            className="app-hide-mobile"
             style={{
               fontFamily: ae.fontMono,
               fontSize: 11,
@@ -120,6 +125,7 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
             {meta.group}
           </span>
           <svg
+            className="app-hide-mobile"
             width="8"
             height="14"
             viewBox="0 0 8 14"
@@ -174,6 +180,30 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
             position: 'relative',
           }}
         >
+          {/* Mobile-only: change location (replaces the hidden sidebar picker) */}
+          <button
+            type="button"
+            onClick={() => setLocOpen(true)}
+            aria-label="Change location"
+            className="web-icon-btn app-show-mobile"
+            style={{
+              display: 'none',
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              cursor: 'pointer',
+              background:
+                'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))',
+              border: '0.5px solid rgba(255,255,255,0.08)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: ae.textDim,
+            }}
+          >
+            <Icon name="pin" size={14} color={accent} strokeWidth={1.8} />
+          </button>
+
           <button
             type="button"
             onClick={handleRefresh}
@@ -289,6 +319,7 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
           </div>
         </div>
       </header>
+      <LocationsModal open={locOpen} onClose={() => setLocOpen(false)} />
     </div>
   );
 }

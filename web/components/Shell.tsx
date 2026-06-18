@@ -5,10 +5,12 @@
 // shell — they don't repeat sidebar/topbar. Content offset = 14 (gutter) +
 // 220 (sidebar) + 14 (gap) = 248px from the viewport's left edge.
 
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { MobileNav } from '@/components/MobileNav';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -20,7 +22,8 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div style={{ background: ae.bg, color: ae.text, minHeight: '100vh' }}>
       <Sidebar />
-      <div style={{ marginLeft: 248 }}>
+      <MobileNav />
+      <div className="app-content" style={{ marginLeft: 248 }}>
         <Topbar />
         <LocationNotice />
         {/* `key={pathname}` re-mounts the main on route change, replaying the
@@ -108,12 +111,16 @@ function Footer() {
   const { ae } = useAesthetic();
   return (
     <footer
+      className="app-footer"
       style={{
-        height: 32,
+        minHeight: 32,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 32px',
+        flexWrap: 'wrap',
+        gap: 14,
+        rowGap: 6,
+        padding: '8px 24px',
         borderTop: `0.5px solid ${ae.line}`,
         background: ae.bg,
         fontFamily: ae.fontMono,
@@ -124,8 +131,23 @@ function Footer() {
         textTransform: 'uppercase',
       }}
     >
-      <span>Ember Watch · v3.0 · Built 2026</span>
-      <span>FIRMS · NIFC · Cal Fire · Open-Meteo · OWM · FEMA · OSM · NCES</span>
+      <span>Ember Watch · v4 · Built 2026</span>
+      <nav style={{ display: 'flex', gap: 16 }} aria-label="Legal">
+        {[
+          { href: '/terms', label: 'Terms' },
+          { href: '/privacy', label: 'Privacy' },
+          { href: '/accessibility', label: 'Accessibility' },
+        ].map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            className="web-footer-link"
+            style={{ color: ae.textDim, textDecoration: 'none', letterSpacing: '0.14em' }}
+          >
+            {l.label}
+          </Link>
+        ))}
+      </nav>
     </footer>
   );
 }
