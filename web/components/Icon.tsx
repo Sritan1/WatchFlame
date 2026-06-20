@@ -9,7 +9,7 @@ export type IconName =
   | 'arrow' | 'check' | 'circle' | 'dot' | 'wind' | 'clock' | 'share'
   | 'download' | 'settings' | 'layers' | 'plus' | 'minus' | 'crosshair'
   | 'grid' | 'package' | 'battery' | 'route' | 'info' | 'menu' | 'external'
-  | 'refresh' | 'warn' | 'arrowUp' | 'navArrow' | 'caret' | 'search';
+  | 'refresh' | 'warn' | 'arrowUp' | 'navArrow' | 'caret' | 'search' | 'x';
 
 const PATHS: Record<IconName, ReactNode> = {
   flame:     <path d="M12 3c0 4-5 5-5 10a5 5 0 0010 0c0-2-1-3-2-4 0 2-1 3-2 3 0-3 1-5-1-9z" />,
@@ -45,6 +45,7 @@ const PATHS: Record<IconName, ReactNode> = {
   navArrow:  <path d="M3 21l9-18 4 9 5 2-18 7z" />,
   caret:     <path d="M6 9l6 6 6-6" />,
   search:    (<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></>),
+  x:         <path d="M6 6l12 12M18 6L6 18" />,
 };
 
 export interface IconProps {

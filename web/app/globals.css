@@ -178,12 +178,27 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   0%, 100% { background-color: #24242a; }
   50%      { background-color: #34343c; }
 }
+/* Opacity-only on purpose: a `transform` here makes `<main>` a containing block
+   for any position:fixed descendant (e.g. the Status waves backdrop), so during
+   the 0.22s entrance the fixed backdrop is offset then snaps to the viewport
+   when the transform clears — a visible glitch on route return. Fade only. */
 @keyframes ember-route-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .ember-route-fade {
   animation: ember-route-fade-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* Freeze all descendant CSS animations when the Status visuals aren't being
+   viewed (tab hidden / scrolled past / modal open) — toggled by StatusScreen
+   to cut idle CPU/GPU. animation-play-state holds position, so it resumes in
+   place; modals portal to <body> so they're outside this scope and unaffected. */
+.ember-anim-paused,
+.ember-anim-paused *,
+.ember-anim-paused *::before,
+.ember-anim-paused *::after {
+  animation-play-state: paused !important;
 }
 /* Staggered grid entrance — apply `ember-grid-stagger` to a container and the
  * first N children fade up with an 80ms cascade. Caps at 6 children. */
@@ -289,7 +304,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   position: relative; isolation: isolate;
   transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1),
               box-shadow 0.3s ease, background 0.3s ease;
-  will-change: transform;
   overflow: hidden;
 }
 .px-btn::before {
@@ -397,8 +411,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 }
 .inc-rail-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
 
-/* Incident card hover lift + bar-glow + chevron nudge. */
-.inc-card { will-change: transform; }
+/* Incident card hover lift + bar-glow + chevron nudge. (No persistent
+   will-change: the browser promotes on hover during the transition and drops the
+   layer after — avoids keeping every card on its own GPU layer while idle.) */
 .inc-card:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.14) !important;

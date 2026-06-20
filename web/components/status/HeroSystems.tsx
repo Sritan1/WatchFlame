@@ -1,6 +1,6 @@
 'use client';
 
-// Wildfire Intelligence — the three "brain" cards of the Command Center,
+// Wildfire Intelligence — the three "brain" cards of the Status screen,
 // art-directed as the visual centerpiece. Translated from the reference design
 // (web-hero-systems.jsx) into the app's real primitives + live data:
 //   • HeroScoreCard  — Fire Weather / Active Fire Threat, a 270° instrument gauge
@@ -124,6 +124,10 @@ function HsAtmosphere({ glow }: { glow: string }) {
           background: `radial-gradient(120% 80% at 50% -10%, rgba(${glow}, 0.16), transparent 60%), radial-gradient(90% 60% at 110% 120%, rgba(${glow}, 0.10), transparent 60%)`,
         }}
       />
+      {/* These soft glow blobs are FROZEN (no drift animation): an animated
+          blur(60px) forces the browser to re-rasterize the entire blur every
+          frame, whereas a static one is rasterized once and cached. A still glow
+          is visually identical to a slowly-drifting one at any given instant. */}
       <div
         style={{
           position: 'absolute',
@@ -134,7 +138,6 @@ function HsAtmosphere({ glow }: { glow: string }) {
           borderRadius: '50%',
           filter: 'blur(60px)',
           background: `radial-gradient(circle, rgba(${glow}, 0.22), transparent 70%)`,
-          animation: 'hs-blob-a 16s ease-in-out infinite',
         }}
       />
       <div
@@ -147,7 +150,6 @@ function HsAtmosphere({ glow }: { glow: string }) {
           borderRadius: '50%',
           filter: 'blur(60px)',
           background: `radial-gradient(circle, rgba(${glow}, 0.14), transparent 70%)`,
-          animation: 'hs-blob-b 20s ease-in-out infinite',
         }}
       />
       <GridPattern opacity={0.04} />
@@ -686,7 +688,8 @@ function HsAICore({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          animation: 'hs-corepulse 5s ease-in-out infinite',
+          // Orb scale ("getting bigger") frozen per request; the halo/aura
+          // behind it keeps pulsing (hs-halopulse).
           overflow: 'hidden',
         }}
       >
@@ -886,7 +889,7 @@ export function IgnitionCoreCard({
             </div>
             <div>
               <Eyebrow color={tone.color}>Ignition Likelihood</Eyebrow>
-              <div style={{ marginTop: 5, fontFamily: ae.fontMono, fontSize: 11, letterSpacing: '0.06em', color: ae.textDim }}>Predictive intelligence engine</div>
+              <div style={{ marginTop: 5, fontFamily: ae.fontMono, fontSize: 11, letterSpacing: '0.06em', color: ae.textDim }}>Machine learning model</div>
             </div>
           </div>
 
@@ -947,7 +950,7 @@ export function IgnitionCoreCard({
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
               <span style={{ fontFamily: ae.fontMono, fontSize: 10, letterSpacing: '0.16em', color: ae.textDim, textTransform: 'uppercase' }}>
-                Today vs historical fire-onset days
+                Today vs. days fires actually started
               </span>
             </div>
             {loading ? (
@@ -983,9 +986,11 @@ function HsSystemField({ tone, leftTone, rightTone }: { tone: RiskTone; leftTone
           background: `radial-gradient(55% 46% at 20% 8%, rgba(${leftTone.glow}, 0.15), transparent 62%), radial-gradient(55% 46% at 80% 8%, rgba(${rightTone.glow}, 0.15), transparent 62%), radial-gradient(60% 52% at 50% 100%, rgba(${tone.glow}, 0.16), transparent 62%), radial-gradient(52% 42% at 50% 50%, rgba(${tone.glow}, 0.08), transparent 66%), linear-gradient(180deg, rgba(10,8,6,0), rgba(7,9,13,0.30))`,
         }}
       />
-      <div style={{ position: 'absolute', bottom: '-22%', left: '28%', width: '48%', height: '74%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${tone.glow}, 0.16), transparent 70%)`, animation: 'hs-sysblob 18s ease-in-out infinite' }} />
-      <div style={{ position: 'absolute', top: '-26%', left: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${leftTone.glow}, 0.14), transparent 70%)`, animation: 'hs-sysblob 22s ease-in-out infinite reverse' }} />
-      <div style={{ position: 'absolute', top: '-26%', right: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${rightTone.glow}, 0.14), transparent 70%)`, animation: 'hs-sysblob 20s ease-in-out infinite' }} />
+      {/* Frozen (no drift) — same reasoning as the per-card blobs: a static
+          blur(80px) is rasterized once instead of re-blurred every frame. */}
+      <div style={{ position: 'absolute', bottom: '-22%', left: '28%', width: '48%', height: '74%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${tone.glow}, 0.16), transparent 70%)` }} />
+      <div style={{ position: 'absolute', top: '-26%', left: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${leftTone.glow}, 0.14), transparent 70%)` }} />
+      <div style={{ position: 'absolute', top: '-26%', right: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${rightTone.glow}, 0.14), transparent 70%)` }} />
       <GridPattern opacity={0.03} />
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(125% 120% at 50% 45%, transparent 58%, rgba(0,0,0,0.45) 100%)' }} />
     </div>

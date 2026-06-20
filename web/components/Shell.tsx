@@ -131,7 +131,7 @@ function Footer() {
         textTransform: 'uppercase',
       }}
     >
-      <span>Ember Watch · v4 · Built 2026</span>
+      <span>Ember Watch · Built 2026</span>
       <nav style={{ display: 'flex', gap: 16 }} aria-label="Legal">
         {[
           { href: '/terms', label: 'Terms' },

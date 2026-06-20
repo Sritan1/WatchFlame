@@ -321,13 +321,10 @@ export function FireDetailScreen() {
       >
         {/* ─── LEFT COLUMN ───────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-          {/* Spread Prediction */}
+          {/* Local fire map — nearby recent detections + a wind-direction arrow */}
           <IncPanel
             ae={ae}
-            eyebrow="Spread Prediction"
-            right={
-              weather.data?.wind_deg != null ? 'Based on current local wind' : undefined
-            }
+            eyebrow="Local fire map · wind"
             glow={RED_RGB}
             padding={22}
           >

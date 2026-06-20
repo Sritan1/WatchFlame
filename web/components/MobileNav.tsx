@@ -13,7 +13,7 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { hexToRgb } from '@/lib/theme';
 
 const ITEMS: { href: string; icon: IconName; label: string }[] = [
-  { href: '/', icon: 'grid', label: 'Home' },
+  { href: '/', icon: 'grid', label: 'Status' },
   { href: '/map', icon: 'map', label: 'Map' },
   { href: '/risk', icon: 'flame', label: 'What-If' },
   { href: '/safety', icon: 'shield', label: 'Safety' },
