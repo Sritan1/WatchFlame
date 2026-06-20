@@ -35,7 +35,7 @@ held-out test split — ρ improved from ~0.26 to ~0.32, edging out raw HDW and
 Fosberg on the same fires. The vegetation/NDVI factor and calendar season
 multipliers are held fixed (the hindcast can't replay historical NDVI, and
 season is a selection proxy, not a weather driver). See
-scripts/fit_v4_params.py and docs/DECISIONS.md.
+scripts/fit_v4_params.py and docs/ARCHITECTURE.md.
 
 Raw 0–1 scores are re-bucketed per US state from fire-day score percentiles
 (regional_calibration.py); the global LOW<0.3 / MOD<0.6 / EXT≥0.8 cutoffs are

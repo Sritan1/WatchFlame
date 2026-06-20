@@ -33,7 +33,7 @@ export function CalibrationModal({
   return (
     <Modal open={open} onClose={onClose} eyebrow="Regional Risk Index" title="Why your level depends on your state" maxWidth={620}>
       <p style={textBody(ae)}>
-        The fire-weather <strong style={{ color: ae.text }}>score</strong> is the same V4
+        The fire-weather <strong style={{ color: ae.text }}>score</strong> is the same
         calculation everywhere — VPD, wind, drought (KBDI), and a vegetation signal (NDVI when
         the satellite has a recent pass). What changes between states is the{' '}
         <strong style={{ color: ae.text }}>thresholds</strong> that bucket the score into LOW /
@@ -81,7 +81,7 @@ export function CalibrationModal({
             FPA Fire Occurrence Database (FPA-FOD)
           </a>{' '}
           — a USDA dataset combining state, federal, and tribal fire reports across 1.88M
-          incidents. Days with significant fire activity are scored against the same V4
+          incidents. Days with significant fire activity are scored against the same
           algorithm, and the resulting distribution gives us each state&apos;s calibration cutoffs.
         </p>
       </Section>

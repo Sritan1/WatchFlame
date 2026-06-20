@@ -209,8 +209,7 @@ export function SafetyScreen() {
             color: ae.textDim,
           }}
         >
-          A short checklist beats a long plan you won&apos;t read mid-evacuation. These actions are
-          sequenced by impact for the conditions in your watch area.
+          Small steps now, so you&apos;re not scrambling later.
         </p>
       </div>
 

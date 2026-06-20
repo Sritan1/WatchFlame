@@ -409,7 +409,7 @@ export function RiskScreen() {
             vegetationDetail={
               vegMode === 'ndvi'
                 ? `NDVI anomaly: ${ndvi >= 0 ? '+' : ''}${ndvi.toFixed(2)} (${ndviQualitative(ndvi)})`
-                : `Calendar-season fallback — Sentinel-2 NDVI unavailable for this location.`
+                : `Estimated from the season. No recent satellite reading for this spot.`
             }
           />
         </div>
@@ -463,7 +463,7 @@ export function RiskScreen() {
               color={sr.color}
               glowRgb={sr.glow}
               index={1}
-              caption="Combines with humidity into Vapor Pressure Deficit — hot air has more drying power."
+              caption="Hotter air pulls moisture from fuels faster. Combined with humidity, it sets how drying the air is."
               onChange={(v) => setTemperature(units.temp === 'F' ? ((v - 32) * 5) / 9 : v)}
               isLoading={inputsLoading}
             />
@@ -476,7 +476,7 @@ export function RiskScreen() {
               color={sr.color}
               glowRgb={sr.glow}
               index={2}
-              caption="Lower humidity = drier fuels and faster ignition."
+              caption="Lower humidity means drier fuels that ignite and spread more easily."
               onChange={setHumidity}
               isLoading={inputsLoading}
             />
@@ -489,7 +489,7 @@ export function RiskScreen() {
               color={sr.color}
               glowRgb={sr.glow}
               index={3}
-              caption="Sustained 10-min average. Gusts spread fire faster + harder to predict."
+              caption="Sustained 10-minute average. Faster wind spreads fire quicker and makes it harder to predict."
               onChange={(v) => setWind(units.speed === 'mph' ? v / 0.621371 : v)}
               isLoading={inputsLoading}
             />

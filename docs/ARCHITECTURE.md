@@ -1,8 +1,10 @@
-# Design decisions
+# Architecture & design decisions
 
-These are the ten choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version of this system. Not a complete inventory of every design call — just the load-bearing ones that come up in conversations about the project.
+_Design decisions and full technical detail for Ember Watch._
 
-For the full mathematical formulation see the [risk algorithm section in the README](../README.md#the-risk-algorithm) and [api/core/risk_algorithm.py](../api/core/risk_algorithm.py). For the personal-threat composite (which combines fire weather with active-fire proximity), see [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+These are the choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version. The README is the overview; this file is the detail and the reasoning behind it.
+
+For the source of truth see [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) (the fire-weather index) and [web/lib/composite-risk.ts](../web/lib/composite-risk.ts) (the overall-risk composite, which combines fire weather, ignition likelihood, and active-fire proximity). The two lookup matrices that produce the headline tier are in §6.
 
 ---
 
@@ -28,11 +30,13 @@ raw = vpd_factor^0.45 × wind_factor^0.43 × drought_factor^0.12
 
 The exponents, the VPD/wind saturation scales, and the floors are **fit, not hand-picked** — they live in a `RiskParams` dataclass in [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) and were fit against a 500-fire FPA-FOD hindcast ([scripts/fit_v4_params.py](../scripts/fit_v4_params.py)).
 
+(The index went through several revisions during development. "V1" is the original linear-blend version; "V4" is the current fitted multiplicative index described here. The V-numbers show up in a few filenames and below.)
+
 **Why multiplicative.** Multiplicative combination captures the well-established "hot AND dry AND windy" non-linearity — any single mild input pulls the whole score down. This mirrors the structure of the Fosberg Fire Weather Index (Goodrick 2002), the Hot-Dry-Windy Index (Srock et al. 2018), and the Australian McArthur FFDI. Linear/weighted-sum combination (V1's original approach) effectively treats high wind as a substitute for high VPD, which the physics doesn't support — a high wind without dry air doesn't make a wet day combustible.
 
 **Why fit.** The original exponents (0.5 / 0.3 / 0.2) were "defensible defaults." Fitting them against real fire outcomes turns a guess into a measurement: a coordinate search maximizing Spearman ρ(score, log fire size) on a 70/30 train split lifts the held-out **test ρ from +0.26 to +0.32**, which **edges out the raw Hot-Dry-Windy Index (+0.30) and Fosberg FFWI (+0.28) on the same fires**. Only the weather-driver constants are fit; the NDVI/vegetation factor and the calendar season multipliers are held fixed (the hindcast can't replay historical Sentinel-2, and season is a sampling proxy, not a weather driver).
 
-**The honest part — drought was floored on purpose.** The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03, nearly eliminating it. That's a real empirical signal: fire **size** is dominated by spread (wind) and evaporative demand (VPD), whereas drought governs *ignition* more than final size, and the hindcast correlates against size. But a ~0.03 drought weight would make the KBDI integrator (a genuine engineering investment) cosmetic and shift the index to effectively VPD × wind. So the exponents are constrained to a 0.12 floor, keeping all three factors load-bearing — at a cost of only **+0.006 ρ** versus the degenerate solution. The fit landing exactly on that floor is the tell that the data wanted it lower; this is a deliberate science-vs-overfit tradeoff, not an accident.
+**Drought was floored on purpose.** The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03, nearly eliminating it. That's a real empirical signal: fire **size** is dominated by spread (wind) and evaporative demand (VPD), whereas drought governs *ignition* more than final size, and the hindcast correlates against size. But a ~0.03 drought weight would make the KBDI integrator (a genuine engineering investment) cosmetic and shift the index to effectively VPD × wind. So the exponents are constrained to a 0.12 floor, keeping all three factors load-bearing — at a cost of only **+0.006 ρ** versus the degenerate solution. The fit landing exactly on that floor confirms the unconstrained optimum was lower; this is a deliberate science-vs-overfit tradeoff, not an accident.
 
 **Cost.** Multiplicative formulas collapse to zero on any one calm/wet input. Mitigated with fitted floors on wind (~0.05) and drought (~0.28) — fires still happen on calm days and after rain, and the floors prevent the formula from declaring otherwise. Re-fitting requires re-running the per-state calibration (§3), since its percentile cutoffs are derived from the score distribution the constants produce.
 
@@ -60,13 +64,13 @@ The exponents, the VPD/wind saturation scales, and the floors are **fit, not han
 
 ---
 
-## 5. No machine learning
+## 5. No machine learning in the core index
 
 **Decision.** The algorithm is entirely rule-based. No learned weights, no neural networks, no gradient-boosted classifiers, no embeddings. Every output is a deterministic function of inputs through formulas published in peer-reviewed fire-science literature.
 
 **Why.** For this product specifically, rule-based wins on five axes that matter:
 
-1. **Explainability.** Any user can trace a score back to its inputs through the formula. The Risk Calculator screen literally lets them move the inputs and watch the output change.
+1. **Explainability.** Any user can trace a score back to its inputs through the formula. The Fire-Weather What-If screen literally lets them move the inputs and watch the output change.
 2. **No training drift.** The formula is stable across years. A model trained on 2015 fire data would already be stale.
 3. **No labeling problem.** Fire occurrence is sparse, confounded by ignition source (lightning vs human), and the "would there have been a fire if conditions were like X" counterfactual is unanswerable from the data.
 4. **Fast iteration.** Tunables are named fields on a `RiskParams` dataclass, not retrained models. Re-fitting them (§2) is a coordinate search over a frozen CSV that runs in seconds offline; the equivalent in a learned model requires re-training, validation, and deployment.
@@ -84,15 +88,16 @@ NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for vari
 
 **Decision.** The headline tier on Status comes from a `(weather_tier, threat_tier) → headline_tier` lookup matrix, not from `bucketOf(0.45 × W + 0.55 × T)`. See `COMPOSITE_MATRIX` in [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
 
-```
-                T=none     T=low      T=mod      T=high     T=ext
-W=low           LOW        LOW        LOW        MOD        HIGH
-W=mod           LOW        MOD        MOD        HIGH       HIGH
-W=high          MOD        MOD        HIGH       HIGH       EXT
-W=ext           MOD        HIGH       HIGH       EXT        EXT
-```
+| **environment ↓ · active-fire threat →** | **none** | **low** | **moderate** | **high** | **extreme** |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **low** | 🟢 LOW | 🟢 LOW | 🟢 LOW | 🟡 MOD | 🟠 HIGH |
+| **moderate** | 🟢 LOW | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH |
+| **high** | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT |
+| **extreme** | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT | 🔴 EXT |
 
-**Why.** The earlier version used `0.45 × W + 0.55 × T` and bucketed the result by quartile. The weights were chosen for one reason — *"weather alone caps at 0.45, so the headline never escalates to EXTREME from environment alone"* — and were not fitted to anything. That made every cell of the implied decision space derived through two arbitrary coefficients instead of being argued on its own merits. The matrix encodes each cell's intent directly: `W=ext × T=none → MOD` is the same "don't cry wolf on hot dry days without an active fire" constraint, now visible and editable as a single cell. Cells on the corners agree with the prior linear blend (e.g. `W=ext × T=ext → EXT` both ways); cells in the middle now reflect operational intent rather than arithmetic accident (e.g. `W=high × T=mod` is now HIGH instead of the linear blend's ~0.48 → MOD).
+**Why.** The earlier version used `0.45 × W + 0.55 × T` and bucketed the result by quartile. The weights were chosen for one reason — *"weather alone caps at 0.45, so the headline never escalates to EXTREME from environment alone"* — and, unlike the factor exponents fitted in §2, were never fitted to outcomes. That made every cell of the implied decision space derived through two arbitrary coefficients instead of being argued on its own merits.
+
+The matrix encodes each cell's intent directly. `W=ext × T=none → MOD` is the same "don't cry wolf on hot dry days without an active fire" constraint, now visible and editable as a single cell. Cells on the corners agree with the prior linear blend (e.g. `W=ext × T=ext → EXT` both ways); cells in the middle now reflect operational intent rather than arithmetic accident (e.g. `W=high × T=mod` is now HIGH instead of the linear blend's ~0.48 → MOD).
 
 **Cost.** The composite-as-a-single-number disappears as a tier source — there's no longer one scalar that summarizes the whole picture. The orb's arc fill still uses the linear blend as a visual position cue (so the orb moves continuously as inputs change), but that number is decorative; the tier label is authoritative. In a handful of edge cells the arc position and the tier color can visually disagree by one band — acceptable since users read the tier label, not the precise arc position.
 
@@ -102,13 +107,12 @@ W=ext           MOD        HIGH       HIGH       EXT        EXT
 
 1. **Stage 1 — environment.** `E = ENV_MATRIX[W][I]` fuses fire-weather severity `W` with ignition likelihood `I` into a single *environmental danger* tier. The matrix is **symmetric and multiplicative** — it reads as `hazard = consequence × likelihood`. Either factor being low pulls the product down; both high pushes it up.
 
-   ```
-               I=low     I=mod     I=high    I=ext
-   W=low       LOW       LOW       MOD       MOD
-   W=mod       LOW       MOD       MOD       HIGH
-   W=high      MOD       MOD       HIGH      HIGH
-   W=ext       MOD       HIGH      HIGH      EXT
-   ```
+   | **fire weather ↓ · ignition →** | **low** | **moderate** | **high** | **extreme** |
+   |:---|:---:|:---:|:---:|:---:|
+   | **low** | 🟢 LOW | 🟢 LOW | 🟡 MOD | 🟡 MOD |
+   | **moderate** | 🟢 LOW | 🟡 MOD | 🟡 MOD | 🟠 HIGH |
+   | **high** | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH |
+   | **extreme** | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT |
 
 2. **Stage 2 — headline.** The existing 4×5 `COMPOSITE_MATRIX` above is **unchanged**; it is simply fed `E` in place of `W`: `headline = COMPOSITE_MATRIX[E][T]`.
 
@@ -171,18 +175,18 @@ with τ = 21 mi, floor = 0.70, K = 300 ac. A fire is threatening only if it is *
 
 **Decision.** Keep the core fire-weather index rule-based (§5), but add a small **machine-learning model** alongside it for a different question: not "how bad could a fire get?" (severity — what V4 answers) but "do today's conditions look like a day a fire actually *starts*?" (occurrence). It's a gradient-boosted classifier, calibrated, served at `/ignition`, and shown next to the fire-weather tier on Status. Full write-up in the [model card](ignition_model_card.md).
 
-**Why this isn't a contradiction of §5.** §5's reasons (explainability, no training drift, the unanswerable counterfactual) hold for the *severity index* — and that stays rule-based. But ignition *occurrence* is a genuinely labelable problem: a fire either started on a given day at a given place, or it didn't. That makes it exactly the kind of question a learned model is *right* for. The honest move isn't "ML everywhere" or "ML never" — it's using each tool where it fits and being able to say why. The two signals are orthogonal and shown side by side.
+**Why this isn't a contradiction of §5.** §5's reasons (explainability, no training drift, the unanswerable counterfactual) hold for the *severity index* — and that stays rule-based. But ignition *occurrence* is a genuinely labelable problem: a fire either started on a given day at a given place, or it didn't. That makes it exactly the kind of question a learned model is *right* for. The point isn't "ML everywhere" or "ML never"; it's using each tool where it fits and being able to say why. The two signals are orthogonal and shown side by side.
 
-**How it's built (honestly).** Positives are real fire-ignition days (FPA-FOD); negatives are "typical days" from the *same* locations (controlling for fire data's spatial reporting bias by construction) plus 3,000 from genuinely non-fire locations. A land-cover feature (NLCD, developed-intensity split) lets it encode fuel. Evaluated with leakage-safe spatial-block cross-validation against a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488**, well-calibrated. Its learned feature importances independently rank **VPD + drought** on top — the same drivers V4 uses, which is a reassuring cross-check rather than a coincidence.
+**How it's built.** Positives are real fire-ignition days (FPA-FOD); negatives are "typical days" from the *same* locations (controlling for fire data's spatial reporting bias by construction) plus 3,000 from genuinely non-fire locations. A land-cover feature (NLCD, developed-intensity split) lets it encode fuel. Evaluated with leakage-safe spatial-block cross-validation against a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488**, well-calibrated. Its learned feature importances independently rank **VPD + drought** on top — the same drivers V4 uses, an independent cross-check rather than a coincidence.
 
 **Cost.** A model artifact + a serving dependency (scikit-learn) the rule-based core didn't need; and the output is a *relative* likelihood index (calibrated to the training prevalence), not an absolute daily probability — so it's framed as a percentile, not a "% chance."
 
-**Where it could go.** ~~Fold the ignition signal into the composite~~ — **done**: folded as a two-stage *environmental* matrix (`W ⊗ I → E`, then `E × T → headline`), not a naive fourth axis, so it doesn't double-count weather (see §6 addendum). ~~Add richer fuel / land-cover features~~ — **done (v2)**: the model now takes an NLCD land-cover class, with developed intensity split so dense urban separates from grassy open space (see model card). Still open: unify the weather source with the rest of the app.
+**Where it could go.** Folding the ignition signal into the composite is **done**: a two-stage *environmental* matrix (`W ⊗ I → E`, then `E × T → headline`), not a naive fourth axis, so it doesn't double-count weather (see §6 addendum). Richer fuel / land-cover features are **done (v2)**: the model now takes an NLCD land-cover class, with developed intensity split so dense urban separates from grassy open space (see model card). Still open: unify the weather source with the rest of the app.
 
 ---
 
 ## What this document is not
 
-This isn't a critique of the work — it's an inventory of choices made on purpose, with the costs explicitly named so future-me (or anyone interviewing me on this project) can see that the costs were considered, not missed. Several of the "Where it could go" sections are on the deferred-work list because the current behavior is good enough for a portfolio system that exposes its own seams.
+This isn't a critique of the work — it's an inventory of choices made on purpose, with the costs explicitly named so future-me can see that the costs were considered, not missed. Several of the "Where it could go" sections are on the deferred-work list because the current behavior is good enough for a system that exposes its own seams.
 
-For a more comprehensive limitations + roadmap, see the [Honest gaps section of the README](../README.md#honest-gaps).
+For more on limitations and planned work, see the README's [Honest gaps](../README.md#honest-gaps) and [Roadmap](../README.md#roadmap).

@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 
 import { Icon } from '@/components/Icon';
 import { useAesthetic } from '@/lib/aesthetic';
+import { popModalOpen, pushModalOpen } from '@/lib/modal-state';
 import { hexToRgb } from '@/lib/theme';
 
 export function Modal({
@@ -31,6 +32,7 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return;
+    pushModalOpen(); // signal ambient background work (e.g. Status waves) to pause
     // Restore focus to whatever was focused before the dialog opened (a11y).
     const prevFocused = document.activeElement as HTMLElement | null;
 
@@ -78,6 +80,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
       prevFocused?.focus?.();
+      popModalOpen();
     };
   }, [open, onClose]);
 

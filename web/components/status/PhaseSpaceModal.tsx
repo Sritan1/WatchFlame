@@ -705,7 +705,7 @@ function TrajectoryPlot({
             textShadow: '0 1px 3px rgba(0,0,0,0.7)',
           }}
         >
-          FIRE WEATHER (V4 SCORE)
+          FIRE-WEATHER SCORE
         </span>
       </div>
 
@@ -897,7 +897,7 @@ function TrajectorySummary({
           >
             <span style={{ color: tone.color }}>{tone.label}</span>{' '}
             <span style={{ color: ae.textMute, fontWeight: 500 }}>·</span>{' '}
-            V4 score {deltaText}, driven by {driverLabel}
+            Fire-weather score {deltaText}, driven by {driverLabel}
           </div>
         </div>
       </div>
@@ -1022,7 +1022,7 @@ function FrameTile({
         <span style={{ color: ae.text }}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</span>
         <span style={{ color: ae.textMute }}>Wind</span>
         <span style={{ color: ae.text }}>{windKph != null ? formatSpeed(windKph, units.speed, 0) : '—'}</span>
-        <span style={{ color: ae.textMute }}>V4 score</span>
+        <span style={{ color: ae.textMute }}>Fire-weather score</span>
         <span style={{ color: ae.text, fontWeight: 700 }}>{v4Score != null ? v4Score.toFixed(2) : '—'}</span>
       </div>
     </div>
