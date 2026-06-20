@@ -1,6 +1,6 @@
 'use client';
 
-// Command Center — mirrors mobile app/(tabs)/index.tsx as closely as possible.
+// Status — mirrors mobile app/(tabs)/index.tsx as closely as possible.
 //   Hero band: HeroOrb + ShimmerPill + headline + subtitle + CTAs + Calibration link
 //   2x2 grid: Conditions card (Wind + Temperature) | Humidity card
 //             LocalKbdiCard                         | LocalNdviCard
@@ -47,6 +47,7 @@ import {
   normalizeWeather,
   type ThreatDriver,
 } from '@/lib/composite-risk';
+import { useAnyModalOpen } from '@/lib/modal-state';
 import {
   useFiresAroundMe,
   useIgnition,
@@ -104,8 +105,31 @@ function metaTriggerStyle(
   };
 }
 
+/** True while the browser tab is visible. Drives the waves-canvas pause + the
+ *  `.ember-anim-paused` CSS freeze (with modal-open ANDed in by the caller),
+ *  purely to cut idle CPU/GPU when you're not looking at the tab.
+ *
+ *  Deliberately NOT scroll/IntersectionObserver-based: the waves are a
+ *  position:fixed band that stays partially on-screen at every scroll position,
+ *  so pausing them when some sentinel scrolls out just freezes visible waves
+ *  (and on mobile the hero pushes any sentinel below the fold at the very top). */
+function useTabVisible(): boolean {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const onVisibility = () => setVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVisibility);
+    onVisibility();
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  return visible;
+}
+
 export function StatusScreen() {
   const { ae, accent } = useAesthetic();
+  // Heat reduction: pause the waves canvas + Status CSS animations when the tab
+  // is hidden or a modal covers the screen (the orb/waves sit behind it).
+  const tabVisible = useTabVisible();
+  const anyModalOpen = useAnyModalOpen();
   const loc = useUserLocation();
   const weather = useWeather(loc.coords);
   const risk = useRiskFromWeather(weather.data, loc.coords);
@@ -116,6 +140,10 @@ export function StatusScreen() {
   const [whyOpen, setWhyOpen] = useState(false);
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [phaseSpaceOpen, setPhaseSpaceOpen] = useState(false);
+
+  // anyModalOpen comes from the shared Modal's global open-state, so EVERY modal
+  // counts (Ignition info included) without a hand-maintained list.
+  const animActive = tabVisible && !anyModalOpen;
 
   // Trajectory (Tier 2 #7) — short-term forecast projection. Drives the
   // Trajectory chip below the subtitle and the projection arrow in the
@@ -204,7 +232,7 @@ export function StatusScreen() {
 
   // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
   // bucketOf(linear blend). Two reasons spelled out in
-  // web/lib/composite-risk.ts + docs/DECISIONS.md §6: the prior 0.45/0.55
+  // web/lib/composite-risk.ts + docs/ARCHITECTURE.md §6: the prior 0.45/0.55
   // weights were a political knob with no empirical fit, and the linear
   // blend's quartile sometimes lands in a tier the operational intent
   // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
@@ -311,9 +339,9 @@ export function StatusScreen() {
           viewport so it stays put while the page scrolls. All content (including
           the hero) scrolls over it; the sections are transparent so it shows
           through. Mirrors the reference design. */}
-      <StatusBackdrop risk={chromeLevel} />
+      <StatusBackdrop risk={chromeLevel} active={animActive} />
 
-      <div style={{ position: 'relative', zIndex: 1 }}>
+      <div className={animActive ? undefined : 'ember-anim-paused'} style={{ position: 'relative', zIndex: 1 }}>
       {/* ─── HERO (content scrolls over the fixed waves backdrop) ───────── */}
         <PageSection top={28} bottom={48}>
           <SectionEyebrow
@@ -516,7 +544,7 @@ export function StatusScreen() {
         <div className="ember-fade-up" style={{ marginBottom: 16 }}>
           <SectionEyebrow
             color={isAlarming ? r.color : undefined}
-            right="Computed continuously · 3 modules"
+            right="Computed continuously · 3 signals"
           >
             Wildfire Intelligence
           </SectionEyebrow>
@@ -1236,7 +1264,7 @@ function HumidityDial({
  *  the area and changes how they move). The bottom fades cleanly to the page color
  *  so there's no darker vignette "strip" where the band ends. Offset past the
  *  248px sidebar gutter. */
-function StatusBackdrop({ risk }: { risk: RiskLevel }) {
+function StatusBackdrop({ risk, active }: { risk: RiskLevel; active: boolean }) {
   const { ae } = useAesthetic();
   return (
     <div
@@ -1252,7 +1280,7 @@ function StatusBackdrop({ risk }: { risk: RiskLevel }) {
         pointerEvents: 'none',
       }}
     >
-      <WavesBackground risk={risk} pulseSpeed={70} />
+      <WavesBackground risk={risk} pulseSpeed={70} active={active} />
       {/* Fade the band's lower portion to exactly the page color, masking the
           WavesBackground's own darker vignette/scrim so it blends seamlessly into
           the dark page below instead of leaving a black strip. */}

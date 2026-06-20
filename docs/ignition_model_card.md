@@ -3,7 +3,7 @@
 A small, interpretable machine-learning model that estimates how much a
 location's current conditions **resemble the days wildfires have actually
 started**. It complements (does not replace) the rule-based V4 fire-weather
-index — see [DECISIONS §10](DECISIONS.md).
+index — see [ARCHITECTURE §10](ARCHITECTURE.md).
 
 ## Overview
 
@@ -49,7 +49,7 @@ The first version was **weather-only** and trained **exclusively on fire-prone l
 1. **A land-cover feature with developed intensity split** — collapsing NLCD developed classes 21–24 into one "developed" bucket hid that dense-urban (24) is only **0.6%** of fire days while grassy open-space developed (21) is **5.3%**. Splitting them lets the model separate downtown from parks.
 2. **Background negatives from non-fire locations** — so "developed/urban" is no longer always a fire location, and the model can learn it ignites less.
 
-Result: **Chicago drops 76 → 61 (now "moderate")** for that scenario, while genuinely fire-prone **Phoenix stays high (80)** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [DECISIONS §6](DECISIONS.md)).
+Result: **Chicago drops 76 → 61 (now "moderate")** for that scenario, while genuinely fire-prone **Phoenix stays high (80)** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [ARCHITECTURE §6](ARCHITECTURE.md)).
 
 ## Serving
 

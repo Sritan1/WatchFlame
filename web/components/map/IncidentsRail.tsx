@@ -1440,7 +1440,7 @@ function DetailFooter({
         }}
         className="inc-rail-cta"
       >
-        Open Incident Report
+        Open full report
         <Icon name="chevron" size={11} color="#fff" strokeWidth={2.4} />
       </Link>
     </div>

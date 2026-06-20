@@ -24,7 +24,7 @@ interface NavItem {
 // Group label attaches to the FIRST item in each group, drawn as a header
 // row above the button with a hairline gradient to its right.
 const NAV_ITEMS: NavItem[] = [
-  { href: '/',       icon: 'grid',   label: 'Command Center', group: 'Operations' },
+  { href: '/',       icon: 'grid',   label: 'Status', group: 'Operations' },
   { href: '/map',    icon: 'map',    label: 'Live Map' },
   { href: '/risk',   icon: 'flame',  label: 'Fire-Weather What-If',  group: 'Planning' },
   { href: '/safety', icon: 'shield', label: 'Safety Plan' },
@@ -198,7 +198,7 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
               textTransform: ae.chipUpper ? 'uppercase' : 'none',
             }}
           >
-            Watch · v4
+            Watch
           </span>
         </div>
       </div>
