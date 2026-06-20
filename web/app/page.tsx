@@ -1,4 +1,4 @@
-// Command Center route — orchestrated by StatusScreen (client component)
+// Status route — orchestrated by StatusScreen (client component)
 // because every panel reads from TanStack Query hooks + browser geolocation.
 // The Shell layer stays server-rendered.
 

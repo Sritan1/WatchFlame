@@ -138,7 +138,7 @@ export function SettingsScreen() {
             {(
               [
                 { value: 'gov', tag: 'GOV', label: 'Government utility' },
-                { value: 'startup', tag: 'STARTUP', label: 'Modern startup' },
+                { value: 'startup', tag: 'STUDIO', label: 'Modern studio' },
                 { value: 'tactical', tag: 'TACTICAL', label: 'Tactical instrument' },
               ] as { value: AestheticId; tag: string; label: string }[]
             ).map((o) => (
@@ -163,7 +163,7 @@ export function SettingsScreen() {
           eyebrowIcon="crosshair"
           accentRgb={CHROME_RGB}
           title="Display units"
-          description="Distances, wind speeds, and temperatures across Command Center, Live Map, Fire-Weather What-If, Safety Plan, and the Full Details page all respect these."
+          description="Distances, wind speeds, and temperatures across Status, Live Map, Fire-Weather What-If, Safety Plan, and the full report page all respect these."
           meta={[
             { label: 'Locale', value: 'Auto · US' },
             { label: 'Conversion', value: 'Live' },
@@ -280,7 +280,7 @@ export function SettingsScreen() {
               num={5}
               accentRgb={WARN_RGB}
               title="What this is"
-              body="An independent, informational tool — not a commercial or operational emergency service. No SLA, no guarantee of accuracy, and no on-call team behind it."
+              body="An independent, informational tool — not a commercial or operational emergency service. It comes with no guarantees of uptime or accuracy, and there's no team monitoring it around the clock."
             />
           </div>
           <p
@@ -383,18 +383,6 @@ export function SettingsScreen() {
               }}
             >
               Ember Watch
-            </span>
-            <FooterDot ae={ae} />
-            <span
-              style={{
-                fontFamily: ae.fontMono,
-                fontSize: 10.5,
-                color: ae.textMute,
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-              }}
-            >
-              V4.0
             </span>
             <FooterDot ae={ae} />
             <span

@@ -31,7 +31,7 @@ function delay<T>(value: T, ms = 220): Promise<T> {
 export const BERKELEY = { lat: 37.8716, lon: -122.2727 } as const;
 
 /** Four mocked incidents, sorted by distance. Tilden Ridge is the
- *  extreme-severity "active incident" the Command Center foregrounds. */
+ *  extreme-severity "active incident" the Status screen foregrounds. */
 export const MOCK_INCIDENTS: NamedIncident[] = [
   {
     source: 'calfire', id: 'CA-2026-08412', name: 'Tilden Ridge Fire',

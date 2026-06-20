@@ -26,7 +26,7 @@ const CHECKLIST: ChecklistItem[] = [
   { id: 'devices', label: 'Charge all mobile devices',         time: '5 min',  minutes: 5,  desc: 'Phones, radios, battery packs to 100%.' },
   { id: 'windows', label: 'Close all windows and doors',       time: '10 min', minutes: 10, desc: 'Including pet doors, attic vents, garage.' },
   { id: 'gutters', label: 'Clear leaves from gutters',         time: '30 min', minutes: 30, desc: 'Remove combustible debris within 5 ft of home.' },
-  { id: 'pets',    label: 'Confirm pets and family contacts',  time: '10 min', minutes: 10, desc: 'Carriers ready, ICE numbers updated, kids briefed.' },
+  { id: 'pets',    label: 'Confirm pets and family contacts',  time: '10 min', minutes: 10, desc: 'Carriers ready, emergency contacts saved, kids briefed.' },
   { id: 'meds',    label: 'Gather essential medications',      time: '5 min',  minutes: 5,  desc: '7-day supply of prescriptions and basics.' },
 ];
 
@@ -66,7 +66,7 @@ export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {
         }}
       >
         <div>
-          <Eyebrow color={r.color}>Action Checklist</Eyebrow>
+          <Eyebrow color={r.color}>Before a fire</Eyebrow>
           <h2
             style={{
               margin: '6px 0 0',

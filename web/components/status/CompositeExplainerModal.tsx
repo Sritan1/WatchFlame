@@ -116,7 +116,7 @@ export function CompositeExplainerModal({
           rawScoreText={ignitionPercentile != null ? ordinal(ignitionPercentile) : null}
           contextLine={
             ignitionBucket
-              ? 'ML model — percentile of fire-day-like conditions'
+              ? 'ML model — how much today resembles past fire-start days'
               : 'ML estimate unavailable — using fire weather alone'
           }
         />
@@ -273,6 +273,7 @@ function OutcomeCallout({
   const rgb = hexToRgb(tone.color);
   const eLabel = envBucket ? TIER_LONG[envBucket] : 'PENDING';
   const tLabel = threatBucket ? TIER_LONG[threatBucket] : 'NONE';
+  const threatPhrase = threatBucket ? `a ${tLabel} nearby fire` : 'no active fire nearby';
   return (
     <div
       style={{
@@ -293,7 +294,7 @@ function OutcomeCallout({
           Your headline
         </div>
         <div style={{ marginTop: 4, fontFamily: ae.fontDisplay, fontSize: 16, fontWeight: 800, color: ae.text, letterSpacing: '-0.01em' }}>
-          Environment={eLabel} × Threat={tLabel}{' '}
+          A {eLabel} environment with {threatPhrase}{' '}
           <span style={{ color: ae.textMute, fontWeight: 600 }}>→</span>{' '}
           <span style={{ color: tone.color }}>{TIER_LONG[compositeBucket]}</span>
         </div>

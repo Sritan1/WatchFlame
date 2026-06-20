@@ -132,10 +132,10 @@ export function HeroScorePanel({
             letterSpacing: '0.005em',
           }}
         >
-          Tweak conditions to see how the fire-weather score moves. This is the{' '}
-          <strong style={{ color: ae.text }}>environment axis</strong> of the
-          Personal Threat composite on Status — combined there with active-fire
-          proximity to produce the headline tier.
+          Change the conditions and watch the fire-weather score react. This is the
+          weather half of your <strong style={{ color: ae.text }}>overall risk</strong> — on
+          the Status page it&apos;s combined with any nearby active fires to set your final
+          risk level.
         </p>
       </div>
 
