@@ -150,8 +150,8 @@ export function LocalNdviCard({
                 color: ae.textDim,
               }}
             >
-              Current NDVI minus the same-month climatology (last 3 years) in a 1 km buffer.
-              Negative = drier than normal, which raises fire risk.
+              How healthy the plants around you are right now versus their normal level for this
+              time of year. Drier-than-usual vegetation burns more easily.
             </p>
           </>
         ) : isLoading ? (

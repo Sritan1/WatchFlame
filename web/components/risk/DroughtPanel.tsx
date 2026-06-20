@@ -10,7 +10,7 @@
 // fetch fails, the parent passes a footer warning that applies to whichever
 // mode is active.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
@@ -50,6 +50,10 @@ export function DroughtPanel({
   footer?: ReactNode;
 }) {
   const { ae } = useAesthetic();
+  const [dismissed, setDismissed] = useState(false);
+  // Once the callout is dismissed in days mode, center the slider in the
+  // freed-up vertical space instead of leaving a gap at the bottom.
+  const centerContent = mode === 'days' && dismissed;
 
   return (
     <div
@@ -61,6 +65,8 @@ export function DroughtPanel({
         border: ae.cardBorder,
         borderRadius: ae.radius,
         padding: 18,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <div
@@ -86,6 +92,7 @@ export function DroughtPanel({
         />
       </div>
 
+      <div style={centerContent ? { flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' } : undefined}>
       {mode === 'kbdi' ? (
         <InputPanel
           label="Drought (KBDI)"
@@ -111,16 +118,18 @@ export function DroughtPanel({
           color={color}
           glowRgb={glowRgb}
           index={4}
-          caption="Days since last measurable rainfall. Used by the algorithm's fine-fuel drying proxy when KBDI isn't supplied."
+          caption="Days since the last real rainfall. Used to gauge how dry light fuels (grass, leaves) are when a drought index isn't available."
           onChange={onDaysChange}
           isLoading={isLoading}
           footer={footer}
         />
       )}
+      </div>
 
       {/* Mode explainer — only shown in days mode since KBDI is the canonical
-       *  drought input. Mirrors VegetationPanel's "Fallback signal" callout. */}
-      {mode === 'days' ? (
+       *  drought input. Mirrors VegetationPanel's backup-estimate callout, and
+       *  is dismissible via the × for the same reason. */}
+      {mode === 'days' && !dismissed ? (
         <div
           style={{
             marginTop: 14,
@@ -157,10 +166,42 @@ export function DroughtPanel({
               color: ae.textDim,
             }}
           >
-            <span style={{ color: AMBER, fontWeight: 600 }}>Coarse signal. </span>
-            Status uses KBDI from Open-Meteo Archive when available. Days-since-rain is a
-            simpler proxy used only when the archive is down.
+            <span style={{ color: AMBER, fontWeight: 600 }}>Backup estimate. </span>
+            Normally Status pulls a full drought index from recent weather data. When that&apos;s
+            unavailable, it estimates dryness from days since rain instead, which is what you&apos;re
+            adjusting here.
           </span>
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            aria-label="Dismiss"
+            style={{
+              flexShrink: 0,
+              width: 20,
+              height: 20,
+              marginTop: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              borderRadius: 6,
+              background: 'transparent',
+              border: 'none',
+              color: ae.textMute,
+              cursor: 'pointer',
+              transition: 'color 0.15s, background 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = ae.text;
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = ae.textMute;
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <Icon name="x" size={12} strokeWidth={1.8} />
+          </button>
         </div>
       ) : null}
     </div>

@@ -14,7 +14,7 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { hexToRgb, RISK_LEVELS } from '@/lib/theme';
 
 const ROUTE_META: Record<string, { group: string; title: string }> = {
-  '/':         { group: 'Operations', title: 'Command Center' },
+  '/':         { group: 'Operations', title: 'Status' },
   '/map':      { group: 'Operations', title: 'Live Map' },
   '/risk':     { group: 'Planning',   title: 'Fire-Weather What-If' },
   '/safety':   { group: 'Planning',   title: 'Safety Plan' },

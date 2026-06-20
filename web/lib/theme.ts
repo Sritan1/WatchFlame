@@ -71,7 +71,7 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
   },
   startup: {
     id: 'startup',
-    name: 'Modern startup',
+    name: 'Modern studio',
     bg: '#0A0908',
     surface: '#161311',
     surface2: '#1F1B18',
