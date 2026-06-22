@@ -123,7 +123,7 @@ def main() -> None:
     ax.set_yticklabels(codes, fontsize=11, color=COLOR_LABEL)
     ax.set_xlim(0, 1.12)
     ax.set_xticks(np.arange(0, 1.01, 0.1))
-    ax.set_xlabel("V4 fire-weather score", fontsize=11, color=COLOR_LABEL, labelpad=10)
+    ax.set_xlabel("Fire-weather score", fontsize=11, color=COLOR_LABEL, labelpad=10)
     ax.tick_params(axis="x", colors=COLOR_LABEL)
     ax.tick_params(axis="y", colors=COLOR_LABEL)
     ax.set_ylim(-0.7, n + 0.4)
@@ -137,7 +137,7 @@ def main() -> None:
 
     # Title + subtitle stacked, framing the takeaway.
     fig.suptitle(
-        "Same V4 score, different danger level",
+        "Same fire-weather score, different danger level",
         fontsize=15,
         fontweight="bold",
         x=0.5,

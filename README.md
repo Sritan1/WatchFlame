@@ -10,10 +10,10 @@ Wildfire information is scattered. Red-flag bulletins live in one place, raw sat
 
 ## Highlights
 
-- **The fire-weather index is fitted to real fires.** Spearman ρ **+0.32**, ahead of Hot-Dry-Windy (+0.30) and Fosberg (+0.28) on the same fires. [Details](#3-validation)
-- **Machine-learning ignition model.** ROC-AUC **0.84**, spatially cross-validated and probability-calibrated. [Details](#a-learned-second-opinion-ignition-likelihood)
-- **Per-state calibration across 17 states.** The same score reads as a different tier depending on your state's fire history. [Details](#2-per-state-calibration)
-- **Handles upstream outages.** Every external feed degrades gracefully. Plus 153 backend tests and a Python-to-TypeScript scorer-parity test. [Details](#testing)
+- **The fire-weather index is fitted to real fires.** Spearman ρ **+0.32**, ahead of Hot-Dry-Windy (+0.30) and Fosberg (+0.28) on the same fires. [Details](#how-the-scoring-works)
+- **Machine-learning ignition model.** ROC-AUC **0.84**, spatially cross-validated and probability-calibrated. [Details](#how-the-scoring-works)
+- **Per-state calibration across 17 states.** The same score reads as a different tier depending on your state's fire history. [Details](#how-the-scoring-works)
+- **Handles upstream outages.** Every external feed has a fallback, so one provider going down doesn't take the page with it. Plus 153 backend tests and a Python-to-TypeScript scorer-parity test. [Details](#testing)
 
 ---
 
@@ -22,10 +22,7 @@ Wildfire information is scattered. Red-flag bulletins live in one place, raw sat
 - [What it does](#what-it-does)
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
-- [The fire-weather model](#the-fire-weather-model)
-- [A learned second opinion: ignition likelihood](#a-learned-second-opinion-ignition-likelihood)
-- [The overall-risk composite](#the-overall-risk-composite)
-- [Full technical detail & design decisions](docs/ARCHITECTURE.md) (external)
+- [How the scoring works](#how-the-scoring-works)
 - [Data sources](#data-sources)
 - [Run locally](#run-locally)
 - [Project layout](#project-layout)
@@ -34,36 +31,25 @@ Wildfire information is scattered. Red-flag bulletins live in one place, raw sat
 - [Disclaimer](#disclaimer)
 - [Credits & license](#credits--license)
 
+Deep dive: [full technical detail](docs/ARCHITECTURE.md).
+
 ---
 
 ## What it does
 
-The app has five screens. Each one runs on the same backend and the same calibrated algorithm.
+Five screens, all running on the same backend and the same calibrated algorithm.
 
-**Status.** A live risk tier for your location. It comes from three independent signals:
-
-- **Fire weather:** the calibration-aware index (VPD × wind × KBDI drought × NDVI vegetation anomaly), graded against your state's own fire history.
-- **Ignition likelihood:** a machine-learning model's read on how much today's conditions resemble the days fires have actually started.
-- **Active-fire threat:** proximity, size, wind alignment, containment, and detection age of any fire within 50 mi.
-
-These don't get averaged together. They run through two lookup matrices in series. Fire weather and ignition likelihood combine first into an environmental-danger tier. That tier then meets the active-fire threat to set the headline. Four tap-to-open modals show the math:
-
-- a **calibration ladder** showing where your score lands across all 17 fitted states,
-- a two-stage **"Why this score?"** matrix explainer,
-- an **ignition-model** explainer,
-- a **confidence breakdown** rating the freshness of every upstream signal.
-
-Also on screen: drought (KBDI), live vegetation stress (NDVI), a 6-hour fire-weather trajectory, nearby fires, and a FEMA advisory when one is active.
+**Status.** A live overall-risk tier for your location, built from three signals: the rule-based fire-weather index, a machine-learning ignition-likelihood model, and the proximity of active fires within 50 mi. Several tap-to-open modals open up the math behind it: a calibration ladder, the two-stage "Why this score?" explainer, the ignition model, a 6-hour forecast, and a confidence breakdown. The screen also shows drought, vegetation stress, and the closest fires.
 
 **Live Map.** NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and one rail with two tabs: named incidents and browsable satellite detections.
 
-**Fire-Weather What-If.** A slider sandbox over temperature, humidity, wind, KBDI, and vegetation. It runs the validated fire-weather index. This is the environment axis of the Status composite, not a standalone risk score. You can simulate any conditions, watch each factor move the score, and see where that score lands across the 17 calibrated states. It works fully offline. No GPS, no keys.
+**Fire-Weather What-If.** A slider sandbox over temperature, humidity, wind, KBDI, and vegetation that runs the validated fire-weather index. It's the environment half of the Status score on its own. Drag the sliders to simulate any conditions, watch each factor move the score, and see where that score lands across the 17 calibrated states. It works fully offline.
 
-**Safety Plan.** Open shelters from the live **FEMA National Shelter System**, with status and capacity. Plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. There's a direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
+**Safety Plan.** Open shelters from the live **FEMA National Shelter System**, with status and capacity, plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. There's a direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
 
 **Settings.** Three dark themes, unit preferences (all browser-local, no account), a full disclaimer, dedicated Terms / Privacy / Accessibility pages, and the full data-source attribution.
 
-Plus **saved locations** (Home / Work, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and built to **WCAG 2.1 AA** (contrast, focus management, chart text alternatives).
+Plus **saved locations** (Home / Work, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and meets **WCAG 2.1 AA** (color contrast, keyboard focus management, and text alternatives for the charts).
 
 ---
 
@@ -76,7 +62,7 @@ Plus **saved locations** (Home / Work, swappable from the rail) and a per-incide
      4. Safety Plan — open shelter tile + checklist
      5. "Why this score?" matrix modal -->
 
-_App UI captures are kept out of version control. The validation figures below are generated from the committed pipeline._
+_App UI captures aren't committed yet._
 
 ---
 
@@ -98,7 +84,7 @@ _App UI captures are kept out of version control. The validation figures below a
                     │  /disasters/near /risk/calibration │
                     └──────────────────┬────────────────┘
                                        │ async fan-out (httpx),
-                                       │ graceful degradation per upstream
+                                       │ per-upstream fallbacks
                                        ▼
         ┌──────────────────────────────────────────────────────────┐
         │ FIRMS · OWM · Open-Meteo · Copernicus · Census · NIFC ·   │
@@ -108,102 +94,35 @@ _App UI captures are kept out of version control. The validation figures below a
 
 **Frontend (`web/`).** Next.js 16 (App Router) + React + TypeScript (strict), Tailwind v4, TanStack Query, react-leaflet on MapTiler tiles, with custom canvas/SVG rendering for the hero orb, phase-space graph, and animated backgrounds. The composite math lives in pure, testable functions ([`web/lib/composite-risk.ts`](web/lib/composite-risk.ts)).
 
-**Backend (`api/`).** FastAPI on Python 3.11+ (3.14 in development), async `httpx`, pydantic v2. The fire-weather index is a transparent, rule-based core (no ML, by design), complemented by a separate scikit-learn ignition model trained offline and served from a committed artifact. There is JSON-on-disk caching for NDVI (per-coordinate, with separate TTLs for current vs. climatology) and in-memory caching for the live feeds.
+**Backend (`api/`).** FastAPI on Python 3.11+ (3.14 in development), async `httpx`, pydantic v2. The fire-weather index is a transparent, rule-based core; a separate scikit-learn ignition model is trained offline and served from a committed artifact. NDVI results are cached on disk per coordinate (with separate TTLs for current vs. climatology), and the live feeds are cached in memory.
 
 **Design principle: graceful degradation everywhere.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty or null payload instead of failing the request. Every feature has a fallback: regional calibration falls back to global cutoffs, NDVI to a calendar season factor, KBDI to a days-since-rain proxy, and open shelters to candidate locations. The Fire-Weather What-If runs with no GPS and no keys at all.
 
-Full technical detail and the load-bearing design decisions (with their costs) live in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Full technical detail is in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## The fire-weather model
+## How the scoring works
 
-A rule-based fire-weather index in [`api/core/risk_algorithm.py`](api/core/risk_algorithm.py). No machine learning. It grades the local environment for fire ignition and growth on a 0–1 scale, like a UV index for fire danger. It does **not** predict that a fire *will* start, and it does not describe an existing fire's behavior.
+The short version. The formulas, matrices, and validation method are in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-### 1. The fire-weather index
+**Fire weather.** A rule-based index (no machine learning) grades the local environment on a 0–1 scale from VPD, wind, KBDI drought, and an NDVI vegetation anomaly, like a UV index for fire danger. Its constants are *fitted* to a frozen set of ~500 historical fires, not hand-picked. It reaches Spearman **ρ +0.32** against log fire size on held-out fires, ahead of the published Hot-Dry-Windy (+0.30) and Fosberg (+0.28) indices. ([the fire-weather index](docs/ARCHITECTURE.md#the-fire-weather-index) · [validation](docs/ARCHITECTURE.md#validation))
 
-Three meteorological factors combine **multiplicatively**, then a vegetation factor scales the result:
+**Per-state calibration.** A 0.55 is a dangerous fire day in humid Florida but routine in dry Arizona, so a single global cutoff would misjudge one of them. Tier bands (LOW / MODERATE / HIGH / EXTREME) are instead pegged to each state's own history: the 50th / 75th / 97th percentiles of its historical fire-day scores. 17 states are calibrated; the rest use global cutoffs. ([calibration](docs/ARCHITECTURE.md#per-state-calibration))
 
-```
-VPD            vapor pressure deficit from temperature + humidity (Tetens/Magnus)
-wind           sustained 10-min wind, saturating at a ~32 mph plateau
-drought        Keetch-Byram Drought Index (KBDI, 0–800)
-vegetation     NDVI anomaly vs. the same-month 3-year normal (fallback: season factor)
+**Ignition likelihood (machine learning).** The rule-based index answers "how bad could a fire get?" A separate gradient-boosted model answers "do today's conditions resemble the days fires actually start?" It scores **ROC-AUC 0.84** under leakage-safe spatial cross-validation, holds at 0.83 on a separate out-of-time test (train before 2010, test 2010–2015), and its outputs are probability-calibrated. The two run side by side: the rule-based index stays the explainable core, and the model is a learned second opinion. ([the ignition model](docs/ARCHITECTURE.md#the-ignition-model) · [model card](docs/ignition_model_card.md))
 
-score = (vpd^a × wind^b × drought^c) × vegetation_factor
-```
+**The headline.** Fire weather, ignition likelihood, and active-fire proximity resolve into your overall-risk tier through two published lookup matrices in series. ([the composite](docs/ARCHITECTURE.md#the-overall-risk-composite))
 
-_Fitted exponents: vpd **0.45**, wind **0.43**, drought **0.12**. They sum to 1.0. The 0.12 is a deliberate floor. Full fit in [ARCHITECTURE.md §2](docs/ARCHITECTURE.md)._
-
-Multiplicative combination captures the "hot **and** dry **and** windy" non-linearity. Any single mild factor pulls the whole score down. The structure follows the Fosberg, Hot-Dry-Windy, and McArthur indices.
-
-<details>
-<summary><strong>Why each input, and what it really measures</strong></summary>
-
-- **NDVI anomaly over raw NDVI.** Raw NDVI is mostly biome detection (PNW forests are always ~0.8, Arizona desert ~0.2). The *anomaly* (current vs. the same-month normal over a 1 km buffer) is biome-agnostic. It captures how much drier or sparser the vegetation is *right now* versus its seasonal baseline. This is the fuel-load proxy that operational systems like USFS WFAS rely on. When Sentinel-2 is unavailable (cloud cover, or the Fire-Weather What-If with no GPS), the score falls back to a calendar season factor.
-- **KBDI for drought.** The operational soil-moisture-deficit metric (Keetch & Byram 1968). It's computed daily from a 365-day precipitation and evapotranspiration window via the free Open-Meteo archive, keyed to a 0.1° grid cell so neighbors share one cached compute. Two dry weeks in Florida humidity is not the same drought as two dry weeks in Arizona. KBDI captures both. A "days since rain" proxy does not.
-
-</details>
-
-### 2. Per-state calibration
-
-A 0.55 in Florida is a dangerous fire day. The same 0.55 in Arizona is routine. A single global cutoff would cry wolf in one place and miss real danger in the other.
-
-The calibration script samples about 500 historical fire days **per state** (roughly 8,500 across the 17 fitted states) from the federal FPA-FOD database (~1.88M wildfires, 1992–2015). It pulls real day-of-fire weather, scores each with the same fire-weather algorithm, and stores the **50th / 75th / 97th percentiles** of the resulting distribution as that state's tier boundaries. This per-state sampling is separate from the held-out benchmark used for validation in §3.
-
-```
-LOW       score < 50th pctile of the state's fire-day scores
-MODERATE  50th – 75th
-HIGH      75th – 97th
-EXTREME   ≥ 97th    (top ~3% of historically observed fire days)
-```
-
-**17 states are fitted** (the entire West, the Southeast belt, plus TX/OK). The rest fall back to global cutoffs. State membership is resolved at request time via the **US Census reverse-geocoder**. It's accurate even for border points like Reno, NV that a bounding-box heuristic would misclassify.
-
-![Per-state regional thresholds](docs/regional_thresholds.png)
-
-_Same raw score, different tier by state. A probe at **0.45** reads **EXTREME** in NC/GA/FL, **HIGH** across the middle cluster, and **MODERATE** in NM/AZ/UT/NV/CA._
-
-### 3. Validation
-
-The constants are fitted, not hand-picked. They're fit to maximize Spearman ρ(score, log fire size) on a train split and reported on a held-out test split. There the index reaches **ρ = +0.32**, ahead of Hot-Dry-Windy (+0.30) and Fosberg FFWI (+0.28) on the same fires. Neither of those carries the per-state calibration on top; this index does. Mean score rises monotonically with fire size, with non-overlapping 95% CIs between the smallest and largest fire bins. Full methodology is in [ARCHITECTURE.md §2](docs/ARCHITECTURE.md): the train/test split, the deliberate drought-floor tradeoff, and the confidence intervals.
-
-![Fire-weather index validated against a held-out benchmark](docs/v4_validation.png)
-
-![Fitted index vs. published fire-weather indices](docs/v4_benchmark.png)
-
-### Honest gaps
-
-- KBDI's fitted exponent wanted to drop near zero (fire *size* is spread- and VPD-driven), so it's floored at 0.12 to keep drought load-bearing. That costs only +0.006 ρ. Rationale in [ARCHITECTURE.md §2](docs/ARCHITECTURE.md).
-- The FPA-FOD sample skews toward human-caused spring fires that peak before green-up, which a vegetation-as-fuel proxy under-rates. Splitting natural vs. human ignition is on the roadmap.
-- The dataset ends in 2015, so the per-state percentile shape should be re-fit periodically against newer fire records.
-- NDVI is averaged over a 1 km buffer, so hyper-local fuel state isn't modeled. That resolution is fine for an awareness app. A fielded operational tool would want finer detail.
-
----
-
-## A learned second opinion: ignition likelihood
-
-The rule-based index above asks *how bad could a fire get?* A separate **gradient-boosted machine-learning model** answers a different question: *do today's conditions resemble the days fires actually start?* They capture different things. One measures severity, the other measures occurrence. Both show on the Status screen side by side.
-
-- **What it reads:** dryness (VPD, humidity, temperature), drought (KBDI and days since rain), wind, time of year, and **land cover**, the fuel actually on the ground. Location itself (lat/lon) is left out on purpose, so the model learns conditions and fuel instead of geography.
-- **Trained** on 32,382 examples: 4,897 real fire-ignition days (FPA-FOD + Open-Meteo) against "typical day" negatives. The negatives come from those same fire locations and from 3,000 genuinely non-fire background locations (`scripts/build_ignition_dataset.py`).
-- **Evaluated** with leakage-safe **spatial-block cross-validation** plus a logistic baseline. **ROC-AUC 0.840:** given a real fire day and a random typical day, the model ranks the fire day higher about 84% of the time. **PR-AUC 0.488** (no-skill baseline 0.151). Well-calibrated after isotonic calibration (Brier 0.163 down to 0.100).
-- **Validated across time too:** a stricter out-of-time holdout (train on everything before 2010, test on 2010–2015) holds at **ROC-AUC 0.832**, against 0.840 for spatial CV. A 6-year forward gap barely moves it (`scripts/temporal_validation.py`).
-- **Rediscovers the physics on its own:** permutation importance puts **VPD and drought (KBDI) on top**, the same drivers the hand-built index uses.
-- **Knows where there's nothing to burn (v2):** a land-cover feature (NLCD, with developed-intensity split) plus the background negatives fix the v1 over-flagging of low-fuel cities. A cool, windy spring day in dense-urban **Chicago** dropped from the 76th percentile ("high") to the 61st ("moderate"). Genuinely dry **Phoenix** stays high. See the [model card](docs/ignition_model_card.md#addressing-the-over-flag-v2).
-- **Served live** at `/ignition` as a calibrated percentile index, with training/serving parity (the same feature function runs in training and at request time).
+![Fire-weather index validated against ~500 historical fires](docs/v4_validation.png)
 
 ![Ignition model: ROC and reliability](docs/ignition_eval.png)
 
-Full write-up: [model card](docs/ignition_model_card.md). The design rationale for keeping the core rule-based while adding this learned model is in [ARCHITECTURE.md §10](docs/ARCHITECTURE.md).
+### Honest gaps
 
----
-
-## The overall-risk composite
-
-The headline tier on Status (shown in-app as your **overall risk**) combines three signals. It runs them through two lookup matrices in series. It does not average them. Fire-weather severity and the ignition model combine first into an environmental-danger tier, so a high ignition reading on a mild day can't escalate the headline on its own. That environment tier then meets the active-fire threat to set the final tier. The threat is distance × size, with smoothed wind, containment, and staleness modifiers.
-
-The matrices and the full rationale for using matrices instead of weights are in [ARCHITECTURE.md §6](docs/ARCHITECTURE.md). The threat math is in §7–§8.
+- The FPA-FOD sample skews toward human-caused spring fires that peak before green-up, which a vegetation-as-fuel proxy under-rates. Splitting natural vs. human ignition is on the roadmap.
+- The dataset ends in 2015, so the per-state percentile shape should be re-fit periodically against newer fire records.
+- NDVI is averaged over a 1 km buffer, so hyper-local fuel state isn't modeled. That resolution is fine for an awareness app. A fielded operational tool would want finer detail.
 
 ---
 

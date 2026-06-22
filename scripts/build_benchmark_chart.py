@@ -39,10 +39,10 @@ def main() -> int:
 
     # Ascending so the fitted bar lands on top as the clear winner.
     bars = [
-        ("V4 — original constants", m["rho_current_test"], "#9ca3af"),
+        ("Fire weather — original constants", m["rho_current_test"], "#9ca3af"),
         ("Fosberg FFWI (1978)", m["rho_ffwi_test"], "#E8B339"),
         ("Hot-Dry-Windy (2018)", m["rho_hdw_test"], "#4FA8FF"),
-        ("V4 — fitted constants", m["rho_fitted_test"], "#F04438"),
+        ("Fire weather — fitted constants", m["rho_fitted_test"], "#F04438"),
     ]
     bars.sort(key=lambda b: b[1])
     labels = [b[0] for b in bars]
@@ -64,7 +64,7 @@ def main() -> int:
                   fontsize=10.5)
     ax.set_xlim(0, max(values) * 1.18)
     ax.set_title(
-        "Fitted V4 discriminates fire size better than published indices\n"
+        "Fitted fire-weather index discriminates fire size better than published indices\n"
         "— same held-out fires, apples-to-apples —",
         fontsize=12, pad=12,
     )
