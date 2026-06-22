@@ -232,7 +232,7 @@ export function StatusScreen() {
 
   // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
   // bucketOf(linear blend). Two reasons spelled out in
-  // web/lib/composite-risk.ts + docs/ARCHITECTURE.md §6: the prior 0.45/0.55
+  // web/lib/composite-risk.ts + docs/ARCHITECTURE.md (the overall-risk composite): the prior 0.45/0.55
   // weights were a political knob with no empirical fit, and the linear
   // blend's quartile sometimes lands in a tier the operational intent
   // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
