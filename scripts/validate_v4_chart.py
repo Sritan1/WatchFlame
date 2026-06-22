@@ -155,11 +155,11 @@ def main() -> None:
 
     ax.set_xticks(x)
     ax.set_xticklabels([LABELS[b] for b in BUCKETS], fontsize=11)
-    ax.set_ylabel("Mean predicted V4 fire-weather score (95 % CI)", fontsize=11)
+    ax.set_ylabel("Mean predicted fire-weather score (95 % CI)", fontsize=11)
     ax.set_xlabel("Fire size bucket", fontsize=11, labelpad=36)
     ax.set_title(
-        f"V4 algorithm — validated against {len(ew)} historical fires\n"
-        f"Spearman ρ(log size, predicted V4) = {spearman_r:+.2f}   "
+        f"Fire-weather algorithm — validated against {len(ew)} historical fires\n"
+        f"Spearman ρ(log size, predicted score) = {spearman_r:+.2f}   "
         f"non-overlapping 95 % CIs between extremes: {'yes' if non_overlap else 'no'}",
         fontsize=12,
         pad=14,
@@ -170,11 +170,14 @@ def main() -> None:
     ax.spines["right"].set_visible(False)
 
     fig.tight_layout()
-    out_path = PROJECT_ROOT / "notebooks" / "figures" / "v4_validation.png"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=140, bbox_inches="tight", facecolor="white")
+    docs_out = PROJECT_ROOT / "docs" / "v4_validation.png"
+    figures_out = PROJECT_ROOT / "notebooks" / "figures" / "v4_validation.png"
+    docs_out.parent.mkdir(parents=True, exist_ok=True)
+    figures_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(docs_out, dpi=140, bbox_inches="tight", facecolor="white")
+    fig.savefig(figures_out, dpi=140, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-    print(f"\nsaved chart: {out_path}")
+    print(f"\nsaved charts: {docs_out}, {figures_out}")
 
 
 if __name__ == "__main__":

@@ -1,92 +1,76 @@
-# Architecture & design decisions
+# Architecture
 
-_Design decisions and full technical detail for Ember Watch._
+A technical reference for how the scoring works. The [README](../README.md) is the overview.
 
-These are the choices that shaped the algorithm and the scoring architecture most. Each entry names the decision, why it was made, what it costs, and (where applicable) what would replace it in a production version. The README is the overview; this file is the detail and the reasoning behind it.
+Source of truth: [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) (the fire-weather index) and [web/lib/composite-risk.ts](../web/lib/composite-risk.ts) (the overall-risk composite).
 
-For the source of truth see [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) (the fire-weather index) and [web/lib/composite-risk.ts](../web/lib/composite-risk.ts) (the overall-risk composite, which combines fire weather, ignition likelihood, and active-fire proximity). The two lookup matrices that produce the headline tier are in §6.
-
----
-
-## 1. Two-axis decomposition: Environment vs Threat
-
-**Decision.** The user-facing personal-risk number is computed from two orthogonal inputs — environmental fire weather (`W`) and active-fire proximity (`T`) — that stay visible as separate component scores throughout the UI rather than getting collapsed at the source.
-
-**Why.** Conflating "the air is dangerous" and "a fire is close" hides which signal is driving the decision. The Forest Service's NFDRS, the Canadian CFFWI, and the Australian McArthur FFDI all keep their component scores separately exposed for the same reason. A user near an active fire on a calm humid day faces different choices than a user in extreme fire weather with no nearby fire — collapsing both situations to one number erases information the user actually needs.
-
-**Cost.** Two component scores require two explanations and two visualizations. UX has to surface both meaningfully rather than reduce to a single headline.
-
-**Where it could go.** A third axis — Trajectory: short-term forecast deltas in VPD, wind, and RH — was the obvious next addition, and has since been built (see §9).
+> A note on version numbers. The fire-weather index went through several revisions during development. "V1" was the original linear blend; the current fitted multiplicative index is "V4" in a few filenames (`fit_v4_params.py`, `v4_validation.png`). The prose just calls it the fire-weather index.
 
 ---
 
-## 2. Multiplicative VPD × wind × drought, with fitted exponents
+## The fire-weather index
 
-**Decision.** The fire-weather raw score is the multiplicative product of three factors with log-space exponents that sum to 1.0:
+A rule-based index that grades the local environment for fire ignition and growth on a 0–1 scale. Three weather factors combine multiplicatively, then a vegetation factor scales the result:
 
 ```
-raw = vpd_factor^0.45 × wind_factor^0.43 × drought_factor^0.12
+score = (vpd^0.45 × wind^0.43 × drought^0.12) × vegetation_factor
 ```
 
-The exponents, the VPD/wind saturation scales, and the floors are **fit, not hand-picked** — they live in a `RiskParams` dataclass in [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) and were fit against a 500-fire FPA-FOD hindcast ([scripts/fit_v4_params.py](../scripts/fit_v4_params.py)).
+- **VPD:** vapor pressure deficit from temperature and humidity (Tetens/Magnus). The dominant driver.
+- **Wind:** sustained 10-minute speed, saturating at a ~32 mph plateau, with a floor near 0.05 so calm days still register.
+- **Drought:** the Keetch-Byram Drought Index (KBDI, 0–800), a soil-moisture-deficit metric computed daily from a 365-day precipitation and evapotranspiration window (Open-Meteo), keyed to a 0.1° grid cell so neighbors share one cached compute. Floored near 0.28 so days after rain still register.
+- **Vegetation:** an NDVI *anomaly*, meaning current greenness minus the 3-year same-month normal over a 1 km buffer (ESA Sentinel-2 via Copernicus). Below normal raises the multiplier, above normal lowers it. When a cloud-blocked pass leaves NDVI unavailable, it falls back to a calendar season factor (winter 0.40, spring 0.80, summer 1.00, fall 0.90).
 
-(The index went through several revisions during development. "V1" is the original linear-blend version; "V4" is the current fitted multiplicative index described here. The V-numbers show up in a few filenames and below.)
+The exponents, saturation scales, and floors live in a `RiskParams` dataclass and are fitted against historical fires (see [Validation](#validation)).
 
-**Why multiplicative.** Multiplicative combination captures the well-established "hot AND dry AND windy" non-linearity — any single mild input pulls the whole score down. This mirrors the structure of the Fosberg Fire Weather Index (Goodrick 2002), the Hot-Dry-Windy Index (Srock et al. 2018), and the Australian McArthur FFDI. Linear/weighted-sum combination (V1's original approach) effectively treats high wind as a substitute for high VPD, which the physics doesn't support — a high wind without dry air doesn't make a wet day combustible.
+## Per-state calibration
 
-**Why fit.** The original exponents (0.5 / 0.3 / 0.2) were "defensible defaults." Fitting them against real fire outcomes turns a guess into a measurement: a coordinate search maximizing Spearman ρ(score, log fire size) on a 70/30 train split lifts the held-out **test ρ from +0.26 to +0.32**, which **edges out the raw Hot-Dry-Windy Index (+0.30) and Fosberg FFWI (+0.28) on the same fires**. Only the weather-driver constants are fit; the NDVI/vegetation factor and the calendar season multipliers are held fixed (the hindcast can't replay historical Sentinel-2, and season is a sampling proxy, not a weather driver).
+The raw 0–1 score is bucketed into LOW / MODERATE / HIGH / EXTREME. The bucket boundaries are calibrated per state. Each state's bands are pegged to the 50th / 75th / 97th percentiles of its own historical fire-day scores, so the same raw score can land at EXTREME in one state and HIGH in another.
 
-**Drought was floored on purpose.** The *unconstrained* fit drove the drought (KBDI) exponent to ~0.03, nearly eliminating it. That's a real empirical signal: fire **size** is dominated by spread (wind) and evaporative demand (VPD), whereas drought governs *ignition* more than final size, and the hindcast correlates against size. But a ~0.03 drought weight would make the KBDI integrator (a genuine engineering investment) cosmetic and shift the index to effectively VPD × wind. So the exponents are constrained to a 0.12 floor, keeping all three factors load-bearing — at a cost of only **+0.006 ρ** versus the degenerate solution. The fit landing exactly on that floor confirms the unconstrained optimum was lower; this is a deliberate science-vs-overfit tradeoff, not an accident.
+17 states are fitted (the West, the Southeast belt, plus TX/OK), covering the highest-fire-risk regions; the rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. The state is resolved at request time by the US Census reverse-geocoder, which is accurate even at border points like Reno, NV that a bounding-box heuristic would misclassify. Source data is the FPA-FOD database (~1.88M wildfires, 1992–2015), with about 500 fire-days sampled per state (roughly 8,500 across the 17). This per-state sample is separate from the frozen 500-fire benchmark used in [Validation](#validation).
 
-**Cost.** Multiplicative formulas collapse to zero on any one calm/wet input. Mitigated with fitted floors on wind (~0.05) and drought (~0.28) — fires still happen on calm days and after rain, and the floors prevent the formula from declaring otherwise. Re-fitting requires re-running the per-state calibration (§3), since its percentile cutoffs are derived from the score distribution the constants produce.
+![Per-state regional thresholds](regional_thresholds.png)
 
----
+## Validation
 
-## 3. Regional percentile calibration
+The constants are fitted to maximize Spearman ρ(score, log fire size) on a 70/30 train split, and the result is reported on the held-out test split. Fitting lifts the test ρ from +0.26 (the original hand-picked constants) to **+0.32**, ahead of the raw Hot-Dry-Windy Index (+0.30) and Fosberg FFWI (+0.28) on the same fires. Only the weather-driver constants are fit; the vegetation factor and the season multipliers are held fixed, since the hindcast can't replay historical Sentinel-2. This frozen 500-fire benchmark is the validation set, distinct from the per-state calibration sample; it lives in a CSV so fitting and chart regeneration run offline and reproducibly.
 
-**Decision.** Tier boundaries (LOW / MOD / HIGH / EXT) are fitted per state from historical fire-day score distributions rather than set globally. Per-state 50th / 75th / 97th percentiles of fire-day V4 scores become the bucket boundaries. 17 states fitted; the rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. See [api/data/regional_thresholds.json](../api/data/regional_thresholds.json) and [scripts/build_regional_thresholds.py](../scripts/build_regional_thresholds.py).
+Mean score rises monotonically with fire size, with non-overlapping 95% confidence intervals between the smallest and largest fire bins. The index assigns higher fire-weather severity to days that produced large fires, using only the weather inputs.
 
-**Why.** A score of 0.55 in Florida (humid) is a high fire-risk day; the same 0.55 in Arizona (dry) is routine. A single global threshold would consistently understate risk in fire-prone states and overstate it in wetter ones. NFDRS, McArthur FFDI, and the European EFFIS all use regionally-fitted cutoffs for this reason. Source data: USDA's FPA-FOD database (~1.88M wildfires 1992–2015).
+![Fire-weather index validated against the frozen benchmark](v4_validation.png)
 
-**Cost.** Only 17 states fitted, covering the highest-fire-risk regions (the West + Southeast belt + TX/OK). Outside those, users fall back to global cutoffs and lose the regional precision. The 97th-percentile cutoff is statistically fragile per state — ~500 calibrated fire days means roughly 15 data points in the EXT tail, so bootstrap CIs would be meaningfully wide.
+![Fitted index vs. published indices](v4_benchmark.png)
 
-**Where it could go.** Weight fire days by severity (acres burned, structures lost — both fields exist in FPA-FOD) so calibration reflects consequential fire days, not all fire days. Surface bootstrap confidence intervals on each cutoff in the UI to communicate the underlying uncertainty.
+**The drought floor.** The unconstrained fit drove the KBDI exponent toward 0.03, nearly removing it: fire *size* is dominated by spread (wind) and evaporative demand (VPD), and the hindcast correlates against size. A 0.03 weight would make the KBDI integrator cosmetic, so the exponent is floored at 0.12 to keep all three factors load-bearing, at a cost of +0.006 ρ — a deliberate choice to favor a defensible model over the last decimal of fit. The fitted exponent comes to rest exactly on the 0.12 floor, which tells us the unconstrained optimum would have been lower still.
 
----
+## The ignition model
 
-## 4. NDVI anomaly over raw NDVI
+A separate gradient-boosted classifier (`HistGradientBoostingClassifier`) for a different question: do a day's conditions resemble the days fires actually start? It predicts fire *occurrence*, where the rule-based index scores *severity*. It is served at `/ignition` as a calibrated percentile and shown next to the fire-weather tier on Status.
 
-**Decision.** The vegetation multiplier on the live data path uses NDVI *anomaly* (current value minus the 3-year same-month average for the cell), not raw NDVI. Sign convention: negative anomaly → drier than normal → higher risk multiplier. See [api/core/ndvi.py](../api/core/ndvi.py).
+- **Features:** dryness (VPD, humidity, temperature), drought (KBDI and days since rain), wind, time of year, and an NLCD land-cover class with a developed-intensity split. Latitude and longitude are excluded, so the model keys on conditions and fuel; it can't simply memorize where fires have happened.
+- **Training data:** 32,382 examples. The 4,897 positives are real fire-ignition days (FPA-FOD + Open-Meteo); the negatives are "typical day" rows, drawn both from those same fire locations and from 3,000 non-fire background locations (`scripts/build_ignition_dataset.py`).
+- **Evaluation:** leakage-safe spatial-block cross-validation against a logistic baseline gives **ROC-AUC 0.84** and PR-AUC 0.488 (no-skill baseline 0.151), isotonic-calibrated (Brier 0.163 to 0.100). A separate out-of-time test (train before 2010, test 2010–2015) holds at ROC-AUC 0.83, so a 6-year forward gap barely moves it (`scripts/temporal_validation.py`).
+- **Cross-check:** permutation importance ranks VPD and KBDI on top, the same drivers the rule-based index uses.
+- **Land-cover fix (v2):** the land-cover feature plus the background negatives correct v1's over-flagging of low-fuel cities. A cool, windy spring day in dense-urban Chicago drops from the 76th percentile to the 61st, while dry Phoenix stays high. See the [model card](ignition_model_card.md#addressing-the-over-flag-v2).
 
-**Why.** Raw NDVI is mostly biome detection. The Pacific Northwest is always ~0.8; the Arizona desert always ~0.2. That's a constant, not a fire-risk signal. Anomaly is biome-agnostic and captures fire-relevant deviation from local norm — which is the variable USFS WFAS and similar operational fuel-state systems actually use. Data source: ESA Sentinel-2 via the Copernicus Data Space Ecosystem, 1 km buffer around the user's coordinate.
+![Ignition model: ROC and reliability](ignition_eval.png)
 
-**Cost.** Cloud-blocked satellite passes leave the anomaly unavailable; the algorithm then falls back to a calendar-based season multiplier (winter 0.4 / spring 0.8 / summer 1.0 / fall 0.9). The fallback is silent — the user can't tell from the score whether they got the satellite-derived value or the coarser proxy without opening the calibration modal. A future revision should surface a confidence indicator that exposes this directly.
+## The overall-risk composite
 
----
+The headline tier on Status (the user's *overall risk*) comes from two lookup matrices in series. An earlier version ran `bucketOf(0.45·W + 0.55·T)`, but those two weights existed only to cap weather-alone risk below EXTREME and were never fitted to anything, so every cell of the decision space hung on two arbitrary coefficients. A matrix lets each cell be set on its own merits and stay individually inspectable.
 
-## 5. No machine learning in the core index
+**Stage 1 — environment.** Fire-weather severity `W` and ignition likelihood `I` are both weather-driven, so they fuse multiplicatively into one environmental-danger tier `E = ENV[W][I]`, which reads as consequence × likelihood:
 
-**Decision.** The algorithm is entirely rule-based. No learned weights, no neural networks, no gradient-boosted classifiers, no embeddings. Every output is a deterministic function of inputs through formulas published in peer-reviewed fire-science literature.
+| **fire weather ↓ · ignition →** | **low** | **moderate** | **high** | **extreme** |
+|:---|:---:|:---:|:---:|:---:|
+| **low** | 🟢 LOW | 🟢 LOW | 🟡 MOD | 🟡 MOD |
+| **moderate** | 🟢 LOW | 🟡 MOD | 🟡 MOD | 🟠 HIGH |
+| **high** | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH |
+| **extreme** | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT |
 
-**Why.** For this product specifically, rule-based wins on five axes that matter:
+Because Stage 1 is multiplicative, a high ignition reading on a low-severity day (a cool, windy day in a dense city) can only reach moderate `E`. When `I` is unavailable, `E = W` and the headline falls back to `COMPOSITE[W][T]`.
 
-1. **Explainability.** Any user can trace a score back to its inputs through the formula. The Fire-Weather What-If screen literally lets them move the inputs and watch the output change.
-2. **No training drift.** The formula is stable across years. A model trained on 2015 fire data would already be stale.
-3. **No labeling problem.** Fire occurrence is sparse, confounded by ignition source (lightning vs human), and the "would there have been a fire if conditions were like X" counterfactual is unanswerable from the data.
-4. **Fast iteration.** Tunables are named fields on a `RiskParams` dataclass, not retrained models. Re-fitting them (§2) is a coordinate search over a frozen CSV that runs in seconds offline; the equivalent in a learned model requires re-training, validation, and deployment.
-5. **Deployment simplicity.** No model serving, no versioning, no inference latency. Stateless functions in a Python module.
-
-NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for variants of these reasons.
-
-**Where ML would actually help.** Per-fire severity prediction conditional on weather + fuel state + topography (a labeled problem); fuel-state inference from Sentinel-2 imagery (NDVI is a weak proxy for actual fuel load); smoke-plume forecasting. Those are different problems than what this score tries to answer.
-
-**Addendum (later).** This decision stands for the rule-based *index*. A complementary *learned* model was subsequently added for a genuinely labelable, different question — fire-ignition *likelihood* (occurrence, not severity) — see §10. The rule-based core is unchanged; the two coexist by design.
-
----
-
-## 6. From political weights to a published tier matrix
-
-**Decision.** The headline tier on Status comes from a `(weather_tier, threat_tier) → headline_tier` lookup matrix, not from `bucketOf(0.45 × W + 0.55 × T)`. See `COMPOSITE_MATRIX` in [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+**Stage 2 — headline.** The environment tier meets the active-fire threat `T` through a 4×5 matrix:
 
 | **environment ↓ · active-fire threat →** | **none** | **low** | **moderate** | **high** | **extreme** |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -95,98 +79,18 @@ NFDRS, CFFWI, McArthur FFDI, and the European EFFIS are all rule-based, for vari
 | **high** | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT |
 | **extreme** | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT | 🔴 EXT |
 
-**Why.** The earlier version used `0.45 × W + 0.55 × T` and bucketed the result by quartile. The weights were chosen for one reason — *"weather alone caps at 0.45, so the headline never escalates to EXTREME from environment alone"* — and, unlike the factor exponents fitted in §2, were never fitted to outcomes. That made every cell of the implied decision space derived through two arbitrary coefficients instead of being argued on its own merits.
-
-The matrix encodes each cell's intent directly. `W=ext × T=none → MOD` is the same "don't cry wolf on hot dry days without an active fire" constraint, now visible and editable as a single cell. Cells on the corners agree with the prior linear blend (e.g. `W=ext × T=ext → EXT` both ways); cells in the middle now reflect operational intent rather than arithmetic accident (e.g. `W=high × T=mod` is now HIGH instead of the linear blend's ~0.48 → MOD).
-
-**Cost.** The composite-as-a-single-number disappears as a tier source — there's no longer one scalar that summarizes the whole picture. The orb's arc fill still uses the linear blend as a visual position cue (so the orb moves continuously as inputs change), but that number is decorative; the tier label is authoritative. In a handful of edge cells the arc position and the tier color can visually disagree by one band — acceptable since users read the tier label, not the precise arc position.
-
-**Where it could go.** The 4×5 grid still produces only 4 output tiers (LOW / MOD / HIGH / EXT). A 5-state action vocabulary (STAND DOWN / STANDBY / AWARE / WATCH / ACTION) would map decisions to behaviors instead of adjectives — the same change operational systems like NWS Storm Prediction Center make when they cascade Fire Weather Watch → Red Flag Warning. Out of scope for this revision; would touch the orb palette, headline copy, Safety banner styling, and the calibration ladder color scheme simultaneously.
-
-**Addendum — a stage in front (folding in ignition likelihood).** §10 added a learned ignition-likelihood signal (`I`). Folding it into the headline as a *naive third axis* of this matrix would double-count weather: fire-weather severity `W` and ignition `I` are both weather-driven and correlated. Instead the headline is now **two matrices in series**:
-
-1. **Stage 1 — environment.** `E = ENV_MATRIX[W][I]` fuses fire-weather severity `W` with ignition likelihood `I` into a single *environmental danger* tier. The matrix is **symmetric and multiplicative** — it reads as `hazard = consequence × likelihood`. Either factor being low pulls the product down; both high pushes it up.
-
-   | **fire weather ↓ · ignition →** | **low** | **moderate** | **high** | **extreme** |
-   |:---|:---:|:---:|:---:|:---:|
-   | **low** | 🟢 LOW | 🟢 LOW | 🟡 MOD | 🟡 MOD |
-   | **moderate** | 🟢 LOW | 🟡 MOD | 🟡 MOD | 🟠 HIGH |
-   | **high** | 🟡 MOD | 🟡 MOD | 🟠 HIGH | 🟠 HIGH |
-   | **extreme** | 🟡 MOD | 🟠 HIGH | 🟠 HIGH | 🔴 EXT |
-
-2. **Stage 2 — headline.** The existing 4×5 `COMPOSITE_MATRIX` above is **unchanged**; it is simply fed `E` in place of `W`: `headline = COMPOSITE_MATRIX[E][T]`.
-
-**Why two stages, not one 3-D matrix.** Separating "how dangerous is the environment" (`W ⊗ I`) from "is a fire actually bearing down on you" (`× T`) keeps each matrix small, auditable, and individually arguable — the same reasoning that replaced the linear blend in the first place. It also avoids hand-authoring 4×4×5 = 80 cells; the two stages are 16 + 20 = 36, each with a clear semantic.
-
-**The self-tempering property (why this fixes the v1 over-flag honestly).** Because Stage 1 is multiplicative, a place with *high ignition likelihood but low fire-weather severity* — a cool, windy, low-drought day in a dense city — lands at **moderate** `E`, not high. The likelihood signal cannot escalate the headline on its own; it needs genuine fire-weather consequence behind it. So the ignition model's residual tendency to read elevated in low-severity-but-fire-shaped weather is neutralized *at the headline*, while still contributing real lift when severity *is* present. It degrades cleanly: when `I` is unavailable (loading / offshore / model absent), `E = W` and the headline is exactly the prior `COMPOSITE_MATRIX[W][T]`. See `ENV_MATRIX` + `envFromBuckets` in [web/lib/composite-risk.ts](../web/lib/composite-risk.ts), wired in [web/components/status/StatusScreen.tsx](../web/components/status/StatusScreen.tsx), explained to users in the two-stage "Why this score?" modal.
-
----
-
-## 7. Threat = distance × size, multiplicative with Hill saturation
-
-**Decision.** Per-fire threat multiplies a distance factor by a size factor (it was previously OR-combined):
+**The threat axis.** Per-fire threat multiplies a distance factor by a size factor, so a fire is threatening only when it is both close and large. An earlier version OR-combined the two, which let a large fire 30 mi away read EXTREME on size alone; multiplying requires both, so that same fire now reads LOW.
 
 ```
 base = exp(−d/τ)·taper(d) × [floor + (1 − floor)·acres/(acres + K)]
 ```
 
-with τ = 21 mi, floor = 0.70, K = 300 ac. A fire is threatening only if it is *both* close AND large. A FIRMS pixel (size unknown) takes size-factor 1.0, so it stays distance-only — preserving the satellite path's long-standing behavior. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts).
+with τ = 21 mi, floor = 0.70, K = 300 ac. Hill saturation on size has no hard ceiling, so a megafire still separates from a merely-large fire; a FIRMS pixel of unknown size takes size-factor 1.0, staying distance-only. Smooth multiplicative modifiers then apply for wind alignment (×1.20 blowing toward the user down to ×0.80 away, eased by the cosine of the angle), containment (toward ×0.6 past ~75%), and detection age (toward ×0.6 past ~24 h). The 50 mi eligibility edge tapers smoothly between 46 and 50 mi. Threat is aggregated across every fire within range.
 
-**Why.** The earlier form OR-combined the two factors (`base = 1 − (1 − dist)(1 − size)`), which let *either* one saturate the score on its own. With `size = clamp((acres − 50)/4,950)`, a 5,000-acre fire 30 mi away produced `size = 1.0` → `base = 1.0` (EXTREME) regardless of distance — not credible; that's a smoke/ember risk, not run-now. Multiplicative combination encodes the right physics: the same fire now scores `exp(−30/21) × ~0.98 ≈ 0.24` (LOW). Hill saturation on size has no hard ceiling, so a 50,000-ac megafire still separates from a merely-large fire.
+## Trajectory
 
-**Cost.** Size now matters at every range, so a known *small* fire reads lower than before even when close (a 50-ac fire 0.5 mi away is HIGH, not EXT). The `[floor, 1]` size band (0.70–1.0) keeps distance the dominant axis so the de-escalation stays modest, but it is deliberate and visible — overall threat reads gentler across the board, correcting the old formula's over-alarming.
-
-**Where it could go.** Replace the FIRMS size-factor (a flat 1.0) with a typical-detection prior; weight by structures-threatened, not just acreage.
+A 6-hour fire-weather projection, surfaced as a RISING / STEADY / FALLING chip and an interactive phase-space graph (time × fire-weather). It projects the score forward hour by hour from Open-Meteo's forecast, then anchors the curve to the Status orb's current score: absolute level comes from OpenWeatherMap so the graph agrees with the cards, and the hour-to-hour deltas come from Open-Meteo. See [api/core/trajectory.py](../api/core/trajectory.py).
 
 ---
 
-## 8. Smoothed threat cliffs (distance, containment, staleness, wind)
-
-**Decision.** The four operational boundaries in the per-fire threat are now continuous transitions instead of hard steps. See [web/lib/composite-risk.ts](../web/lib/composite-risk.ts):
-
-- **50 mi eligibility** — the distance factor tapers smoothly to 0 between 46 and 50 mi (smoothstep), so a fire crossing the boundary fades out rather than dropping off a cliff. Fires past 50 mi are still skipped for loop tightness, but contribute ~0 by then anyway.
-- **75% containment** — a logistic ramp from ×1.0 (uncontained) toward ×0.6, centered at 75%, instead of a step at exactly 75%.
-- **24 hr FIRMS staleness** — a logistic ramp from ×1.0 (fresh) toward ×0.6, centered at 24 hr. The per-fire function now takes the detection's *age in hours* rather than a stale boolean.
-- **±30° wind cone** — wind alignment is a *multiplicative* modifier on the per-fire threat: `× (1 + WIND_REL·cos(angle))` with `WIND_REL = 0.20`, i.e. ×1.20 blowing directly toward the user, ×1.0 at crosswind, ×0.80 directly away. No cone edges. It is multiplicative (not a flat additive `± bump`) on purpose: scaling the existing distance/size-driven `base` keeps wind's influence *proportional to distance*, so a fire near the 50 mi eligibility edge — whose `base` has already decayed toward 0 — can't be escalated a whole tier by wind direction alone. This also makes wind a peer of the staleness and containment dampeners (one consistent chain of multiplicative modifiers on `base`) rather than an additive special case.
-
-**Why.** A fire at 49.9 vs 50.1 mi, or 74% vs 76% contained, used to flip the user's status discontinuously — the kind of knife-edge that erodes trust in a score. It's the same artifact the V4 *fire-weather* index already removed for wind via a power law; this brings the *threat* side to parity.
-
-**Cost.** The smooth ramps engage a little earlier (a 60%-contained fire gets a small damp; a 12 hr-old detection a slight one) — arguably more honest, but it does lower some mid-range threats. The ramp widths are hand-chosen, not fit: unlike fire weather, there's no labeled personal-threat outcome dataset to calibrate against.
-
-**Where it could go.** Fit the ramp widths and the size floor/K against a labeled proximity-outcome set if one becomes available; until then they're defensible defaults.
-
----
-
-## 9. Trajectory as a third axis, anchored to the live score (Option B)
-
-**Decision.** The third axis §1 anticipated now exists: a short-term (6-hour) fire-weather trajectory, surfaced as a RISING / STEADY / FALLING chip on Status and an interactive phase-space graph (**time × fire-weather**). It projects the V4 score forward hour-by-hour from Open-Meteo's forecast. See [api/core/trajectory.py](../api/core/trajectory.py) and [web/components/status/PhaseSpaceModal.tsx](../web/components/status/PhaseSpaceModal.tsx).
-
-**The data-source tension, and Option B.** The trajectory is computed from **Open-Meteo's** forecast, while the Status orb and the weather cards use **OpenWeatherMap's** current observation. Two providers estimating the same "now" disagree slightly — so the modal's "now" wouldn't match the cards. The options were: (A) re-platform `/risk` onto Open-Meteo so everything shares one source, or (B) keep OWM as the established Status source and **anchor the trajectory curve multiplicatively to the orb's score**, letting Open-Meteo supply only the *shape* of the trend. **Option B was chosen.** The "now" point and absolute values come from OWM (so the graph agrees with the cards); the hour-to-hour *deltas* come from Open-Meteo.
-
-**Why Option B.** OWM had been the established, tested current-conditions source across the whole app; switching `/risk` off it is a deliberate, wider change with its own validation cost. Anchoring preserves cross-screen consistency (the orb, the cards, and the modal all read the same "now") while still delivering a real forecast trend — the part trajectory actually adds. Real operational fire systems model trajectory; a static "now" can't tell a user whether conditions are building or easing.
-
-**Cost.** The displayed trajectory is a **blend of two providers** — absolute level from OWM, trend shape from Open-Meteo — not a pure single-source forecast, so a purist would call it inconsistent. It's an honest tradeoff logged as a known tension. Also: because the *threat* axis is essentially static over a 6-hour horizon, the phase-space graph plots **time** as its second axis (threat lives in a summary callout, not the plot) — an earlier weather-vs-threat version implied a threat trend that wasn't really there. The anchor ratio and the forecast horizon are chosen, not fit.
-
-**Where it could go.** Unify on one weather provider for both `/risk` and `/trajectory` (removes the blend); add a trail of historical positions or an FPA-FOD historical-fire scatter behind the phase-space plot; extend the horizon once a longer-range provider is wired in.
-
----
-
-## 10. A complementary learned model (ignition likelihood)
-
-**Decision.** Keep the core fire-weather index rule-based (§5), but add a small **machine-learning model** alongside it for a different question: not "how bad could a fire get?" (severity — what V4 answers) but "do today's conditions look like a day a fire actually *starts*?" (occurrence). It's a gradient-boosted classifier, calibrated, served at `/ignition`, and shown next to the fire-weather tier on Status. Full write-up in the [model card](ignition_model_card.md).
-
-**Why this isn't a contradiction of §5.** §5's reasons (explainability, no training drift, the unanswerable counterfactual) hold for the *severity index* — and that stays rule-based. But ignition *occurrence* is a genuinely labelable problem: a fire either started on a given day at a given place, or it didn't. That makes it exactly the kind of question a learned model is *right* for. The point isn't "ML everywhere" or "ML never"; it's using each tool where it fits and being able to say why. The two signals are orthogonal and shown side by side.
-
-**How it's built.** Positives are real fire-ignition days (FPA-FOD); negatives are "typical days" from the *same* locations (controlling for fire data's spatial reporting bias by construction) plus 3,000 from genuinely non-fire locations. A land-cover feature (NLCD, developed-intensity split) lets it encode fuel. Evaluated with leakage-safe spatial-block cross-validation against a logistic baseline: **ROC-AUC 0.840, PR-AUC 0.488**, well-calibrated. Its learned feature importances independently rank **VPD + drought** on top — the same drivers V4 uses, an independent cross-check rather than a coincidence.
-
-**Cost.** A model artifact + a serving dependency (scikit-learn) the rule-based core didn't need; and the output is a *relative* likelihood index (calibrated to the training prevalence), not an absolute daily probability — so it's framed as a percentile, not a "% chance."
-
-**Where it could go.** Folding the ignition signal into the composite is **done**: a two-stage *environmental* matrix (`W ⊗ I → E`, then `E × T → headline`), not a naive fourth axis, so it doesn't double-count weather (see §6 addendum). Richer fuel / land-cover features are **done (v2)**: the model now takes an NLCD land-cover class, with developed intensity split so dense urban separates from grassy open space (see model card). Still open: unify the weather source with the rest of the app.
-
----
-
-## What this document is not
-
-This isn't a critique of the work — it's an inventory of choices made on purpose, with the costs explicitly named so future-me can see that the costs were considered, not missed. Several of the "Where it could go" sections are on the deferred-work list because the current behavior is good enough for a system that exposes its own seams.
-
-For more on limitations and planned work, see the README's [Honest gaps](../README.md#honest-gaps) and [Roadmap](../README.md#roadmap).
+For limitations and planned work, see the README's [Honest gaps](../README.md#honest-gaps) and [Roadmap](../README.md#roadmap).

@@ -46,7 +46,7 @@ const DISTANCE_DECAY_MI = 21;
  *  multiplier in [SIZE_WEIGHT_FLOOR, 1]: a known-but-small fire still reads as
  *  a real fire at close range (the floor), while a larger fire approaches the
  *  full distance-driven threat. The key fix: a large fire FAR away no longer
- *  pegs threat to 1.0 — distance always attenuates. See docs/ARCHITECTURE.md §7.
+ *  pegs threat to 1.0 — distance always attenuates. See docs/ARCHITECTURE.md (the overall-risk composite).
  *
  *  A FIRMS pixel (acres unknown) gets size multiplier 1.0, preserving the
  *  distance-only behavior the satellite path has always had. */
@@ -70,7 +70,7 @@ const WIND_CALM_KPH = 5;
  *  cone edges). Multiplicative (not a flat additive bump) so the effect stays
  *  proportional to the distance/size-driven base — a far fire whose base has
  *  decayed to ~0 can't be escalated a tier by wind direction alone. See
- *  ARCHITECTURE §8. */
+ *  the overall-risk composite in docs/ARCHITECTURE.md. */
 const WIND_REL = 0.2;
 
 /** FIRMS staleness dampener. Threat ramps smoothly from ×1.0 (fresh) toward
@@ -94,7 +94,7 @@ const CONTAINED_RAMP_PCT = 8;
 export const THREAT_RADIUS_MI = 50;
 /** Distance at which the smooth edge taper begins. Inside it, the natural
  *  exp-decay stands; from here to THREAT_RADIUS_MI the contribution eases to
- *  0. See docs/ARCHITECTURE.md §8. */
+ *  0. See docs/ARCHITECTURE.md (the overall-risk composite). */
 const TAPER_START_MI = 46;
 
 /** When the highest-threat fire is a FIRMS pixel, look for a named incident
@@ -198,7 +198,7 @@ function isThresholdsValid(t: RegionalThresholds): boolean {
 // 75% containment, 24 h FIRMS staleness, or the ±30° wind cone flipped the
 // score discontinuously. These helpers replace each step with a continuous
 // transition so the threat moves smoothly as conditions change. See
-// docs/ARCHITECTURE.md §8.
+// docs/ARCHITECTURE.md (the overall-risk composite).
 
 /** Smoothstep (Hermite) 0→1 over a clamped [0, 1] input. */
 function smoothstep01(t: number): number {
