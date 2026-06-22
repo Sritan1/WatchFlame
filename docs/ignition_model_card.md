@@ -2,8 +2,8 @@
 
 A small, interpretable machine-learning model that estimates how much a
 location's current conditions **resemble the days wildfires have actually
-started**. It complements (does not replace) the rule-based V4 fire-weather
-index — see [ARCHITECTURE §10](ARCHITECTURE.md).
+started**. It complements (does not replace) the rule-based fire-weather
+index — see [ARCHITECTURE: the ignition model](ARCHITECTURE.md#the-ignition-model).
 
 ## Overview
 
@@ -11,7 +11,7 @@ index — see [ARCHITECTURE §10](ARCHITECTURE.md).
 |---|---|
 | **Task** | Binary classification: "fire-start day" vs "typical day" at a location |
 | **Output** | A calibrated **ignition-likelihood percentile (0–100)** + a `low/moderate/high/extreme` level |
-| **Question it answers** | *Do today's conditions look like a day fires start?* (occurrence) — distinct from V4's *how bad could a fire get?* (severity) |
+| **Question it answers** | *Do today's conditions look like a day fires start?* (occurrence) — distinct from the fire-weather index's *how bad could a fire get?* (severity) |
 | **Model** | Gradient-boosted decision trees (`HistGradientBoostingClassifier`) + isotonic calibration |
 | **Served at** | `GET /ignition?lat=&lon=`, surfaced as a card on the Status screen |
 
@@ -40,7 +40,7 @@ It beats the logistic baseline (0.798 ROC-AUC) and is well-calibrated after isot
 
 **Validated across time, not just space.** Spatial CV holds out whole regions but still mixes years, so it can train on a 2015 fire-day and test on a 2005 one. A stricter **out-of-time** holdout — train on every row before 2010, test on 2010–2015 (n=4,893) — matches what the model actually faces in production (only the past is available). ROC-AUC is essentially unchanged: **0.832 out-of-time vs 0.840 spatial-CV**, PR-AUC 0.481 (base rate 0.149). The drivers are stable enough that a 6-year forward gap barely moves discrimination. Reproduce with `scripts/temporal_validation.py`; chart [`docs/temporal_validation.png`](temporal_validation.png).
 
-**Interpretability (permutation importance):** the model independently puts **VPD and KBDI on top** — the same drivers the physics-based V4 index relies on. A confound check confirms it holds at ~0.83 ROC-AUC on weather/drought features *with the calendar removed*, so it reads conditions, not just "it's summer."
+**Interpretability (permutation importance):** the model independently puts **VPD and KBDI on top** — the same drivers the physics-based fire-weather index relies on. A confound check confirms it holds at ~0.83 ROC-AUC on weather/drought features *with the calendar removed*, so it reads conditions, not just "it's summer."
 
 ### Addressing the over-flag (v2)
 
@@ -49,7 +49,7 @@ The first version was **weather-only** and trained **exclusively on fire-prone l
 1. **A land-cover feature with developed intensity split** — collapsing NLCD developed classes 21–24 into one "developed" bucket hid that dense-urban (24) is only **0.6%** of fire days while grassy open-space developed (21) is **5.3%**. Splitting them lets the model separate downtown from parks.
 2. **Background negatives from non-fire locations** — so "developed/urban" is no longer always a fire location, and the model can learn it ignites less.
 
-Result: **Chicago drops 76 → 61 (now "moderate")** for that scenario, while genuinely fire-prone **Phoenix stays high (80)** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [ARCHITECTURE §6](ARCHITECTURE.md)).
+Result: **Chicago drops 76 → 61 (now "moderate")** for that scenario, while genuinely fire-prone **Phoenix stays high (80)** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [ARCHITECTURE: the overall-risk composite](ARCHITECTURE.md#the-overall-risk-composite)).
 
 ## Serving
 
