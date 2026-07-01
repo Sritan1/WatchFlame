@@ -262,7 +262,6 @@ function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; val
             const rgb = hexToRgb(s.color);
             return (
               <div
-                // eslint-disable-next-line react/no-array-index-key
                 key={i}
                 style={{
                   width: `${w}%`,
@@ -310,7 +309,6 @@ function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; val
           const inBand = pct >= prev && pct < s.until;
           return (
             <span
-              // eslint-disable-next-line react/no-array-index-key
               key={i}
               style={{
                 color: inBand ? s.color : ae.textMute,

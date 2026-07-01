@@ -17,7 +17,6 @@ export function Stagger({
       {words.map((w, i) => (
         // Words use position-based keys; same headline may render twice on
         // risk-level changes but the key reset is intentional (replays the anim).
-        // eslint-disable-next-line react/no-array-index-key
         <span key={i} className="px-word" style={{ animationDelay: `${startDelay + i * baseDelay}ms` }}>
           {w}
           {i < words.length - 1 ? ' ' : ''}

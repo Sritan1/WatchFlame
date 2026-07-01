@@ -2,9 +2,7 @@ import type { NamedIncident } from '@/lib/api';
 import type { RiskLevel } from '@/lib/theme';
 
 /** Synthesize a severity bucket from distance + size — the backend doesn't
- *  attach one. Distance dominates: nearby = scarier. Acres adds tiebreaker.
- *  (Moved out of the now-removed ClosestFiresList component; the Map is the
- *  only consumer.) */
+ *  attach one. Distance dominates: nearby = scarier. Acres adds tiebreaker. */
 export function severityOf(f: NamedIncident): RiskLevel {
   const d = f.distance_mi;
   const a = f.acres ?? 0;

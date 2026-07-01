@@ -21,7 +21,7 @@
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { parseHealthParam, setSourceHealthOverrides } from '@/lib/sourceHealth';
+import { parseHealthParam, setSourceHealthOverrides } from '@/lib/source-health';
 
 export function SourceHealthDevOverlay() {
   const params = useSearchParams();

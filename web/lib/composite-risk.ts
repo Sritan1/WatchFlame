@@ -791,9 +791,11 @@ function angularDiff(a: number, b: number): number {
   return Math.abs((((a - b) % 360) + 540) % 360 - 180);
 }
 
+const toRad = (d: number) => (d * Math.PI) / 180;
+const toDeg = (r: number) => (r * 180) / Math.PI;
+
 export function distanceMiles(a: LatLon, b: LatLon): number {
   const R = 3958.8;
-  const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
   const dLon = toRad(b.lon - a.lon);
   const lat1 = toRad(a.lat);
@@ -804,25 +806,12 @@ export function distanceMiles(a: LatLon, b: LatLon): number {
 }
 
 export function bearingTo(from: LatLon, to: LatLon): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
   const φ1 = toRad(from.lat);
   const φ2 = toRad(to.lat);
   const Δλ = toRad(to.lon - from.lon);
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-/** FIRMS acq_date is "YYYY-MM-DD" and acq_time is "HHMM" (UTC). */
-export function isFirmsStale(
-  acqDate: string | null,
-  acqTime: string | null,
-  nowMs: number = Date.now(),
-): boolean {
-  const ageHrs = firmsAgeHours(acqDate, acqTime, nowMs);
-  if (ageHrs == null) return false; // unknown age → don't dampen
-  return ageHrs > STALE_FIRMS_HOURS;
 }
 
 /** Hours elapsed since a FIRMS acquisition. Returns null when the date

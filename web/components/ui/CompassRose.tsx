@@ -38,7 +38,6 @@ export function CompassRose({
     const y2 = round(c + Math.sin(a) * (c - (i % 3 === 0 ? 13 : 11)));
     ticks.push(
       <line
-        // eslint-disable-next-line react/no-array-index-key
         key={i}
         x1={x1}
         y1={y1}

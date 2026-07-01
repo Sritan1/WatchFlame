@@ -266,7 +266,6 @@ function HsRiskGauge({
         </defs>
         {ticks}
         {segs.map((s, i) => (
-          // eslint-disable-next-line react/no-array-index-key
           <path key={i} d={s.d} fill="none" stroke={`rgba(${hexToRgb(s.c)}, 0.16)`} strokeWidth="7" strokeLinecap="butt" />
         ))}
         {hasScore ? (
@@ -474,7 +473,6 @@ export function HeroScoreCard({
                     const rgb = hexToRgb(zone.color);
                     return (
                       <div
-                        // eslint-disable-next-line react/no-array-index-key
                         key={i}
                         style={{
                           width: `${w}%`,
@@ -513,7 +511,6 @@ export function HeroScoreCard({
                   const activeLbl = chipTone != null && chipTone.color === zone.color;
                   return (
                     <span
-                      // eslint-disable-next-line react/no-array-index-key
                       key={i}
                       style={{ width: `${w}%`, textAlign: 'center', color: activeLbl ? chipTone.color : ae.textMute, fontWeight: activeLbl ? 700 : 500 }}
                     >
@@ -636,7 +633,6 @@ function HsAICore({
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ position: 'absolute', inset: 0 }} aria-hidden>
         {orbits.map((o, i) => (
           <circle
-            // eslint-disable-next-line react/no-array-index-key
             key={`r${i}`}
             cx={c}
             cy={c}
@@ -649,7 +645,6 @@ function HsAICore({
         ))}
         {orbits.map((o, i) => (
           <g
-            // eslint-disable-next-line react/no-array-index-key
             key={`o${i}`}
             className={o.dir > 0 ? 'hs-spin' : 'hs-spin-rev'}
             style={{ transformOrigin: `${c}px ${c}px`, transformBox: 'view-box', animation: `${o.dir > 0 ? 'hs-rot' : 'hs-rotrev'} ${o.speed}s linear infinite` }}
@@ -770,7 +765,6 @@ function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; ton
         </linearGradient>
       </defs>
       {ticks.map((tk, i) => (
-        // eslint-disable-next-line react/no-array-index-key
         <g key={i}>
           <line x1={tk.x} y1={20} x2={tk.x} y2={base} stroke={ae.line} strokeWidth="0.5" strokeDasharray="2 4" opacity="0.6" />
           <text x={tk.x} y={base + 16} textAnchor="middle" fontFamily={ae.fontMono} fontSize="8.5" fill={ae.textMute} letterSpacing="0.08em">

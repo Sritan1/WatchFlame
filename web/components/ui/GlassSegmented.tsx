@@ -14,14 +14,12 @@ export function GlassSegmented<T extends string>({
   value,
   options,
   onChange,
-  color,
   glowRgb,
   size = 'md',
 }: {
   value: T;
   options: SegmentedOption<T>[];
   onChange: (id: T) => void;
-  color: string;
   glowRgb: string;
   size?: 'sm' | 'md';
 }) {

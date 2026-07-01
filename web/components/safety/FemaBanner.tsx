@@ -1,8 +1,8 @@
 'use client';
 
-// Full-width FEMA banner for the Safety screen. Bigger than the Status FemaCard
-// (24x32 padding, 80px icon box) with three action CTAs: Show on Map, FEMA Page,
-// Apply for Assistance. Only shown when there's an active declaration.
+// Full-width FEMA banner for the Safety screen (24x32 padding, 80px icon box)
+// with three action CTAs: Show on Map, FEMA Page, Apply for Assistance. Only
+// shown when there's an active declaration.
 
 import { useRouter } from 'next/navigation';
 
