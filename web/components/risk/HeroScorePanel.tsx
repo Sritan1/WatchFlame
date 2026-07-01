@@ -133,9 +133,9 @@ export function HeroScorePanel({
           }}
         >
           Change the conditions and watch the fire-weather score react. This is the
-          weather half of your <strong style={{ color: ae.text }}>overall risk</strong> — on
-          the Status page it&apos;s combined with any nearby active fires to set your final
-          risk level.
+          fire-weather part of your <strong style={{ color: ae.text }}>overall risk</strong>. On the
+          Status page it&apos;s combined with how likely a fire is to start and with any nearby active
+          fires to set your final risk level.
         </p>
       </div>
 

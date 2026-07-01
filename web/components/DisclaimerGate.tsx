@@ -115,13 +115,13 @@ export function DisclaimerGate() {
           style={{ fontFamily: ae.fontBody, fontSize: 14, lineHeight: 1.6, color: ae.textDim }}
         >
           <p style={{ margin: '0 0 12px' }}>
-            Ember Watch is an <strong style={{ color: ae.text }}>informational tool</strong> that
+            Ember Watch is an <strong style={{ color: ae.text }}>informational tool</strong>{' '}that
             estimates wildfire risk from public data. It is{' '}
-            <strong style={{ color: ae.text }}>not an emergency service</strong> and not a substitute
+            <strong style={{ color: ae.text }}>not an emergency service</strong>{' '}and not a substitute
             for official warnings or 911.
           </p>
           <p style={{ margin: 0 }}>
-            Don&apos;t rely on it for life-safety or evacuation decisions — always follow the National
+            Don&apos;t rely on it for life-safety or evacuation decisions. Always follow the National
             Weather Service, CAL FIRE, and your local emergency authorities. See the{' '}
             <Link href="/terms" style={{ color: AMBER }}>
               Terms of Use

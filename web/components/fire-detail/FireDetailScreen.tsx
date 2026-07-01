@@ -125,7 +125,10 @@ export function FireDetailScreen() {
   const userWeather = useWeather(me.coords);
   const risk = useRiskFromWeather(weather.data, fireLoc);
   const nearby = useFiresNear(fireLoc, 8, 7);
-  const incidents = useNamedIncidentsNear(fireLoc, 10, 5);
+  // reportHealth:false — detail-screen queries must not drive the global
+  // feed-health (a transient failure here was poisoning the Map/sidebar FIRMS
+  // + incident status until a manual refresh).
+  const incidents = useNamedIncidentsNear(fireLoc, 10, 5, false);
 
   const matched: NamedIncident | null = incidents.data?.[0] ?? null;
   const incidentResolved = !incidents.isLoading;
@@ -543,7 +546,7 @@ export function FireDetailScreen() {
                   value={
                     matched.contained_pct != null
                       ? `${Math.round(matched.contained_pct)}`
-                      : '—'
+                      : 'Unknown'
                   }
                   unit={matched.contained_pct != null ? '%' : undefined}
                 />
@@ -553,7 +556,7 @@ export function FireDetailScreen() {
                   value={
                     matched.acres != null
                       ? matched.acres.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                      : '—'
+                      : 'Unknown'
                   }
                   unit={matched.acres != null ? 'ac' : undefined}
                   tone={(matched.acres ?? 0) > 1000 ? RED : ae.text}
@@ -561,9 +564,9 @@ export function FireDetailScreen() {
                 <MiniStat
                   ae={ae}
                   label="Personnel"
-                  value={matched.personnel != null ? matched.personnel.toString() : '—'}
+                  value={matched.personnel != null ? matched.personnel.toString() : 'Unknown'}
                 />
-                <MiniStat ae={ae} label="Cause" value={matched.cause ?? '—'} />
+                <MiniStat ae={ae} label="Cause" value={matched.cause ?? 'Unknown'} />
               </div>
             </IncPanel>
           ) : null}
@@ -1110,12 +1113,15 @@ function AssessmentCell({
         ) : (
           <span
             style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 16,
-              color: ae.textDim,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.08em',
+              color: ae.textMute,
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
             }}
           >
-            —
+            Unknown
           </span>
         )}
       </div>

@@ -15,14 +15,14 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Modal open={open} onClose={onClose} eyebrow="Shelters" title="About these shelter locations" maxWidth={560}>
       <p style={textBody(ae)}>
-        When shelters are reported <strong style={{ color: ae.text }}>open</strong> by emergency
-        management or the Red Cross, they appear at the top under <strong style={{ color: ae.text }}>Open
-        Shelters</strong> with live status and capacity. Everything else is a{' '}
-        <strong style={{ color: ae.text }}>candidate</strong> — a potential evacuation point, not a
-        confirmed open site.
+        When emergency management or the Red Cross report a shelter{' '}
+        <strong style={{ color: ae.text }}>open</strong>, it appears at the top under{' '}
+        <strong style={{ color: ae.text }}>Open Shelters</strong>{' '}with live status and capacity.
+        Everything else is a <strong style={{ color: ae.text }}>potential site</strong>: a place
+        that could open as a shelter, not a confirmed one.
       </p>
       <p style={{ ...textBody(ae), marginTop: 10 }}>
-        Candidates are drawn from community-tagged{' '}
+        Potential sites come from{' '}
         <a
           href="https://www.openstreetmap.org/"
           target="_blank"
@@ -31,7 +31,7 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
         >
           OpenStreetMap
         </a>{' '}
-        data and the{' '}
+        and the{' '}
         <a
           href="https://nces.ed.gov/ccd/"
           target="_blank"
@@ -39,9 +39,9 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
           style={linkStyle}
         >
           NCES public-school database
-        </a>{' '}
-        — community centers, schools, churches, and similar large buildings that can plausibly
-        host displaced households.
+        </a>
+        : community centers, schools, churches, and other large buildings that could take in
+        evacuees.
       </p>
 
       <div
@@ -72,29 +72,26 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
             Call ahead during a real emergency
           </div>
           <p style={{ ...textBody(ae), marginTop: 4 }}>
-            Candidate facilities aren&apos;t guaranteed to be open or accepting evacuees — confirm
-            by phone or with your local emergency-management office before driving there. Shelters
-            open on local EM and Red Cross decisions, often without any federal disaster
-            declaration.
+            A potential site isn&apos;t guaranteed to be open or accepting evacuees. Call ahead, or
+            check with your local emergency management office, before driving there.
           </p>
         </div>
       </div>
 
       <Section ae={ae} title="What the distance means">
         <p style={textBody(ae)}>
-          The distance shown is the <strong style={{ color: ae.text }}>straight-line</strong>{' '}
-          (great-circle) distance between you and the shelter. Driving distance can be 1.3–2×
-          higher in mountainous terrain or 1.5×+ if a direct road is closed by the fire. The{' '}
-          <Mono ae={ae}>Get Directions</Mono> button hands off to Google Maps which figures out
-          the actual route.
+          The distance shown is a <strong style={{ color: ae.text }}>straight line</strong>{' '}between
+          you and the shelter. The actual drive is longer, sometimes much longer if roads near the
+          fire are closed. <strong style={{ color: ae.text }}>Get Directions</strong>{' '}opens Google
+          Maps, which finds the real route.
         </p>
       </Section>
 
-      <Section ae={ae} title="Filtered out for safety">
+      <Section ae={ae} title="What's left out">
         <p style={textBody(ae)}>
-          We drop OSM tagged points that are obviously too small (private homes, single-room
-          businesses) and any school within the fire&apos;s 12-hour spread cone. The list is
-          sorted by straight-line distance from your active location.
+          Places that are clearly too small, such as private homes or single-room businesses, are
+          left out. So is any school in the fire&apos;s likely path. The list is sorted by distance
+          from your location.
         </p>
       </Section>
     </Modal>
@@ -122,24 +119,6 @@ function Section({ ae, title, children }: { ae: ReturnType<typeof useAesthetic>[
       </h3>
       {children}
     </div>
-  );
-}
-
-function Mono({ ae, children }: { ae: ReturnType<typeof useAesthetic>['ae']; children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        fontFamily: ae.fontMono,
-        fontSize: 12,
-        background: 'rgba(255, 255, 255, 0.05)',
-        padding: '1px 6px',
-        borderRadius: 4,
-        border: `0.5px solid ${ae.line}`,
-        color: ae.text,
-      }}
-    >
-      {children}
-    </code>
   );
 }
 

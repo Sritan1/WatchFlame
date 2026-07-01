@@ -25,12 +25,12 @@ export default function AccessibilityPage() {
       <h2>Measures we take</h2>
       <ul>
         <li>Semantic structure (headings, landmarks, a defined page language).</li>
-        <li>Keyboard operability — interactive controls are reachable and operable by keyboard, with a
-          visible focus indicator; dialogs trap focus and close on <strong>Escape</strong>.</li>
-        <li>Risk levels are conveyed by a <strong>text label</strong> (e.g. &ldquo;HIGH&rdquo;), not by
+        <li>Keyboard operability: interactive controls are reachable and operable by keyboard, with a
+          visible focus indicator. Dialogs trap focus and close on <strong>Escape</strong>.</li>
+        <li>Risk levels are conveyed by a <strong>text label</strong>{' '}such as &ldquo;HIGH&rdquo;, not by
           color alone.</li>
         <li>Decorative graphics are hidden from assistive technology, and the key data visualizations
-          (risk orb, gauges, ignition likelihood, trajectory) expose a text description of their
+          (risk orb, gauges, ignition likelihood, trajectory) provide a text description of their
           value.</li>
         <li>Color contrast for body and label text targets the WCAG AA minimum.</li>
       </ul>

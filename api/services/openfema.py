@@ -29,6 +29,8 @@ from typing import Any
 
 import httpx
 
+from ..core.source_health import SourceUnavailable
+
 OPENFEMA_URL = (
     "https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries"
 )
@@ -96,9 +98,10 @@ async def fetch_active_for_county(
             resp = await client.get(OPENFEMA_URL, params=params)
             resp.raise_for_status()
             payload = resp.json()
-    except Exception:
-        _CACHE[cache_key] = (now, [])
-        return []
+    except Exception as e:
+        # Real outage — don't cache an empty result as if there were genuinely
+        # no declarations, and signal `down` so the route can surface it.
+        raise SourceUnavailable("openfema query failed") from e
 
     summaries = payload.get("DisasterDeclarationsSummaries", [])
     needle = county_name.lower().replace(" county", "").strip()

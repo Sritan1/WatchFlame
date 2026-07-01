@@ -19,15 +19,13 @@ export function FireFieldsExplainerModal({
   return (
     <Modal open={open} onClose={onClose} eyebrow="Live Map" title="What you&apos;re looking at" maxWidth={620}>
       <p style={textBody(ae)}>
-        The Live Map combines two completely different data sources: real-time satellite
-        thermal-anomaly detections and human-curated incident records. They overlap but they
-        aren&apos;t the same thing.
+        The Live Map shows two different kinds of fire data: satellite detections and named
+        incidents. They often point to the same fire, but they are not the same thing.
       </p>
 
       <Section ae={ae} title="Satellite detections (NASA FIRMS)">
         <p style={textBody(ae)}>
-          Polar-orbiting satellites (Suomi NPP, NOAA-20, Aqua, Terra) detect thermal anomalies on
-          the ground and publish them through{' '}
+          NASA satellites detect heat on the ground and report it through{' '}
           <a
             href="https://firms.modaps.eosdis.nasa.gov/"
             target="_blank"
@@ -36,45 +34,40 @@ export function FireFieldsExplainerModal({
           >
             NASA FIRMS
           </a>
-          . Each detection is a single ~375m or ~1km pixel with brightness, fire-radiative power
-          (FRP), and confidence. They&apos;re fast but not very contextual — no name, no
-          containment, no cause.
+          . Each detection is a single pixel on the map, with a brightness and a confidence level.
+          These arrive fast, but they carry no detail: no name, no size, no containment.
         </p>
-        <Bullet ae={ae} k="Detection lag" v="Roughly 1–4 hours from observation to publication. Don&apos;t use FIRMS to decide whether to evacuate." />
-        <Bullet ae={ae} k="What counts as &quot;confident&quot;" v="Filter out low-confidence detections during fog/smoke events — they include false positives from gas flares and industrial heat." />
+        <Bullet ae={ae} k="Detection lag" v="A detection can be 1 to 4 hours old by the time it appears. Never rely on it to decide whether to evacuate." />
+        <Bullet ae={ae} k="Confidence" v="Low-confidence detections can be false alarms from sources such as gas flares or industrial heat, especially in fog or smoke." />
       </Section>
 
       <Section ae={ae} title="Named incidents (NIFC + Cal Fire)">
         <p style={textBody(ae)}>
-          Cards in the right rail come from <strong style={{ color: ae.text }}>NIFC</strong>{' '}
-          (National Interagency Fire Center) and <strong style={{ color: ae.text }}>Cal Fire</strong>{' '}
-          incident feeds. These are tracked fires that incident management teams have actually
-          identified, named, and are managing.
+          Named incidents come from <strong style={{ color: ae.text }}>NIFC</strong>{' '}
+          (the National Interagency Fire Center) and <strong style={{ color: ae.text }}>Cal Fire</strong>.
+          These are real fires that crews have identified, named, and are actively managing.
         </p>
-        <Bullet ae={ae} k="Acres" v="Total area inside the perimeter — not just actively burning. Updated when ground crews remap." />
-        <Bullet ae={ae} k="Containment %" v="Percentage of perimeter where crews are confident the fire won&apos;t cross. Not the same as &quot;put out&quot;." />
-        <Bullet ae={ae} k="Personnel" v="People assigned to the incident. Excludes off-shift, support, and aviation crews." />
-        <Bullet ae={ae} k="Cause" v="Lightning, equipment, undetermined, etc. Often &quot;Under investigation&quot; for days." />
+        <Bullet ae={ae} k="Acres" v="Total area inside the fire&apos;s edge, not just what is actively burning. It updates as crews remap the fire&apos;s edge." />
+        <Bullet ae={ae} k="Containment %" v="The share of the fire&apos;s edge where crews are confident it will not spread. It does not mean the fire is out." />
+        <Bullet ae={ae} k="Personnel" v="The number of people assigned to the fire." />
+        <Bullet ae={ae} k="Cause" v="What started the fire, such as lightning or equipment. It often reads &quot;Under investigation&quot; for days." />
       </Section>
 
       <Section ae={ae} title="The severity color isn&apos;t official">
         <p style={textBody(ae)}>
-          The red/orange/amber tint on each marker is{' '}
-          <strong style={{ color: ae.text }}>synthesized</strong> from distance + acreage — a
-          local shorthand for &quot;how much should you care?&quot; not a published incident
-          severity rating. Officially, only the FEMA banner and any active evacuation orders
-          from local authorities carry weight.
+          The red, orange, and amber colors on each marker are a quick shorthand for how much a fire
+          might affect you, based on how close and how large it is. They are not an official severity
+          rating. For that, rely on the FEMA banner and any evacuation orders from local authorities.
         </p>
       </Section>
 
-      <Section ae={ae} title="How this connects to your Personal Threat">
+      <Section ae={ae} title="How this feeds your Active Fire Threat">
         <p style={textBody(ae)}>
-          The Status page&apos;s <strong style={{ color: ae.text }}>Personal Threat
-          composite</strong> picks the single fire near you driving the most risk — distance,
-          size, wind alignment, and containment all factored in — and names it in the Threat
-          Source card. Markers within ~50 mi are eligible — beyond that, contribution decays to
-          near zero. A FIRMS pixel that sits within 3 mi of a named incident is treated as the
-          same event.
+          On the Status page, your <strong style={{ color: ae.text }}>Active Fire Threat</strong>{' '}is
+          based on the one fire near you that matters most: how close it is, how big it is, the wind
+          direction, and how contained it is. The Threat Source card names that fire. Only fires
+          within about 50 miles count, and the closer ones matter far more. A satellite detection
+          within 3 miles of a named incident is treated as the same fire.
         </p>
       </Section>
     </Modal>
@@ -121,7 +114,7 @@ function Bullet({ ae, k, v }: { ae: ReturnType<typeof useAesthetic>['ae']; k: st
       <div>
         <span style={{ fontFamily: ae.fontDisplay, fontSize: 13.5, fontWeight: 600, color: ae.text }}>{k}</span>
         <span style={{ fontFamily: ae.fontBody, fontSize: 13, color: ae.textDim, marginLeft: 6, lineHeight: 1.55 }}>
-          — {v}
+          · {v}
         </span>
       </div>
     </div>

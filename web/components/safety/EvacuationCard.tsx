@@ -9,12 +9,12 @@
 import { useMemo, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { glassCommandCard } from '@/components/safety/glass';
 import { ShelterInfoModal } from '@/components/safety/ShelterInfoModal';
 import { OtherOpenShelters, ShelterDetailTile } from '@/components/safety/ShelterStatus';
 import { Button } from '@/components/ui/Button';
 import { CompassRose, cardinal8, cardinalOf } from '@/components/ui/CompassRose';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
-import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
@@ -136,33 +136,28 @@ export function EvacuationCard({
 
   return (
     <div
-      className="ember-card ember-hero-card"
       style={{
-        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
-        border: `0.5px solid rgba(${r.glow}, 0.30)`,
+        ...glassCommandCard(r.glow),
+        position: 'relative',
+        overflow: 'hidden',
         borderRadius: ae.radiusLg,
-        boxShadow: `0 24px 60px rgba(${r.glow}, 0.15)`,
-        ['--card-accent' as string]: r.color,
-        ['--card-accent-soft' as string]: `rgba(${r.glow}, 0.18)`,
       }}
     >
-      <GridPattern opacity={0.04} />
+      {/* Top radial glow — the command card's "lit from above" signature. */}
       <div
         aria-hidden="true"
         style={{
           position: 'absolute',
-          bottom: -80,
-          right: -80,
-          width: 280,
-          height: 280,
-          borderRadius: '50%',
-          filter: 'blur(32px)',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 200,
           pointerEvents: 'none',
-          background: `radial-gradient(circle, rgba(${r.glow}, 0.20), transparent 70%)`,
+          background: `radial-gradient(120% 90% at 50% -25%, rgba(${r.glow}, 0.09), transparent 70%)`,
         }}
       />
 
-      <div style={{ position: 'relative', padding: 24 }}>
+      <div className="app-card-pad" style={{ position: 'relative', padding: '24px 26px 26px' }}>
         {/* Eyebrow */}
         <div
           style={{
@@ -186,8 +181,8 @@ export function EvacuationCard({
             <span
               style={{
                 fontFamily: ae.fontMono,
-                fontSize: 10,
-                fontWeight: 700,
+                fontSize: 11.5,
+                fontWeight: 600,
                 letterSpacing: '0.18em',
                 color: r.color,
                 textTransform: ae.chipUpper ? 'uppercase' : 'none',
@@ -202,8 +197,8 @@ export function EvacuationCard({
               onClick={() => setShelterInfoOpen(true)}
               aria-label="About these shelters"
               style={{
-                width: 22,
-                height: 22,
+                width: 28,
+                height: 28,
                 borderRadius: 99,
                 background: 'rgba(255, 255, 255, 0.04)',
                 border: `0.5px solid ${ae.line}`,
@@ -214,13 +209,13 @@ export function EvacuationCard({
                 justifyContent: 'center',
               }}
             >
-              <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
+              <Icon name="info" size={14} color={ae.textMute} strokeWidth={1.7} />
             </button>
           ) : null}
         </div>
 
         {/* Mode toggle */}
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 20 }}>
           <GlassSegmented<EvacMode>
             value={mode}
             options={[
@@ -230,18 +225,21 @@ export function EvacuationCard({
             onChange={onModeChange}
             color={r.color}
             glowRgb={r.glow}
-            size="sm"
+            size="md"
           />
         </div>
 
         {/* Compass + headline (skeleton while the data for this mode loads) */}
-        <div style={{ marginTop: 22, display: 'flex', gap: 18, alignItems: 'center' }}>
+        <div
+          className="app-flex-col"
+          style={{ marginTop: 26, display: 'flex', gap: 18, alignItems: 'center' }}
+        >
           {isBodyLoading ? (
             <>
-              <Skeleton width={130} height={130} rounded="full" />
+              <Skeleton width={128} height={128} rounded="full" />
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <Skeleton width={180} height={42} rounded="md" />
-                <Skeleton width={'80%'} height={11} rounded="sm" />
+                <Skeleton width={180} height={48} rounded="md" />
+                <Skeleton width={'80%'} height={12} rounded="sm" />
               </div>
             </>
           ) : noFire ? (
@@ -252,33 +250,60 @@ export function EvacuationCard({
             />
           ) : (
             <>
-              <CompassRose
-                bearingDeg={headingBearing}
-                cardinal={headingCardinal}
-                color={r.color}
-                glowRgb={r.glow}
-                size={130}
-              />
-              <div>
+              <div
+                style={{
+                  position: 'relative',
+                  width: 128,
+                  height: 128,
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {/* Slow radar sweep behind the rose. */}
+                <span
+                  className="sf-radar-sweep"
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    inset: -2,
+                    borderRadius: '50%',
+                    background: `conic-gradient(from 0deg, rgba(${r.glow}, 0.45), rgba(${r.glow}, 0.10) 60deg, transparent 120deg)`,
+                    opacity: 0.9,
+                    pointerEvents: 'none',
+                  }}
+                />
+                <CompassRose
+                  bearingDeg={headingBearing}
+                  cardinal={headingCardinal}
+                  color={r.color}
+                  glowRgb={r.glow}
+                  size={122}
+                />
+              </div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
                     fontFamily: ae.fontDisplay,
-                    fontSize: 52,
+                    fontSize: 56,
                     fontWeight: ae.titleWeight,
                     letterSpacing: '-0.04em',
                     color: ae.text,
-                    lineHeight: 0.95,
+                    lineHeight: 0.9,
+                    whiteSpace: 'nowrap',
+                    textShadow: `0 0 34px rgba(${r.glow}, 0.26)`,
                   }}
                 >
                   Head {headingLabel}
                 </div>
                 <div
                   style={{
-                    marginTop: 10,
+                    marginTop: 12,
                     fontFamily: ae.fontMono,
-                    fontSize: 11.5,
+                    fontSize: 13,
                     color: ae.textDim,
-                    letterSpacing: '0.04em',
+                    letterSpacing: '0.02em',
                     lineHeight: 1.4,
                   }}
                 >
@@ -310,7 +335,7 @@ export function EvacuationCard({
             style={{
               margin: 0,
               fontFamily: ae.fontBody,
-              fontSize: 12.5,
+              fontSize: 13.5,
               lineHeight: 1.55,
               color: ae.textDim,
             }}
@@ -335,6 +360,7 @@ export function EvacuationCard({
                 icon="external"
                 color={r.color}
                 full
+                style={{ height: 56, fontSize: 18, fontWeight: 700, borderRadius: 14 }}
                 onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
               >
                 Get Directions

@@ -25,10 +25,12 @@ import {
 import { DroughtPanel, type DroughtMode } from '@/components/risk/DroughtPanel';
 import { InputPanel } from '@/components/risk/InputPanel';
 import { InsightsRail } from '@/components/risk/InsightsRail';
+import { RiskBackground } from '@/components/risk/RiskBackground';
 import { VegetationPanel, type VegMode } from '@/components/risk/VegetationPanel';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { useAesthetic } from '@/lib/aesthetic';
+import { useAnyModalOpen } from '@/lib/modal-state';
 import { dangerToRisk, type RiskRequest, type Season } from '@/lib/api';
 import { useRiskFromWeather, useWeather } from '@/lib/queries';
 import { lookupStateLocal } from '@/lib/regional-thresholds';
@@ -100,6 +102,17 @@ function currentSeason(): Season {
 export function RiskScreen() {
   const { accent } = useAesthetic();
   const units = useUnits();
+
+  // Pause the terrain backdrop (CSS-cheap, but still) when the tab is hidden or
+  // a modal is open — mirrors the Status + Safety backdrop pattern.
+  const anyModalOpen = useAnyModalOpen();
+  const [tabVisible, setTabVisible] = useState(true);
+  useEffect(() => {
+    const onVis = () => setTabVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+  const animActive = tabVisible && !anyModalOpen;
 
   const [temperature, setTemperatureRaw] = useState(DEFAULTS.temperature);
   const [humidity, setHumidityRaw] = useState(DEFAULTS.humidity);
@@ -361,8 +374,16 @@ export function RiskScreen() {
 
   return (
     <>
-      {/* ───── HERO ────────────────────────────────────────────────── */}
-      <PageSection top={36} bottom={28}>
+      {/* "Forecast Terrain" backdrop — fixed behind the page; cards scroll over
+          it and it shows through the gaps. Warms with the what-if score. */}
+      <RiskBackground risk={floorLow(level)} active={animActive} />
+
+      <div
+        className={animActive ? undefined : 'ember-anim-paused'}
+        style={{ position: 'relative', zIndex: 1 }}
+      >
+        {/* ───── HERO ────────────────────────────────────────────────── */}
+        <PageSection top={36} bottom={28}>
         <SectionEyebrow
           color="#E8B339"
           right={`Calibrated for ${regionDisplay}${region ? ` · Global: ${capitalize(risk.danger_level)}` : ''}`}
@@ -511,8 +532,8 @@ export function RiskScreen() {
               ndviFooter={
                 !inputsLoading && localNdviFailed && !ndviUserSet ? (
                   <WarningInline
-                    bold="Couldn't fetch your area's NDVI."
-                    rest="Likely cloud cover over the last several Sentinel-2 passes, or outside coverage. Slide it manually for a what-if."
+                    bold="Couldn't load your area's vegetation reading."
+                    rest="Clouds may have blocked the satellite recently, or this spot is outside its coverage. Move the slider to test a value."
                   />
                 ) : null
               }
@@ -530,8 +551,8 @@ export function RiskScreen() {
               footer={
                 !inputsLoading && localKbdiFailed && !kbdiUserSet ? (
                   <WarningInline
-                    bold="Couldn't fetch your area's drought signal."
-                    rest="Open-Meteo Archive didn't respond, so Reset to my area can't fill this with your real value. Slide it manually for a what-if."
+                    bold="Couldn't load your area's drought reading."
+                    rest="The drought data source didn't respond, so Reset to my area can't fill in your real value. Move the slider to test a value."
                   />
                 ) : null
               }
@@ -548,6 +569,7 @@ export function RiskScreen() {
           />
         </div>
       </PageSection>
+      </div>
     </>
   );
 }
@@ -603,9 +625,9 @@ function ResetButton({
 }) {
   const { ae } = useAesthetic();
   const tip = ready
-    ? `Seed inputs from ${locLabel}'s current weather + drought + vegetation.`
+    ? `Fill the inputs with ${locLabel}'s current weather, drought, and vegetation.`
     : loading
-      ? `Fetching weather + drought + vegetation for ${locLabel}…`
+      ? `Loading weather, drought, and vegetation for ${locLabel}…`
       : `No local data available for ${locLabel}.`;
   return (
     <button
@@ -674,10 +696,10 @@ function FetchErrorBanner({ locLabel, onRetry }: { locLabel: string; onRetry: ()
             letterSpacing: ae.titleTracking,
           }}
         >
-          Couldn&apos;t fetch local data for {locLabel}
+          Couldn&apos;t load local data for {locLabel}
         </div>
         <div style={{ marginTop: 2, fontFamily: ae.fontBody, fontSize: 12, color: ae.textDim }}>
-          The inputs below show placeholder defaults until the weather / drought / NDVI services come back.
+          The inputs below show placeholder values until the weather, drought, and vegetation data comes back.
         </div>
       </div>
       <button

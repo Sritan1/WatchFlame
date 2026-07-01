@@ -13,7 +13,7 @@ import { Icon } from '@/components/Icon';
 import { FilterChips, type FireFilter } from '@/components/map/FilterChips';
 import { IncidentsRail, type RailTab } from '@/components/map/IncidentsRail';
 import type { MapSelection } from '@/components/map/MapImpl';
-import { severityOf } from '@/components/status/ClosestFiresList';
+import { severityOf } from '@/lib/severity';
 import { useAesthetic } from '@/lib/aesthetic';
 import { matchIncidentByFemaTitle } from '@/lib/fema-match';
 import { useFiresAroundMe, useNamedIncidentsNear } from '@/lib/queries';
@@ -232,11 +232,11 @@ export function MapScreen() {
           <ZoomButton dir={-1} />
         </div>
 
-        {/* Scale indicator — bottom-left */}
+        {/* Scale indicator — bottom-left, lifted above the required MapTiler logo. */}
         <div
           style={{
             position: 'absolute',
-            bottom: 20,
+            bottom: 44,
             left: 20,
             padding: '10px 14px',
             borderRadius: 10,
@@ -342,6 +342,8 @@ export function MapScreen() {
         onTabChange={changeRailTab}
         userCoords={loc.coords}
         radiusMi={INCIDENT_RADIUS_MI}
+        incidentsUpdatedAt={incidentsQ.dataUpdatedAt}
+        satellitesUpdatedAt={firesQ.dataUpdatedAt}
       />
     </div>
   );

@@ -127,6 +127,9 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
+    # Per-request source-health (see core/source_health.py). Must be exposed
+    # explicitly or the browser hides it from cross-origin JS.
+    expose_headers=["X-Source-Health"],
 )
 
 
