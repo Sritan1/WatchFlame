@@ -17,6 +17,7 @@ import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
+import { useSourceHealth } from '@/lib/sourceHealth';
 
 // Tone palette — orange/grey/green, deliberately desaturated vs the
 // risk-level palette so trajectory reads as direction (a vector), not
@@ -49,18 +50,23 @@ export function TrajectoryChip({
   onOpen: () => void;
 }) {
   const { ae } = useAesthetic();
+  // health.trajectory is only ever set by the dev `?health=` override, so the
+  // "Forecast unavailable" state can be seen without a real forecast outage.
+  const forcedDown = useSourceHealth().trajectory === 'down';
 
-  // Query errored → show an explicit, clickable "Forecast Failed" chip (slate,
-  // not a risk tier) rather than hiding it. Clicking opens the phase-space
-  // modal, which explains the failure and notes that the current position is
-  // still accurate. The composite tier from /risk stays valid regardless.
-  if (isError) {
+  // No forecast to show — either the /trajectory query errored (HTTP/network)
+  // or the backend returned null because Open-Meteo's forecast feed was
+  // unavailable for this location. Either way, show an explicit, clickable
+  // "Forecast unavailable" chip (slate, not a risk tier) rather than letting
+  // the chip silently vanish. Clicking opens the phase-space modal, which
+  // explains it. The composite tier from /risk stays valid regardless.
+  if (isError || trajectory === null || forcedDown) {
     const SLATE = '148, 163, 184';
     return (
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Forecast failed — open for details"
+        aria-label="Forecast unavailable — open for details"
         className="ember-fade-up"
         style={{
           display: 'inline-flex',
@@ -82,7 +88,7 @@ export function TrajectoryChip({
         }}
       >
         <Icon name="warn" size={12} color="#E8B339" strokeWidth={1.8} />
-        Forecast Failed
+        Forecast unavailable
       </button>
     );
   }
@@ -95,11 +101,6 @@ export function TrajectoryChip({
   if (isLoading || trajectory === undefined) {
     return <Skeleton width={132} height={26} rounded="full" />;
   }
-
-  // Backend explicitly returned null — Open-Meteo unavailable for this
-  // location, etc. Hide the chip rather than render a misleading default.
-  // The composite tier is still valid from /risk; trajectory is additive.
-  if (trajectory === null) return null;
 
   const tone = TONE[trajectory.tier];
 

@@ -49,7 +49,7 @@ export function StatePickerModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Fire-Weather What-If" title="Calibration scope" maxWidth={560}>
+    <Modal open={open} onClose={onClose} eyebrow="Fire-Weather What-If" title="What your level is based on" maxWidth={560}>
       <p
         style={{
           margin: 0,
@@ -59,14 +59,13 @@ export function StatePickerModal({
           color: ae.textDim,
         }}
       >
-        Pick a state to bucket the score using that state&apos;s historical fire-day distribution
-        instead of the default global cutoffs. The numeric score doesn&apos;t change — only what
-        counts as &quot;EXTREME&quot; does.
+        Pick a state and your score is graded against that state&apos;s own fire history instead of
+        one nationwide scale. The number stays the same. Only the level it lands in changes.
       </p>
 
       <Row
-        label="Global (no calibration)"
-        sub="Default 0–1 thresholds: LOW <0.3, MOD <0.6, HIGH <0.8, EXT ≥0.8"
+        label="Global (default)"
+        sub="One scale for the whole country, not tuned to a state."
         selected={value === null}
         onPress={() => select(null)}
         ae={ae}
@@ -84,7 +83,7 @@ export function StatePickerModal({
           textTransform: ae.chipUpper ? 'uppercase' : 'none',
         }}
       >
-        Fitted states · {FITTED_STATES.length}
+        Calibrated states · {FITTED_STATES.length}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {FITTED_STATES.map((s) => (

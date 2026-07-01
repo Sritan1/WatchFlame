@@ -11,10 +11,13 @@ Strategy:
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from api.core.source_health import SourceUnavailable
 from api.main import app
 
 client = TestClient(app)
@@ -711,3 +714,126 @@ def test_disasters_near_filters_old_declarations(monkeypatch):
 
     r = client.get("/disasters/near?lat=34.05&lon=-118.24")
     assert r.json()["active"] == []
+
+
+# --- source health (X-Source-Health header) ----------------------------------
+#
+# Routes that degrade gracefully report which upstreams failed on the request
+# via a JSON header, so the frontend can show "this feed is down" instead of a
+# misleading empty result. The response BODY must stay unchanged.
+
+def _health(r) -> dict:
+    return json.loads(r.headers["X-Source-Health"])
+
+
+def test_fires_health_ok_on_success(monkeypatch):
+    async def stub(days=1, bbox=None):
+        return {"type": "FeatureCollection", "features": []}
+    monkeypatch.setattr("api.routes.fires.fetch_fires_geojson", stub)
+    r = client.get("/fires?days=1")
+    assert r.status_code == 200
+    assert _health(r) == {"firms": "ok"}
+
+
+def test_fires_health_down_strips_private_key(monkeypatch):
+    """On a FIRMS outage the service returns an empty FeatureCollection tagged
+    with `_sources`. The route must report firms=down AND strip the private
+    key so the public body shape is unchanged."""
+    async def stub(days=1, bbox=None):
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "_sources": {"firms": "down"},
+        }
+    monkeypatch.setattr("api.routes.fires.fetch_fires_geojson", stub)
+    r = client.get("/fires?days=1")
+    assert r.status_code == 200
+    assert _health(r) == {"firms": "down"}
+    assert r.json() == {"type": "FeatureCollection", "features": []}  # no _sources
+
+
+def test_incidents_health_reports_nifc_down(monkeypatch):
+    async def stub_nifc():
+        raise RuntimeError("WFIGS exploded")
+    async def stub_calfire():
+        return [_CalFire()]
+    monkeypatch.setattr("api.routes.incidents.fetch_nifc", stub_nifc)
+    monkeypatch.setattr("api.routes.incidents.fetch_calfire", stub_calfire)
+
+    r = client.get("/incidents/near?lat=37.5&lon=-120.0&radius_mi=50")
+    assert r.status_code == 200
+    assert _health(r) == {"nifc": "down", "calfire": "ok"}
+    # Body unchanged — Cal Fire result still flows through.
+    assert len(r.json()) == 1
+
+
+def test_shelters_health_reports_overpass_down(monkeypatch):
+    async def stub_shelters(lat, lon, radius_km=80):
+        raise RuntimeError("overpass nuked")
+    async def stub_schools(lat, lon, radius_mi=50):
+        return [_School()]
+    monkeypatch.setattr("api.routes.shelters.fetch_shelters", stub_shelters)
+    monkeypatch.setattr("api.routes.shelters.fetch_schools", stub_schools)
+    monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", _stub_open_empty)
+
+    r = client.get("/shelters?lat=37.5&lon=-120.0&radius_mi=50")
+    assert r.status_code == 200
+    h = _health(r)
+    assert h["shelters_osm"] == "down"
+    assert h["shelters_nces"] == "ok"
+    assert h["shelters_open"] == "ok"
+
+
+def test_disasters_health_census_down(monkeypatch):
+    """A real Census outage reports census=down AND fema=down (FEMA can't be
+    queried without a county). Body is the same graceful empty result."""
+    async def stub_geo(lat, lon):
+        raise SourceUnavailable("census down")
+    monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
+    r = client.get("/disasters/near?lat=34.05&lon=-118.24")
+    assert r.status_code == 200
+    assert _health(r) == {"census": "down", "fema": "down"}
+    assert r.json() == {"county": None, "active": []}
+
+
+def test_disasters_health_fema_down(monkeypatch):
+    """County resolves but FEMA is down: census=ok, fema=down, county present."""
+    async def stub_geo(lat, lon):
+        return _CountyInfo()
+    async def stub_fema(state, county_name):
+        raise SourceUnavailable("fema down")
+    monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
+    monkeypatch.setattr("api.routes.disasters.fetch_active_for_county", stub_fema)
+    r = client.get("/disasters/near?lat=34.05&lon=-118.24")
+    assert r.status_code == 200
+    assert _health(r) == {"census": "ok", "fema": "down"}
+    j = r.json()
+    assert j["county"]["state"] == "CA"
+    assert j["active"] == []
+
+
+def test_disasters_health_outside_us_not_flagged(monkeypatch):
+    """Outside a US county is NOT a failure — census stays ok."""
+    async def stub_geo(lat, lon):
+        return None
+    monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
+    r = client.get("/disasters/near?lat=0&lon=0")
+    assert r.status_code == 200
+    assert _health(r) == {"census": "ok", "fema": "ok"}
+
+
+def test_risk_survives_census_outage(monkeypatch):
+    """The hardened gather must keep /risk at 200 when Census actually raises
+    (regression guard for the new SourceUnavailable path) — falls back to the
+    bbox/centroid state heuristic."""
+    async def stub_census(lat, lon):
+        raise SourceUnavailable("census down")
+    monkeypatch.setattr("api.routes.risk.reverse_geocode", stub_census)
+    async def stub_kbdi(lat, lon):
+        return None
+    monkeypatch.setattr("api.routes.risk.fetch_kbdi_today", stub_kbdi)
+
+    body = {**_RISK_BODY, "lat": 37.77, "lon": -122.42}  # SF
+    r = client.post("/risk", json=body)
+    assert r.status_code == 200
+    assert r.json()["regional_state"] == "CA"  # heuristic still resolves

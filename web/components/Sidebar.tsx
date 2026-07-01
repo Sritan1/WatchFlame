@@ -5,7 +5,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { LocationsModal } from '@/components/location/LocationsModal';
@@ -35,11 +36,336 @@ const NAV_ITEMS: NavItem[] = [
 // own current risk level if desired.
 const DEFAULT_ACCENT = '#FFA76A';
 
+// ─── Data Feeds widget ──────────────────────────────────────────────────────
+// The capsule shows the three most fundamental data sources for the CURRENT
+// screen and, on click, opens a popover listing EVERY source that powers that
+// screen (provenance, not live health — the down-state shows contextually on
+// each screen instead). `chip` is the short label in the 3-up grid; `name` +
+// `desc` fill the popover rows.
+type Feed = { chip: string; name: string; desc: string };
+const FEEDS: Record<string, Feed> = {
+  firms:     { chip: 'FIRMS',    name: 'NASA FIRMS',    desc: 'Satellite fire detections' },
+  nifc:      { chip: 'NIFC',     name: 'NIFC',          desc: 'Interagency incident data' },
+  calfire:   { chip: 'CAL FIRE', name: 'Cal Fire',      desc: 'California incidents' },
+  owm:       { chip: 'OWM',      name: 'OpenWeather',   desc: 'Current conditions' },
+  openmeteo: { chip: 'O-METEO',  name: 'Open-Meteo',    desc: 'Drought and forecast' },
+  cdse:      { chip: 'CDSE',     name: 'Copernicus',    desc: 'Sentinel-2 vegetation' },
+  census:    { chip: 'CENSUS',   name: 'US Census',     desc: 'County and state lookup' },
+  nlcd:      { chip: 'NLCD',     name: 'NLCD',          desc: 'Land cover' },
+  fema:      { chip: 'FEMA',     name: 'FEMA',          desc: 'Disaster declarations' },
+  femanss:   { chip: 'FEMA NSS', name: 'FEMA NSS',      desc: 'Open shelters' },
+  osm:       { chip: 'OSM',      name: 'OpenStreetMap', desc: 'Open map data' },
+  nces:      { chip: 'NCES',     name: 'NCES',          desc: 'Public schools' },
+  maptiler:  { chip: 'MAPTILER', name: 'MapTiler',      desc: 'Base map tiles' },
+  fpafod:    { chip: 'FPA-FOD',  name: 'FPA-FOD',       desc: 'Historical fire calibration' },
+};
+
+const ALL_FEEDS = [
+  'firms', 'nifc', 'calfire', 'owm', 'openmeteo', 'cdse', 'census', 'nlcd',
+  'fema', 'femanss', 'osm', 'nces', 'maptiler', 'fpafod',
+];
+
+// Per-screen roster, ordered so the FIRST THREE are the chip's labels and the
+// full list fills the popover. Settings + any unmapped route → the full roster.
+const SCREEN_FEEDS: Record<string, string[]> = {
+  '/':            ['firms', 'nifc', 'owm', 'calfire', 'openmeteo', 'cdse', 'nlcd', 'census'],
+  '/map':         ['firms', 'nifc', 'calfire', 'maptiler', 'osm'],
+  '/risk':        ['owm', 'cdse', 'openmeteo', 'census', 'fpafod'],
+  '/safety':      ['fema', 'calfire', 'nces', 'nifc', 'firms', 'femanss', 'osm', 'owm', 'openmeteo', 'cdse', 'census'],
+  '/fire-detail': ['firms', 'nifc', 'calfire', 'owm', 'maptiler', 'osm'],
+};
+function feedsForRoute(pathname: string): string[] {
+  return SCREEN_FEEDS[pathname] ?? ALL_FEEDS;
+}
+
+// ─── FeedsPopover — anchored glass popover listing all of a screen's sources ──
+// Portaled to <body> so it floats free of the rail's backdrop-filter + overflow
+// clip. Positioned to the right of the card (flips above on a narrow viewport),
+// with a speech-bubble arrow tying it back. Adapted from web-shell.jsx (the
+// per-source latency + the "N live" count are intentionally dropped).
+function FeedsPopover({
+  feeds,
+  anchorRef,
+  popRef,
+  closing,
+  onRequestClose,
+}: {
+  feeds: string[];
+  anchorRef: RefObject<HTMLDivElement | null>;
+  popRef: RefObject<HTMLDivElement | null>;
+  closing: boolean;
+  onRequestClose: () => void;
+}) {
+  const { ae } = useAesthetic();
+  const [pos, setPos] = useState<{ left: number; bottom: number; flip: boolean } | null>(null);
+  const [animIn, setAnimIn] = useState(true);
+  const green = RISK_LEVELS.low.color;
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setAnimIn(false), 240);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  const place = useCallback(() => {
+    const a = anchorRef.current;
+    if (!a) return;
+    const r = a.getBoundingClientRect();
+    const W = 272;
+    const left = r.right + 12;
+    const flip = left + W > window.innerWidth - 8;
+    if (flip) {
+      setPos({ left: r.left, bottom: Math.round(window.innerHeight - r.top + 12), flip: true });
+    } else {
+      setPos({ left, bottom: Math.round(window.innerHeight - (r.top + r.height)) - 2, flip: false });
+    }
+  }, [anchorRef]);
+
+  useLayoutEffect(() => place(), [place]);
+  useEffect(() => {
+    const fn = () => place();
+    window.addEventListener('resize', fn);
+    window.addEventListener('scroll', fn, true);
+    return () => {
+      window.removeEventListener('resize', fn);
+      window.removeEventListener('scroll', fn, true);
+    };
+  }, [place]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onRequestClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onRequestClose]);
+
+  if (!pos) return null;
+
+  const bgRgb = hexToRgb(ae.bg);
+  const glass = {
+    background: `linear-gradient(180deg, rgba(${bgRgb}, 0.92), rgba(${bgRgb}, 0.82))`,
+    backdropFilter: 'blur(26px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(26px) saturate(180%)',
+    border: '0.5px solid rgba(255,255,255,0.12)',
+    boxShadow:
+      '0 24px 60px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.10)',
+  } as const;
+
+  return (
+    <div
+      ref={popRef}
+      className={`feeds-pop${closing ? ' anim-out' : animIn ? ' anim-in' : ''}`}
+      role="dialog"
+      aria-label="All data feeds"
+      style={{
+        position: 'fixed',
+        zIndex: 60,
+        left: pos.left,
+        bottom: pos.bottom,
+        width: 272,
+        transformOrigin: pos.flip ? 'bottom left' : 'left bottom',
+      }}
+    >
+      {/* Speech-bubble arrow */}
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          ...(pos.flip ? { bottom: -6, left: 26 } : { left: -6, bottom: 24 }),
+          width: 12,
+          height: 12,
+          borderRadius: 2,
+          background: `rgba(${bgRgb}, 0.92)`,
+          backdropFilter: 'blur(26px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(26px) saturate(180%)',
+          borderLeft: pos.flip ? 'none' : '0.5px solid rgba(255,255,255,0.12)',
+          borderBottom: '0.5px solid rgba(255,255,255,0.12)',
+          borderRight: pos.flip ? '0.5px solid rgba(255,255,255,0.12)' : 'none',
+          borderTop: pos.flip ? 'none' : '0.5px solid rgba(255,255,255,0.12)',
+          transform: 'rotate(45deg)',
+        }}
+      />
+
+      <div style={{ ...glass, borderRadius: 16, overflow: 'hidden' }}>
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 14px 10px',
+            borderBottom: '0.5px solid rgba(255,255,255,0.07)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 99,
+                  background: green,
+                  boxShadow: `0 0 8px ${green}, 0 0 2px ${green}`,
+                  animation: 'ember-flicker 2.4s ease-in-out infinite',
+                }}
+              />
+              <span
+                style={{
+                  position: 'absolute',
+                  inset: -3,
+                  borderRadius: 99,
+                  border: `1px solid ${green}`,
+                  opacity: 0.5,
+                  animation: 'web-ping 2.4s ease-out infinite',
+                }}
+              />
+            </span>
+            <span
+              style={{
+                fontFamily: ae.fontMono,
+                fontSize: 9.5,
+                fontWeight: 600,
+                letterSpacing: '0.16em',
+                color: ae.textDim,
+                textTransform: 'uppercase',
+              }}
+            >
+              Data Feeds
+            </span>
+          </div>
+          <span
+            style={{
+              fontFamily: ae.fontMono,
+              fontSize: 9,
+              color: ae.textMute,
+              letterSpacing: '0.04em',
+            }}
+          >
+            {feeds.length} sources
+          </span>
+        </div>
+
+        {/* Source rows */}
+        <div
+          style={{
+            maxHeight: 'min(72vh, 480px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: '5px 6px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          {feeds.map((key) => {
+            const f = FEEDS[key];
+            if (!f) return null;
+            return (
+              <div
+                key={key}
+                className="feeds-pop-row"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 9px', borderRadius: 9 }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 99,
+                    flexShrink: 0,
+                    background: green,
+                    boxShadow: `0 0 7px ${green}, 0 0 2px ${green}`,
+                    animation: 'ember-flicker 2.4s ease-in-out infinite',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
+                  <div
+                    style={{
+                      fontFamily: ae.fontMono,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: ae.text,
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    {f.name}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: ae.fontBody,
+                      fontSize: 10.5,
+                      color: ae.textMute,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {f.desc}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar({ riskColor }: { riskColor?: string }) {
   const { ae } = useAesthetic();
   const pathname = usePathname();
   const loc = useUserLocation();
   const [locationsOpen, setLocationsOpen] = useState(false);
+
+  // Sources for this screen: the first three are the chip labels, the full
+  // list fills the popover.
+  const screenFeeds = feedsForRoute(pathname);
+  const topThree = screenFeeds.slice(0, 3);
+
+  // Data-feeds popover (click the card → list all of this screen's sources).
+  const feedsCardRef = useRef<HTMLDivElement | null>(null);
+  const feedsPopRef = useRef<HTMLDivElement | null>(null);
+  const feedsOpenRef = useRef(false);
+  const [feedsOpen, setFeedsOpen] = useState(false);
+  const [feedsClosing, setFeedsClosing] = useState(false);
+  useEffect(() => {
+    feedsOpenRef.current = feedsOpen && !feedsClosing;
+  }, [feedsOpen, feedsClosing]);
+  const closeFeeds = useCallback(() => {
+    feedsOpenRef.current = false;
+    setFeedsClosing(true);
+    window.setTimeout(() => {
+      setFeedsOpen(false);
+      setFeedsClosing(false);
+    }, 150);
+  }, []);
+  const toggleFeeds = useCallback(() => {
+    if (feedsOpenRef.current) {
+      closeFeeds();
+    } else {
+      feedsOpenRef.current = true;
+      setFeedsClosing(false);
+      setFeedsOpen(true);
+    }
+  }, [closeFeeds]);
+  // Dismiss on a click outside the card + popover (a click on the card itself
+  // is handled by toggleFeeds, so it's excluded here).
+  useEffect(() => {
+    if (!feedsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (feedsCardRef.current?.contains(t)) return;
+      if (feedsPopRef.current?.contains(t)) return;
+      closeFeeds();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [feedsOpen, closeFeeds]);
+  // Close when the route changes.
+  useEffect(() => {
+    feedsOpenRef.current = false;
+    setFeedsOpen(false);
+    setFeedsClosing(false);
+  }, [pathname]);
 
   const accent = riskColor ?? DEFAULT_ACCENT;
   const accentRgb = hexToRgb(accent);
@@ -497,11 +823,24 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
         })}
       </nav>
 
-      {/* Feeds Live — translucent capsule */}
+      {/* Data feeds — click to open the full source list popover */}
       <div
+        ref={feedsCardRef}
+        role="button"
+        tabIndex={0}
+        aria-haspopup="dialog"
+        aria-expanded={feedsOpen && !feedsClosing}
+        onClick={toggleFeeds}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleFeeds();
+          }
+        }}
         style={{
           position: 'relative',
           zIndex: 1,
+          cursor: 'pointer',
           margin: '8px 12px 8px',
           padding: 11,
           borderRadius: 14,
@@ -555,21 +894,11 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
               Feeds Live
             </span>
           </div>
-          <span
-            style={{
-              fontFamily: ae.fontMono,
-              fontSize: 9.5,
-              color: ae.textMute,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            2s
-          </span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-          {['FIRMS', 'NIFC', 'CAL FIRE'].map((s) => (
+          {topThree.map((key) => (
             <div
-              key={s}
+              key={key}
               style={{
                 padding: '5px 0',
                 textAlign: 'center',
@@ -584,11 +913,24 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
                 letterSpacing: '0.06em',
               }}
             >
-              {s}
+              {FEEDS[key].chip}
             </div>
           ))}
         </div>
       </div>
+
+      {feedsOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <FeedsPopover
+              feeds={screenFeeds}
+              anchorRef={feedsCardRef}
+              popRef={feedsPopRef}
+              closing={feedsClosing}
+              onRequestClose={closeFeeds}
+            />,
+            document.body,
+          )
+        : null}
 
       {/* Settings — single chip (no profile since we don't have auth) */}
       <Link

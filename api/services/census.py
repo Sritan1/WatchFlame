@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from ..core.source_health import SourceUnavailable
+
 CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
 
 # FIPS-to-state-code map. Census's STUSAB field is sometimes empty in the
@@ -56,7 +58,14 @@ class CountyInfo:
 
 
 async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
-    """Return county info for a US lat/lon, or None if not in the US."""
+    """Return county info for a US lat/lon, or None if the point is not in a
+    US county.
+
+    Raises SourceUnavailable when the Census endpoint itself FAILS (network
+    error, 5xx, timeout) so callers can tell a real outage apart from a
+    legitimately not-in-the-US answer. Callers that just want best-effort
+    behavior catch it and treat it like None.
+    """
     cache_key = f"{round(lat, 3)}|{round(lon, 3)}"
     now = time.time()
     cached = _CACHE.get(cache_key)
@@ -79,10 +88,11 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
             resp = await client.get(CENSUS_URL, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception:
-        # Census endpoint can rate-limit or return 5xx; fail soft.
-        _CACHE[cache_key] = (now, None)
-        return None
+    except Exception as e:
+        # Real outage (rate-limit, 5xx, timeout). Don't cache — retry next time
+        # — and signal `down` so the route can surface it rather than silently
+        # falling back as if the point were outside the US.
+        raise SourceUnavailable("census reverse-geocode failed") from e
 
     geos = (
         data.get("result", {})

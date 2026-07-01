@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from ..core.parse import safe_float
+from ..core.source_health import DOWN
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -68,7 +69,11 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
         # to its empty-state UI instead of a generic error toast.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[firms] upstream {status} for {area}/{days} ({type(e).__name__}); returning empty")
-        empty = {"type": "FeatureCollection", "features": []}
+        # `_sources` rides along so the /fires route can report FIRMS as down
+        # (an empty FeatureCollection from a real outage looks identical to
+        # "satellite saw nothing"). The route strips this private key before
+        # returning the body, so the public response shape is unchanged.
+        empty = {"type": "FeatureCollection", "features": [], "_sources": {"firms": DOWN}}
         # Cache the empty result for a short window so we don't hammer FIRMS
         # while it's degraded. Use a 60s sub-TTL via a sentinel timestamp.
         _CACHE[cache_key] = (now - max(_ttl() - 60, 0), empty)

@@ -1,9 +1,10 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from ..core.geo import haversine_mi
+from ..core.source_health import DOWN, OK, set_source_health
 from ..services.calfire import fetch_active_incidents as fetch_calfire
 from ..services.nifc import fetch_all_incidents as fetch_nifc
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/near")
 async def get_incidents_near(
+    response: Response,
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     radius_mi: float = Query(15.0, ge=1.0, le=200.0),
@@ -41,6 +43,14 @@ async def get_incidents_near(
     rows: list[dict[str, object]] = []
 
     # Cal Fire first so its richer rows are kept on dedupe.
+    set_source_health(
+        response,
+        {
+            "nifc": DOWN if isinstance(nifc_res, Exception) else OK,
+            "calfire": DOWN if isinstance(calfire_res, Exception) else OK,
+        },
+    )
+
     if isinstance(calfire_res, Exception):
         logger.warning("calfire query failed: %s", calfire_res)
     else:

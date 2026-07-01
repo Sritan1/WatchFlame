@@ -211,7 +211,7 @@ export function PhaseSpaceModal({
         <div style={{ marginBottom: 18 }}>
           <DataErrorState
             title="Forecast unavailable"
-            message="Couldn’t load the 6-hour forecast — check your connection and try again. Your current position (the bright dot) is still accurate — only the projected trend is missing."
+            message="Couldn't load the 6-hour forecast. Check your connection and try again. Your current position (the bright dot) is still accurate. Only the projected trend is missing."
             onRetry={onRetry}
           />
         </div>
@@ -225,11 +225,11 @@ export function PhaseSpaceModal({
           color: ae.textDim,
         }}
       >
-        <strong style={{ color: ae.text }}>Time</strong> runs left (now) → right (+{horizon} hr). Your{' '}
-        <strong style={{ color: ae.text }}>fire-weather</strong> score runs bottom → top. The thermal
-        strata are your location&apos;s <strong style={{ color: ae.text }}>calibrated tier
-        thresholds</strong> — the hour the forecast curve rises into a hotter band is the hour your
-        fire-weather tier would shift.
+        This chart shows where your <strong style={{ color: ae.text }}>fire-weather</strong>{' '}score is
+        heading over the next {horizon} hours. <strong style={{ color: ae.text }}>Time</strong>{' '}runs
+        left (now) to right. The score runs bottom (low) to top (high). The{' '}
+        <strong style={{ color: ae.text }}>colored bands</strong>{' '}are your level thresholds, so the
+        moment the line rises into a hotter band is when your level would change.
       </p>
 
       <div style={{ marginTop: 18 }}>
@@ -263,8 +263,8 @@ export function PhaseSpaceModal({
             lineHeight: 1.5,
           }}
         >
-          Forecast trajectory unavailable for this location right now — your current position (the
-          bright dot) is still accurate.
+          A forecast trend isn&apos;t available for this location right now. Your current position
+          (the bright dot) is still accurate.
         </p>
       )}
     </Modal>
@@ -839,7 +839,7 @@ function TrajectorySummary({
     currentComposite !== projectedComposite;
 
   const driverLabel = {
-    vpd: 'vapor pressure deficit',
+    vpd: 'dry air',
     wind: 'wind',
     humidity: 'humidity',
   }[trajectory.dominant_driver];
@@ -916,7 +916,7 @@ function TrajectorySummary({
             lineHeight: 1.55,
           }}
         >
-          Headline tier projected to shift from{' '}
+          Your level is on track to change from{' '}
           <strong style={{ color: ae.text, fontFamily: ae.fontMono, letterSpacing: '0.06em' }}>
             {TIER_SHORT[currentComposite]}
           </strong>{' '}
@@ -924,7 +924,7 @@ function TrajectorySummary({
           <strong style={{ color: ae.text, fontFamily: ae.fontMono, letterSpacing: '0.06em' }}>
             {TIER_SHORT[projectedComposite]}
           </strong>{' '}
-          over the next {horizon} hours — the hour the curve crosses that band edge.
+          over the next {horizon} hours, right around the hour the line crosses into the next band.
         </div>
       ) : null}
 
@@ -959,9 +959,8 @@ function TrajectorySummary({
           fontStyle: 'italic',
         }}
       >
-        &ldquo;Now&rdquo; is your current Status reading — the +{horizon} hr projection is
-        Open-Meteo&apos;s hourly forecast, and the trajectory tier reflects its now-vs-projected
-        change.
+        &ldquo;Now&rdquo; matches your current Status reading. The +{horizon} hr values come from the
+        hourly forecast for your area.
       </p>
     </div>
   );

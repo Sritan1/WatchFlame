@@ -1,14 +1,15 @@
 'use client';
 
-// 2-col row below the checklist:
-//   1. Safety Status banner — title + body are computed UPSTREAM in
-//      SafetyScreen's computeBannerSignal() so the rule that combines
-//      fire-weather and closest-fire-threat lives in one place.
+// Status band (full-width) below the hero — two matte-glass cards matching the
+// reference design:
+//   1. Safety Status banner — title + body computed UPSTREAM in SafetyScreen's
+//      computeBannerSignal() so the fire-weather × closest-fire rule lives in
+//      one place.
 //   2. "Closest Active Fire" mini stat with proximity meter.
 // Real data via incidents + FIRMS queries.
 
 import { Icon } from '@/components/Icon';
-import { Eyebrow } from '@/components/ui/Eyebrow';
+import { GLASS_CARD } from '@/components/safety/glass';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
@@ -52,30 +53,28 @@ export function AdvisoryRow({
   // Palette for the closest-fire side. When unresolved (no fire OR loading),
   // fall back to the banner's tone so the row reads cohesively.
   const fr = closestSeverity ? getRisk(closestSeverity, accent) : null;
+  const fireTone = fr ?? tone;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    <div
+      className="app-stack"
+      style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}
+    >
       {/* Safety Status — title + body driven by the combined banner signal */}
-      <div
-        style={{
-          background: ae.surface,
-          border: `0.5px solid rgba(${tone.glow}, 0.20)`,
-          borderRadius: ae.radius,
-          padding: 18,
-        }}
-      >
+      <div className="app-card-pad" style={{ ...GLASS_CARD, borderRadius: ae.radius, padding: '26px 28px' }}>
         {isLoading ? (
           <SafetyStatusSkeleton />
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <div
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: `rgba(${tone.glow}, 0.10)`,
-                  border: `0.5px solid rgba(${tone.glow}, 0.28)`,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  flexShrink: 0,
+                  background: `rgba(${tone.glow}, 0.12)`,
+                  border: `0.5px solid rgba(${tone.glow}, 0.30)`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -83,18 +82,19 @@ export function AdvisoryRow({
               >
                 <Icon
                   name={banner.level === 'low' ? 'check' : 'warn'}
-                  size={15}
+                  size={22}
                   color={tone.color}
-                  strokeWidth={1.8}
+                  strokeWidth={banner.level === 'low' ? 2.4 : 1.8}
                 />
               </div>
               <span
                 style={{
                   fontFamily: ae.fontDisplay,
-                  fontSize: 16,
+                  fontSize: 23,
                   fontWeight: ae.titleWeight,
                   color: tone.color,
                   letterSpacing: ae.titleTracking,
+                  lineHeight: 1,
                 }}
               >
                 {banner.title}
@@ -104,9 +104,10 @@ export function AdvisoryRow({
               style={{
                 margin: 0,
                 fontFamily: ae.fontBody,
-                fontSize: 13.5,
-                lineHeight: 1.5,
+                fontSize: 15.5,
+                lineHeight: 1.55,
                 color: ae.textDim,
+                maxWidth: 360,
               }}
             >
               {banner.subtitle}
@@ -117,64 +118,81 @@ export function AdvisoryRow({
 
       {/* Closest Active Fire */}
       <div
+        className="app-card-pad"
         style={{
-          background: ae.surface,
-          border: ae.cardBorder,
+          ...GLASS_CARD,
           borderRadius: ae.radius,
-          padding: 18,
+          padding: '26px 28px',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: `rgba(${fr?.glow ?? tone.glow}, 0.10)`,
-              border: `0.5px solid rgba(${fr?.glow ?? tone.glow}, 0.28)`,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              flexShrink: 0,
+              background: `rgba(${fireTone.glow}, 0.10)`,
+              border: `0.5px solid rgba(${fireTone.glow}, 0.26)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Icon name="flame" size={15} color={fr?.color ?? tone.color} strokeWidth={1.6} />
+            <Icon name="flame" size={17} color={fireTone.color} strokeWidth={1.7} />
           </div>
-          <Eyebrow>Closest Active Fire</Eyebrow>
+          <span
+            style={{
+              fontFamily: ae.fontMono,
+              fontSize: 11.5,
+              fontWeight: 600,
+              letterSpacing: '0.18em',
+              color: ae.textDim,
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            Closest Active Fire
+          </span>
         </div>
         <div
           style={{
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'space-between',
-            gap: 14,
+            gap: 16,
+            marginTop: 'auto',
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             {closestFire ? (
               <>
-                <div
-                  style={{
-                    fontFamily: ae.fontDisplay,
-                    fontSize: 28,
-                    fontWeight: ae.titleWeight,
-                    color: ae.text,
-                    letterSpacing: ae.titleTracking,
-                    fontVariantNumeric: 'tabular-nums',
-                    lineHeight: 1,
-                  }}
-                >
-                  {convertDistance(closestFire.distance_mi, units.distance).toFixed(1)}{' '}
-                  <span style={{ fontSize: 14, color: ae.textDim, fontWeight: 400 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+                  <span
+                    style={{
+                      fontFamily: ae.fontDisplay,
+                      fontSize: 42,
+                      fontWeight: ae.titleWeight,
+                      color: ae.text,
+                      letterSpacing: ae.titleTracking,
+                      fontVariantNumeric: 'tabular-nums',
+                      lineHeight: 0.95,
+                    }}
+                  >
+                    {convertDistance(closestFire.distance_mi, units.distance).toFixed(1)}
+                  </span>
+                  <span style={{ fontFamily: ae.fontBody, fontSize: 18, color: ae.textDim }}>
                     {units.distance} {closestBearingLabel}
                   </span>
                 </div>
                 <div
                   style={{
-                    marginTop: 4,
+                    marginTop: 10,
                     fontFamily: ae.fontMono,
-                    fontSize: 11,
+                    fontSize: 13,
                     color: ae.textMute,
-                    letterSpacing: '0.06em',
+                    letterSpacing: '0.02em',
                   }}
                 >
                   {closestFire.name}
@@ -182,35 +200,37 @@ export function AdvisoryRow({
               </>
             ) : isLoading ? (
               <>
-                <Skeleton width={130} height={28} rounded="md" />
-                <div style={{ marginTop: 6 }}>
-                  <Skeleton width={90} height={11} rounded="sm" />
+                <Skeleton width={150} height={40} rounded="md" />
+                <div style={{ marginTop: 8 }}>
+                  <Skeleton width={110} height={13} rounded="sm" />
                 </div>
               </>
             ) : (
               <>
-                <div
-                  style={{
-                    fontFamily: ae.fontDisplay,
-                    fontSize: 28,
-                    fontWeight: ae.titleWeight,
-                    color: ae.textDim,
-                    letterSpacing: ae.titleTracking,
-                    lineHeight: 1,
-                  }}
-                >
-                  None{' '}
-                  <span style={{ fontSize: 14, color: ae.textDim, fontWeight: 400 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+                  <span
+                    style={{
+                      fontFamily: ae.fontDisplay,
+                      fontSize: 42,
+                      fontWeight: ae.titleWeight,
+                      color: ae.text,
+                      letterSpacing: ae.titleTracking,
+                      lineHeight: 0.95,
+                    }}
+                  >
+                    None
+                  </span>
+                  <span style={{ fontFamily: ae.fontBody, fontSize: 18, color: ae.textDim }}>
                     detected
                   </span>
                 </div>
                 <div
                   style={{
-                    marginTop: 4,
+                    marginTop: 10,
                     fontFamily: ae.fontMono,
-                    fontSize: 11,
+                    fontSize: 13,
                     color: ae.textMute,
-                    letterSpacing: '0.06em',
+                    letterSpacing: '0.02em',
                   }}
                 >
                   None within range
@@ -223,8 +243,8 @@ export function AdvisoryRow({
            *  (tallest) bar lit; farther fire → leftmost bar; >50 mi → leftmost. */}
           <ProximityMeter
             distanceMi={closestFire?.distance_mi ?? null}
-            color={fr?.color ?? tone.color}
-            glow={fr?.glow ?? tone.glow}
+            color={fireTone.color}
+            glow={fireTone.glow}
           />
         </div>
       </div>
@@ -238,13 +258,13 @@ export function AdvisoryRow({
 function SafetyStatusSkeleton() {
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <Skeleton width={32} height={32} rounded="md" />
-        <Skeleton width={140} height={16} rounded="sm" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+        <Skeleton width={44} height={44} rounded="md" />
+        <Skeleton width={150} height={23} rounded="sm" />
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Skeleton width={'100%'} height={12} rounded="sm" />
-        <Skeleton width={'82%'} height={12} rounded="sm" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <Skeleton width={'100%'} height={13} rounded="sm" />
+        <Skeleton width={'82%'} height={13} rounded="sm" />
       </div>
     </>
   );
@@ -271,13 +291,12 @@ function ProximityMeter({
   } else {
     litIndex = NUM_BARS - 1 - Math.floor(distanceMi / binWidth);
   }
-  const heights = [10, 15, 20, 26, 31, 36];
+  const heights = [12, 17, 22, 27, 32, 37];
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 36 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 37 }}>
       {heights.map((h, i) => {
         const isLit = i === litIndex;
         return (
-          // eslint-disable-next-line react/no-array-index-key
           <div
             key={i}
             style={{

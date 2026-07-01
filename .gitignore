@@ -80,6 +80,12 @@ background-waves.jsx
 background-waves-optimized.jsx
 trajectory.jsx
 tweaks-panel.jsx
+atmos-engine.jsx
+atmos-systems-risk.jsx
+safety-scene.jsx
+# Root scaffolding image only — anchored so it does NOT match the shipped
+# web/public/safety-bg-waves.png asset.
+/safety-bg-waves.png
 styleUI.md
 handoff.md
 ML.md

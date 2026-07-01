@@ -45,7 +45,7 @@ export function LocationsModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Watching" title="Active focus point" maxWidth={560}>
+    <Modal open={open} onClose={onClose} eyebrow="Watching" title="Which location to watch" maxWidth={560}>
       <p
         style={{
           margin: 0,
@@ -55,12 +55,13 @@ export function LocationsModal({
           color: ae.textDim,
         }}
       >
-        Pick where Status, Map, and Safety should track. Use your browser&apos;s GPS or any saved city.
+        Choose the location that Status, Map, and Safety follow. Use your current location or any city
+        you save below.
       </p>
 
       <Row
         label="My Location"
-        sub="Use the browser's GPS"
+        sub="Your browser's location"
         selected={activeId === null}
         onPress={() => {
           setActive(null);
@@ -114,7 +115,7 @@ export function LocationsModal({
                 letterSpacing: '0.04em',
               }}
             >
-              Search below to save Home, Work, or any city you want Status / Map / Safety to track.
+              Search below to save Home, Work, or any city you want to follow.
             </div>
           </div>
         </div>
@@ -184,7 +185,7 @@ export function LocationsModal({
 
         {search.isError ? (
           <p style={{ marginTop: 10, fontFamily: ae.fontMono, fontSize: 11, color: RISK_LEVELS.extreme.color }}>
-            Couldn&apos;t reach the geocoding service.
+            Couldn&apos;t search for cities right now.
           </p>
         ) : null}
 

@@ -127,8 +127,14 @@ def _client_secret() -> str:
     return v
 
 
-async def _get_token() -> str:
-    """Fetch + cache an OAuth access token. Refreshes 60s before expiry."""
+async def _get_token() -> str | None:
+    """Fetch + cache an OAuth access token. Refreshes 60s before expiry.
+
+    Returns None (rather than raising) on ANY auth failure — missing
+    credentials, an identity-server outage, a 401, or a timeout. NDVI is an
+    optional signal: an auth failure must degrade to "no NDVI" (the caller
+    falls back to the season multiplier) instead of bubbling a 500 out of
+    /risk and /trajectory and taking Status/Safety down with it."""
     now = time.time()
     cached = _token_cache.get("token")
     expires_at = _token_cache.get("expires_at", 0.0)
@@ -142,17 +148,22 @@ async def _get_token() -> str:
         if cached and isinstance(expires_at, float) and now < expires_at - 60:
             return str(cached)
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                _AUTH_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": _client_id(),
-                    "client_secret": _client_secret(),
-                },
-            )
-            resp.raise_for_status()
-            body = resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    _AUTH_URL,
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": _client_id(),
+                        "client_secret": _client_secret(),
+                    },
+                )
+                resp.raise_for_status()
+                body = resp.json()
+        except Exception as e:  # noqa: BLE001 - any auth failure must degrade, never crash /risk
+            status = getattr(getattr(e, "response", None), "status_code", "n/a")
+            print(f"[cdse] token/auth fetch failed ({status}, {type(e).__name__}); returning None")
+            return None
 
         _token_cache["token"] = body["access_token"]
         _token_cache["expires_at"] = time.time() + float(body.get("expires_in", 3600))
@@ -224,6 +235,10 @@ async def _post_statistics(payload: dict[str, Any]) -> dict[str, Any] | None:
     with exponential backoff. Non-429 errors are logged once and return
     None."""
     token = await _get_token()
+    if token is None:
+        # Auth is down (or unconfigured). Degrade to "no NDVI" — the /risk and
+        # /trajectory callers fall back to the season multiplier rather than 500.
+        return None
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",

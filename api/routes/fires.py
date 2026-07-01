@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
+from ..core.source_health import OK, set_source_health
 from ..services.firms import fetch_fires_geojson
 
 router = APIRouter(prefix="/fires", tags=["fires"])
@@ -27,6 +28,7 @@ def _canonical_bbox(bbox: str) -> str:
 
 @router.get("")
 async def get_fires(
+    response: Response,
     days: int = Query(1, ge=1, le=10),
     bbox: str | None = Query(
         None,
@@ -35,4 +37,13 @@ async def get_fires(
     ),
 ):
     clean_bbox = _canonical_bbox(bbox) if bbox else None
-    return await fetch_fires_geojson(days=days, bbox=clean_bbox)
+    data = await fetch_fires_geojson(days=days, bbox=clean_bbox)
+    # FIRMS health rides in a private `_sources` key on the degraded path. Read
+    # it (default ok) into the header and strip it from the body so the public
+    # GeoJSON shape is unchanged. A shallow rebuild avoids mutating the cached
+    # service dict.
+    sources = data.get("_sources", {"firms": OK})
+    set_source_health(response, sources)
+    if "_sources" in data:
+        data = {k: v for k, v in data.items() if k != "_sources"}
+    return data
