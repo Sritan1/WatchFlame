@@ -1,10 +1,11 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 
 from ..core.geo import haversine_mi
 from ..core.rate_limit import EXPENSIVE, limiter
+from ..core.source_health import DOWN, OK, set_source_health
 from ..services.nces import fetch_schools
 from ..services.open_shelters import fetch_open_shelters
 from ..services.overpass import fetch_shelters
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @limiter.limit(EXPENSIVE)
 async def get_shelters(
     request: Request,
+    response: Response,
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     radius_mi: float = Query(50.0, ge=5.0, le=125.0),
@@ -49,6 +51,15 @@ async def get_shelters(
     nces_task = asyncio.create_task(fetch_schools(lat, lon, radius_mi=radius_mi))
     open_res, overpass_res, nces_res = await asyncio.gather(
         open_task, overpass_task, nces_task, return_exceptions=True
+    )
+
+    set_source_health(
+        response,
+        {
+            "shelters_open": DOWN if isinstance(open_res, Exception) else OK,
+            "shelters_osm": DOWN if isinstance(overpass_res, Exception) else OK,
+            "shelters_nces": DOWN if isinstance(nces_res, Exception) else OK,
+        },
     )
 
     rows: list[dict[str, object]] = []

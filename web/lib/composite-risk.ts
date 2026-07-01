@@ -342,15 +342,40 @@ export function aggregateThreat(args: {
   return findThreatDriver(args)?.threat ?? 0;
 }
 
-/** Composite score (0–1) — linear blend used ONLY for the Status orb arc
- *  visualization. The user-facing tier no longer comes from `bucketOf` of
- *  this number; it comes from the calibrated `compositeFromBuckets`
- *  matrix below. The two are coherent at most cells (the matrix was
- *  designed to agree with the linear blend at the corners) but can
- *  visually disagree by one band in a few middle cells — acceptable since
- *  the tier label, not the arc fill, is what the user reads. */
+/** Composite score (0–1) — linear blend of the environment + threat axes.
+ *  Used ONLY as the continuous *intensity* that positions the orb dot WITHIN
+ *  its tier band (see `tierArcFraction`). It no longer drives the dial position
+ *  directly, so the arc can never land in a different band than the matrix
+ *  tier. The user-facing tier comes from `compositeFromBuckets` below. */
 export function composite(weather: number, threat: number): number {
   return COMPOSITE_WEIGHTS.weather * weather + COMPOSITE_WEIGHTS.threat * threat;
+}
+
+/** Tier → arc band on the orb's 0–1 dial. The bands tile the dial in quartiles
+ *  (LOW, MOD, HIGH, EXT) with a small inset at the very bottom/top so the
+ *  endpoint dot is always visible and the dial never reads as a fully empty or
+ *  fully closed circle. */
+const ARC_BANDS: Record<RiskLevel, readonly [number, number]> = {
+  low: [0.05, 0.25],
+  moderate: [0.25, 0.5],
+  high: [0.5, 0.75],
+  extreme: [0.75, 0.97],
+};
+
+/** Arc fill (0–1) for the Status orb, ANCHORED to the headline tier so the dial
+ *  can never sit in a different band than the orb color. `tier` (the matrix
+ *  output, which is the source of truth and what colors the orb) picks the
+ *  band; `intensity` (the continuous composite blend, 0–1) only positions the
+ *  dot WITHIN that band.
+ *
+ *  Replaces feeding the raw `composite()` blend straight to the dial, which
+ *  could land a band away from the matrix tier in the cells where the matrix
+ *  overrides the quartile (e.g. weather=HIGH × threat=MOD → HIGH tier, but the
+ *  blend ≈ 0.48 → a MOD-looking dial). */
+export function tierArcFraction(tier: RiskLevel, intensity: number): number {
+  const [lo, hi] = ARC_BANDS[tier];
+  const t = Math.max(0, Math.min(1, intensity));
+  return lo + t * (hi - lo);
 }
 
 // ─── Composite tier matrix ────────────────────────────────────────────────

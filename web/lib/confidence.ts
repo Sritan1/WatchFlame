@@ -2,17 +2,13 @@
 //
 // The composite tier is derived from multiple upstream signals (weather
 // observation, KBDI drought integrator, NDVI vegetation anomaly,
-// per-state calibration, driving-fire age). Each has independent
-// reliability characteristics. This module turns "what's the state of
-// each input?" into a single user-facing confidence label and an
-// itemized breakdown for the click-to-expand modal.
+// driving-fire age). Each has independent reliability characteristics. This
+// module turns "what's the state of each input?" into a single user-facing
+// confidence label and an itemized breakdown for the click-to-expand modal.
 //
 // Composition rule is weakest-link: any signal in 'bad' status pushes
-// the composite to LOW; two or more 'warn' statuses also push to LOW;
-// one 'warn' is MEDIUM; all 'good' is HIGH. Calibration is treated as
-// informational only — global fallback shows up in the breakdown but
-// doesn't drag the composite level down (the algorithm runs cleanly on
-// global cutoffs).
+// the composite to LOW. Two or more 'warn' statuses also push to LOW.
+// One 'warn' is MEDIUM. All 'good' is HIGH.
 //
 // Pure functions, no React, easy to unit-test.
 
@@ -29,10 +25,6 @@ export interface ConfidenceSignal {
   /** Right-aligned value text: "8 min ago", "California (per-state)", etc. */
   value: string;
   status: SignalStatus;
-  /** Whether this signal contributes to the composite level. False = the
-   *  signal appears in the breakdown for context but is informational only
-   *  (e.g. calibration source). */
-  contributesToLevel: boolean;
 }
 
 export interface ConfidenceResult {
@@ -80,10 +72,10 @@ function ageLabel(minutes: number | null): string {
 function firmsAgeLabel(ageHr: number): string {
   if (ageHr < 1) {
     const minutes = Math.round(ageHr * 60);
-    if (minutes < 1) return 'FIRMS, just now';
-    return `FIRMS, ${minutes} min ago`;
+    if (minutes < 1) return 'satellite, just now';
+    return `satellite, ${minutes} min ago`;
   }
-  return `FIRMS, ${Math.round(ageHr)} hr ago`;
+  return `satellite, ${Math.round(ageHr)} hr ago`;
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────
@@ -124,16 +116,12 @@ export function computeConfidence(args: {
       errSignals.push({
         label: 'Weather observation',
         value: ageLabel(wMinErr),
-        status: wMinErr < WEATHER_GOOD_MIN ? 'good' : wMinErr < WEATHER_WARN_MIN ? 'warn' : 'bad',
-        contributesToLevel: true,
-      });
+        status: wMinErr < WEATHER_GOOD_MIN ? 'good' : wMinErr < WEATHER_WARN_MIN ? 'warn' : 'bad',      });
     }
     errSignals.push({
-      label: 'Risk endpoint',
+      label: 'Risk data',
       value: 'unavailable',
-      status: 'bad',
-      contributesToLevel: true,
-    });
+      status: 'bad',    });
     return { level: 'low', signals: errSignals, loading: false };
   }
 
@@ -157,9 +145,7 @@ export function computeConfidence(args: {
   signals.push({
     label: 'Weather observation',
     value: wValue,
-    status: wStatus,
-    contributesToLevel: true,
-  });
+    status: wStatus,  });
   if (wStatus === 'warn') warns++;
   if (wStatus === 'bad') bads++;
 
@@ -168,53 +154,34 @@ export function computeConfidence(args: {
   const kbdi = args.riskData?.kbdi;
   if (kbdi == null || !Number.isFinite(kbdi)) {
     signals.push({
-      label: 'KBDI (drought)',
-      value: 'days-since-rain proxy',
-      status: 'warn',
-      contributesToLevel: true,
-    });
+      label: 'Drought (KBDI)',
+      value: 'estimated',
+      status: 'warn',    });
     warns++;
   } else {
     signals.push({
-      label: 'KBDI (drought)',
-      value: `value: ${Math.round(kbdi)}`,
-      status: 'good',
-      contributesToLevel: true,
-    });
+      label: 'Drought (KBDI)',
+      value: `${Math.round(kbdi)}`,
+      status: 'good',    });
   }
 
   // 3. NDVI (vegetation anomaly) — same NaN guard as KBDI
   const ndvi = args.riskData?.ndvi_anomaly;
   if (ndvi == null || !Number.isFinite(ndvi)) {
     signals.push({
-      label: 'NDVI (vegetation)',
-      value: 'season multiplier fallback',
-      status: 'warn',
-      contributesToLevel: true,
-    });
+      label: 'Vegetation (NDVI)',
+      value: 'estimated',
+      status: 'warn',    });
     warns++;
   } else {
     const sign = ndvi >= 0 ? '+' : '';
     signals.push({
-      label: 'NDVI (vegetation)',
-      value: `anomaly ${sign}${ndvi.toFixed(2)}`,
-      status: 'good',
-      contributesToLevel: true,
-    });
+      label: 'Vegetation (NDVI)',
+      value: `${sign}${ndvi.toFixed(2)}`,
+      status: 'good',    });
   }
 
-  // 4. Calibration source (informational — doesn't gate the level)
-  const calibrated = args.riskData?.regional_thresholds != null;
-  signals.push({
-    label: 'Calibration',
-    value: calibrated
-      ? `${args.riskData?.regional_state ?? 'state'} (per-state)`
-      : 'global fallback',
-    status: calibrated ? 'good' : 'warn',
-    contributesToLevel: false,
-  });
-
-  // 5. Driving fire (only when a fire is driving the threat axis)
+  // 4. Driving fire (only when a fire is driving the threat axis)
   const driver = args.threatDriver;
   if (driver?.kind === 'firms') {
     const ageHr = driver.ageHours;
@@ -236,18 +203,14 @@ export function computeConfidence(args: {
     signals.push({
       label: 'Driving fire',
       value: fValue,
-      status: fStatus,
-      contributesToLevel: true,
-    });
+      status: fStatus,    });
     if (fStatus === 'warn') warns++;
     if (fStatus === 'bad') bads++;
   } else if (driver?.kind === 'incident') {
     signals.push({
       label: 'Driving fire',
       value: `${driver.incident.name} (named incident)`,
-      status: 'good',
-      contributesToLevel: true,
-    });
+      status: 'good',    });
   }
   // No driver → no row added; threat axis is just "no fire in range."
 

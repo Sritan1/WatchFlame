@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
+from ..core.source_health import DOWN, OK, SourceUnavailable, set_source_health
 from ..services.census import reverse_geocode
 from ..services.openfema import fetch_active_for_county
 
@@ -24,6 +25,7 @@ _MAX_AGE_DAYS = 365
 
 @router.get("/near")
 async def get_disasters_near(
+    response: Response,
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
 ):
@@ -43,11 +45,34 @@ async def get_disasters_near(
         active: [...],
       }
     """
-    info = await reverse_geocode(lat, lon)
-    if info is None:
+    # County lookup. A real Census outage (SourceUnavailable) is reported as
+    # `census: down`; that also means FEMA can't be queried, so FEMA is marked
+    # down too. `info is None` with census ok just means the point is outside a
+    # US county — not a failure, so nothing is flagged.
+    try:
+        info = await reverse_geocode(lat, lon)
+    except SourceUnavailable:
+        set_source_health(response, {"census": DOWN, "fema": DOWN})
         return {"county": None, "active": []}
 
-    decls = await fetch_active_for_county(info.state, info.county_name)
+    if info is None:
+        set_source_health(response, {"census": OK, "fema": OK})
+        return {"county": None, "active": []}
+
+    try:
+        decls = await fetch_active_for_county(info.state, info.county_name)
+    except SourceUnavailable:
+        set_source_health(response, {"census": OK, "fema": DOWN})
+        return {
+            "county": {
+                "state": info.state,
+                "name": info.county_name,
+                "fips": info.county_fips,
+            },
+            "active": [],
+        }
+
+    set_source_health(response, {"census": OK, "fema": OK})
     cutoff = datetime.now(timezone.utc) - timedelta(days=_MAX_AGE_DAYS)
     decls = [d for d in decls if _within_window(d.incident_begin, cutoff)]
     return {

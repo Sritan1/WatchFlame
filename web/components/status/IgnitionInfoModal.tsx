@@ -16,34 +16,35 @@ export function IgnitionInfoModal({ open, onClose }: { open: boolean; onClose: (
   return (
     <Modal open={open} onClose={onClose} eyebrow="Machine learning" title="How Ignition Likelihood works" maxWidth={620}>
       <p style={textBody(ae)}>
-        This card is powered by a <strong style={{ color: ae.text }}>machine-learning model</strong> —
-        separate from the rule-based Fire Weather index. It estimates how much today&apos;s conditions
-        resemble the days wildfires have actually started.
+        This reading comes from a <strong style={{ color: ae.text }}>machine-learning model</strong>,
+        separate from the Fire Weather score. It estimates how much today resembles the days when
+        wildfires have actually started.
       </p>
 
       <Section ae={ae} title="What it predicts">
         <p style={textBody(ae)}>
-          It&apos;s a gradient-boosted decision-tree model trained on <strong style={{ color: ae.text }}>~4,900
-          real historical fire days</strong> to tell a <em>fire-start day</em> apart from an ordinary day, and it
-          reports the result as a <strong style={{ color: ae.text }}>calibrated percentile</strong> — a relative
-          likelihood, not an absolute &quot;% chance.&quot; A 70th-percentile reading means today looks more
-          fire-start-like than 70% of days in the historical record. It answers
-          <em> &quot;do conditions look like a day fires start?&quot;</em> (occurrence) — complementing the
-          Fire Weather index, which grades how severe a fire could get.
+          The model was trained on about <strong style={{ color: ae.text }}>4,900 real fire days</strong>{' '}
+          to find what those days had in common. The result is shown as a percentile. A reading of 70
+          means today resembles past fire-start days more closely than 70% of days on record. It is a
+          comparison, not a 70% chance that a fire starts.
+        </p>
+        <p style={{ ...textBody(ae), marginTop: 10 }}>
+          This answers a different question than the Fire Weather score. Fire weather asks how severe
+          a fire could get. This asks how likely one is to start.
         </p>
       </Section>
 
       <Section ae={ae} title="What it looks at">
-        <Bullet ae={ae} k="Dryness" v="vapor-pressure deficit, humidity, and temperature" />
-        <Bullet ae={ae} k="Drought" v="the KBDI drought index and days since rain" />
-        <Bullet ae={ae} k="Wind" v="how strong the wind is" />
+        <Bullet ae={ae} k="Dryness" v="temperature and humidity" />
+        <Bullet ae={ae} k="Drought" v="soil moisture and days since rain" />
+        <Bullet ae={ae} k="Wind" v="current speed" />
         <Bullet ae={ae} k="Time of year" v="season and month" />
-        <Bullet ae={ae} k="Land cover" v="the fuel actually on the ground — forest, grass, shrub, developed, etc." />
+        <Bullet ae={ae} k="Land cover" v="what's on the ground: forest, grass, shrub, or developed land" />
       </Section>
 
       <p style={{ ...textBody(ae), marginTop: 20, fontSize: 12.5, color: ae.textMute }}>
-        It&apos;s an informational, relative index — not a prediction that a fire will or won&apos;t start, and
-        not an emergency tool.
+        This is an informational guide, not a prediction that a fire will or won&apos;t start, and not
+        an emergency tool.
       </p>
     </Modal>
   );
@@ -77,7 +78,7 @@ function Bullet({ ae, k, v }: { ae: Ae; k: string; v: string }) {
       <span style={{ width: 4, height: 4, borderRadius: 99, background: RISK_LEVELS.moderate.color, marginTop: 8, flexShrink: 0, boxShadow: `0 0 6px ${RISK_LEVELS.moderate.color}` }} />
       <div>
         <span style={{ fontFamily: ae.fontDisplay, fontSize: 13.5, fontWeight: 600, color: ae.text }}>{k}</span>
-        <span style={{ fontFamily: ae.fontBody, fontSize: 13, color: ae.textDim, marginLeft: 6, lineHeight: 1.55 }}>— {v}</span>
+        <span style={{ fontFamily: ae.fontBody, fontSize: 13, color: ae.textDim, marginLeft: 6, lineHeight: 1.55 }}>· {v}</span>
       </div>
     </div>
   );

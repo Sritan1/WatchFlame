@@ -13,18 +13,16 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
   return (
     <Modal open={open} onClose={onClose} eyebrow="Methodology" title="How is the fire-weather score calculated?" maxWidth={620}>
       <p style={textBody(ae)}>
-        This score is the <strong style={{ color: ae.text }}>fire-weather</strong> half of
-        the picture: a rule-based, weighted index of the local environment, with no machine
-        learning. Three weather factors multiply together, then a vegetation factor adjusts the
-        result. The weights below were <strong style={{ color: ae.text }}>fitted against
-        roughly 500 historical fires</strong>, not hand-picked, and use only public weather data.
+        This score rates the <strong style={{ color: ae.text }}>fire weather</strong>{' '}around you:
+        how much today&apos;s conditions favor a fire starting and spreading. Three weather factors
+        combine, then a vegetation factor adjusts the result. The weights aren&apos;t guesses. They
+        come from <strong style={{ color: ae.text }}>about 500 real past fires</strong>.
       </p>
       <p style={{ ...textBody(ae), marginTop: 10 }}>
-        On the <strong style={{ color: ae.text }}>Status</strong> page this is one input to your{' '}
-        <strong style={{ color: ae.text }}>overall risk</strong>. There it&apos;s combined
-        with a machine-learning estimate of ignition likelihood and the proximity, size, wind
-        alignment, and containment of any active fires near you. This screen isolates the
-        fire-weather part so you can see exactly how the environment contributes.
+        On the <strong style={{ color: ae.text }}>Status</strong>{' '}page, this is one part of
+        your <strong style={{ color: ae.text }}>overall risk</strong>. There it&apos;s combined with
+        how likely a fire is to start and with any active fires nearby (how close, how big, the wind
+        direction, how contained). This screen shows the fire-weather part on its own.
       </p>
 
       <Section title="The three base factors" ae={ae}>
@@ -32,59 +30,56 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
           ae={ae}
           color="#FF7A3A"
           k={`Vapor Pressure Deficit · ${V4_WEIGHT_PCT.vpd}% weight`}
-          v="Combines temperature and humidity into a single measure of how aggressively the air pulls moisture from fuels. When the air is hot and dry, VPD rises and fuels are primed to burn."
+          v="Hot, dry air pulls moisture out of plants and fuels. The hotter and drier it gets, the more ready they are to burn."
         />
         <Bullet
           ae={ae}
           color="#4FA8FF"
           k={`Wind · ${V4_WEIGHT_PCT.wind}% weight`}
-          v="Sustained 10-minute average wind speed. Faster wind drives spread and makes containment harder, and its effect levels off above about 32 mph. Wind carries nearly as much weight as VPD, because fire size depends on how fast it spreads."
+          v="Faster wind spreads fire and makes it harder to contain. It matters almost as much as how dry the air is."
         />
         <Bullet
           ae={ae}
           color="#E8B339"
           k={`Drought (KBDI) · ${V4_WEIGHT_PCT.drought}% weight`}
-          v="Keetch-Byram Drought Index, from 0 to 800. It tracks how much moisture the soil has lost, so higher values mean fuels stay drier between rains. Its lower weight reflects that drought drives ignition more than final fire size."
+          v="How much moisture the soil has lost since the last good rain. Drier soil keeps fuels dry for longer."
         />
       </Section>
 
-      <Section title="The vegetation multiplier" ae={ae}>
+      <Section title="The vegetation factor" ae={ae}>
         <p style={textBody(ae)}>
-          When Sentinel-2 satellite imagery is available, the weighted score is adjusted by an{' '}
-          <strong style={{ color: ae.text }}>NDVI anomaly</strong>: how stressed the live
-          vegetation is right now compared with the 3-year average for this month. Drier than
-          normal pushes the multiplier above 1.0, while greener than normal pulls it below. If
-          clouds block the satellite and NDVI isn&apos;t available, the app falls back to a rough
-          seasonal factor (<Mono ae={ae}>winter 0.40</Mono>, <Mono ae={ae}>spring 0.80</Mono>,{' '}
-          <Mono ae={ae}>summer 1.00</Mono>, <Mono ae={ae}>fall 0.90</Mono>).
+          When recent satellite imagery is available, the score factors in how healthy the plants
+          around you look compared with a normal year for this month. Drier than usual raises the
+          score. Greener than usual lowers it. If clouds hide the view, a rough seasonal estimate is
+          used instead.
         </p>
       </Section>
 
       <Section title="From score to level" ae={ae}>
         <p style={textBody(ae)}>
-          The continuous score (typically 0.00 to 1.00) falls into four bands. With{' '}
-          <strong style={{ color: ae.text }}>global</strong> defaults: LOW below 0.3, MODERATE
-          below 0.6, HIGH below 0.8, and EXTREME at 0.8 and up. In one of the{' '}
-          <strong style={{ color: ae.text }}>17 fitted states</strong>, those bands shift to
-          that state&apos;s historical 50th, 75th, and 97th-percentile fire-day scores. A 0.40
-          might be HIGH in California but EXTREME in Massachusetts, since the same conditions are
-          more dangerous in some places than others.
+          The score runs from about 0 to 1 and falls into four levels: Low, Moderate, High, and
+          Extreme. The cutoffs aren&apos;t the same everywhere. In the{' '}
+          <strong style={{ color: ae.text }}>17 calibrated states</strong>, the cutoffs are
+          based on that state&apos;s own fire history, so a 0.40 might be High in California but
+          Extreme in Massachusetts. The same weather is more dangerous in some places than
+          others.
         </p>
       </Section>
 
       <Section title="What it&apos;s NOT" ae={ae}>
         <p style={textBody(ae)}>
-          A red-flag warning, a spread forecast, or a substitute for{' '}
+          This isn&apos;t a red flag warning or a prediction of where a fire will start. It&apos;s
+          here to help you understand the conditions around you. For official fire-weather alerts,
+          check the{' '}
           <a
             href="https://www.spc.noaa.gov/products/fire_wx/"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: RISK_LEVELS.low.color, textDecoration: 'none' }}
           >
-            NWS Storm Prediction Center fire products
+            NWS Storm Prediction Center
           </a>
-          . The index helps you understand the conditions around you. It does not predict where
-          or when a fire will start.
+          .
         </p>
       </Section>
     </Modal>
@@ -163,24 +158,6 @@ function Bullet({
         </div>
       </div>
     </div>
-  );
-}
-
-function Mono({ ae, children }: { ae: ReturnType<typeof useAesthetic>['ae']; children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        fontFamily: ae.fontMono,
-        fontSize: 12,
-        background: 'rgba(255, 255, 255, 0.05)',
-        padding: '1px 6px',
-        borderRadius: 4,
-        border: `0.5px solid ${ae.line}`,
-        color: ae.text,
-      }}
-    >
-      {children}
-    </code>
   );
 }
 

@@ -5,7 +5,6 @@
 // shell — they don't repeat sidebar/topbar. Content offset = 14 (gutter) +
 // 220 (sidebar) + 14 (gap) = 248px from the viewport's left edge.
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
@@ -36,7 +35,6 @@ export function Shell({ children }: { children: ReactNode }) {
         >
           {children}
         </main>
-        <Footer />
       </div>
     </div>
   );
@@ -77,8 +75,8 @@ function LocationNotice() {
     >
       <Icon name="warn" size={14} color="#E8B339" strokeWidth={1.8} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        Location access is off — showing <strong style={{ color: ae.text }}>{loc.label}</strong> as
-        a default. Enable location (or pick a saved place) for data about where you actually are.
+        Location access is off. Showing <strong style={{ color: ae.text }}>{loc.label}</strong>{' '}as a
+        default. Enable location, or pick a saved place, for data about where you actually are.
       </span>
       <button
         type="button"
@@ -107,47 +105,3 @@ function LocationNotice() {
   );
 }
 
-function Footer() {
-  const { ae } = useAesthetic();
-  return (
-    <footer
-      className="app-footer"
-      style={{
-        minHeight: 32,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 14,
-        rowGap: 6,
-        padding: '8px 24px',
-        borderTop: `0.5px solid ${ae.line}`,
-        background: ae.bg,
-        fontFamily: ae.fontMono,
-        fontSize: 10,
-        fontWeight: 500,
-        letterSpacing: '0.16em',
-        color: ae.textMute,
-        textTransform: 'uppercase',
-      }}
-    >
-      <span>Ember Watch · Built 2026</span>
-      <nav style={{ display: 'flex', gap: 16 }} aria-label="Legal">
-        {[
-          { href: '/terms', label: 'Terms' },
-          { href: '/privacy', label: 'Privacy' },
-          { href: '/accessibility', label: 'Accessibility' },
-        ].map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className="web-footer-link"
-            style={{ color: ae.textDim, textDecoration: 'none', letterSpacing: '0.14em' }}
-          >
-            {l.label}
-          </Link>
-        ))}
-      </nav>
-    </footer>
-  );
-}

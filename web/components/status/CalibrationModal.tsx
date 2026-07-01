@@ -33,17 +33,16 @@ export function CalibrationModal({
   return (
     <Modal open={open} onClose={onClose} eyebrow="Regional Risk Index" title="Why your level depends on your state" maxWidth={620}>
       <p style={textBody(ae)}>
-        The fire-weather <strong style={{ color: ae.text }}>score</strong> is the same
-        calculation everywhere — VPD, wind, drought (KBDI), and a vegetation signal (NDVI when
-        the satellite has a recent pass). What changes between states is the{' '}
-        <strong style={{ color: ae.text }}>thresholds</strong> that bucket the score into LOW /
-        MOD / HIGH / EXTREME.
+        The fire-weather <strong style={{ color: ae.text }}>score</strong>{' '}is calculated the same
+        way everywhere. What changes from state to state is where the{' '}
+        <strong style={{ color: ae.text }}>cutoffs</strong>{' '}fall between Low, Moderate, High, and
+        Extreme.
       </p>
 
       {/* Live ladder — shows where the user's current score lands across
           all 17 fitted states. The "same score, different tier" headline
           becomes visceral instead of abstract. */}
-      <Section ae={ae} title="Your score across all fitted states">
+      <Section ae={ae} title="Your score in every calibrated state">
         {calibration.isLoading ? (
           <LadderSkeleton />
         ) : calibration.data ? (
@@ -54,46 +53,41 @@ export function CalibrationModal({
           />
         ) : (
           <p style={textBody(ae)}>
-            Calibration data unavailable right now — please try again in a moment.
+            Calibration data isn&apos;t available right now. Try again in a moment.
           </p>
         )}
       </Section>
 
       <Section ae={ae} title="What calibration does">
         <p style={textBody(ae)}>
-          Each fitted state has its own historical fire-day score distribution. The thresholds
-          are pegged to the <Mono ae={ae}>50th</Mono>, <Mono ae={ae}>75th</Mono>, and{' '}
-          <Mono ae={ae}>97th</Mono> percentiles of those scores. A 0.40 in California (where
-          conditions get more extreme more often) might bucket as HIGH, while the same 0.40 in
-          Massachusetts (where it&apos;s a rare-day score) buckets as EXTREME.
+          Each calibrated state has its own track record of fire-prone days, and the score is graded
+          against that record. A 0.40 in California, where dangerous days are common, might land as
+          High. The same 0.40 in Massachusetts, where that&apos;s a rare reading, lands as Extreme.
         </p>
       </Section>
 
       <Section ae={ae} title="Where the data comes from">
         <p style={textBody(ae)}>
-          Roughly 500 days per state from the{' '}
+          The cutoffs come from real fire records, not guesses. They are based on the{' '}
           <a
             href="https://www.fs.usda.gov/rds/archive/Catalog/RDS-2013-0009.6"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: RISK_LEVELS.low.color, textDecoration: 'none' }}
           >
-            FPA Fire Occurrence Database (FPA-FOD)
-          </a>{' '}
-          — a USDA dataset combining state, federal, and tribal fire reports across 1.88M
-          incidents. Days with significant fire activity are scored against the same
-          algorithm, and the resulting distribution gives us each state&apos;s calibration cutoffs.
+            FPA Fire Occurrence Database
+          </a>
+          , a US government dataset of about 1.88 million past fires that shows how often each state
+          actually sees dangerous conditions.
         </p>
       </Section>
 
-      <Section ae={ae} title="How this feeds your composite">
+      <Section ae={ae} title="How this feeds your overall risk">
         <p style={textBody(ae)}>
-          The calibration-aware fire-weather bucket is the <Mono ae={ae}>w</Mono> half of the{' '}
-          <strong style={{ color: ae.text }}>Personal Threat composite</strong> on this page.
-          The other half (<Mono ae={ae}>t</Mono>) measures any active fires near you. Pegging
-          <Mono ae={ae}> w</Mono> to your state&apos;s history means the composite reflects{' '}
-          <strong style={{ color: ae.text }}>local danger</strong>, not absolute climate —
-          critical for the same composite score to mean the same thing in CA as in FL.
+          On this page, this state-aware level is one of the signals behind your overall risk. It is
+          combined with how likely a fire is to start, and with any active fires near you. Grading by
+          state keeps your overall risk meaningful wherever you live, so it means the same thing in
+          California as in Florida.
         </p>
       </Section>
     </Modal>
@@ -119,24 +113,6 @@ function Section({ ae, title, children }: { ae: ReturnType<typeof useAesthetic>[
       </h3>
       {children}
     </div>
-  );
-}
-
-function Mono({ ae, children }: { ae: ReturnType<typeof useAesthetic>['ae']; children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        fontFamily: ae.fontMono,
-        fontSize: 12,
-        background: 'rgba(255, 255, 255, 0.05)',
-        padding: '1px 6px',
-        borderRadius: 4,
-        border: `0.5px solid ${ae.line}`,
-        color: ae.text,
-      }}
-    >
-      {children}
-    </code>
   );
 }
 

@@ -120,23 +120,34 @@ export function useFiresAroundMe(me: LatLon | undefined, radiusMiles = 250) {
   });
 }
 
-/** Local cluster of detections around a single fire — for fire-detail view. */
+/** Local cluster of detections around a single fire — for fire-detail view.
+ *  reportHealth:false — this is a narrow, detail-only request; a transient
+ *  failure here must NOT mark FIRMS down in the global feed-health store, which
+ *  the primary screens (Map/Status) + the sidebar chip read. */
 export function useFiresNear(point: LatLon | undefined, radiusMiles = 8, days = 7) {
   const bbox = point ? bboxAround(point, radiusMiles) : undefined;
   return useQuery<FireCollection>({
     queryKey: ['fires-near', bbox, days],
-    queryFn: () => api.fires({ days, bbox }),
+    queryFn: () => api.fires({ days, bbox, reportHealth: false }),
     enabled: !!point,
     staleTime: 5 * 60_000,
   });
 }
 
 /** Named NIFC/Cal Fire incidents near a point — provides management metadata
- *  (containment, personnel, evac statements) that satellite detections lack. */
-export function useNamedIncidentsNear(point: LatLon | undefined, radiusMi = 30, limit = 5) {
+ *  (containment, personnel, evac statements) that satellite detections lack.
+ *  `reportHealth` — pass false from detail/secondary screens (e.g. fire-detail)
+ *  so a transient failure on their narrow request doesn't poison the global
+ *  NIFC/Cal Fire feed-health the primary screens + sidebar chip read. */
+export function useNamedIncidentsNear(
+  point: LatLon | undefined,
+  radiusMi = 30,
+  limit = 5,
+  reportHealth = true,
+) {
   return useQuery({
     queryKey: ['incidents-near', point?.lat, point?.lon, radiusMi, limit],
-    queryFn: () => api.incidentsNear(point!.lat, point!.lon, radiusMi, limit),
+    queryFn: () => api.incidentsNear(point!.lat, point!.lon, radiusMi, limit, reportHealth),
     enabled: !!point,
     staleTime: 5 * 60_000,
   });

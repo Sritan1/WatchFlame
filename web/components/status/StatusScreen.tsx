@@ -45,6 +45,7 @@ import {
   envFromBuckets,
   findThreatDriver,
   normalizeWeather,
+  tierArcFraction,
   type ThreatDriver,
 } from '@/lib/composite-risk';
 import { useAnyModalOpen } from '@/lib/modal-state';
@@ -269,6 +270,14 @@ export function StatusScreen() {
   // — this only stops the surrounding visuals from going muted teal/grey.
   const chromeLevel: RiskLevel = floorLow(compositeBucket);
   const r = getRisk(chromeLevel, accent);
+  // Orb dial fill — band-anchored to the orb's OWN color (chromeLevel) so the
+  // arc length always sits in the same band as the color. compositeScore only
+  // sets the continuous position WITHIN that band. (Previously the raw blend
+  // drove the dial directly and could read a band away from the matrix tier.)
+  const compositeArc: number | null =
+    compositeReady && compositeScore != null
+      ? tierArcFraction(chromeLevel, compositeScore)
+      : null;
   // pillTone uses the true composite bucket so "LOW" stays green.
   const pillTone = getRisk(compositeBucket, accent);
   const isAlarming = compositeBucket === 'high' || compositeBucket === 'extreme';
@@ -374,22 +383,18 @@ export function StatusScreen() {
                 minHeight: 360,
               }}
             >
-              {/* Orb arc reflects the COMPOSITE score (0-1), not raw V4.
-                  Passing thresholds={null} bypasses HeroOrb's internal
-                  scoreToFraction re-mapping so the composite is used
-                  directly as the arc fraction. */}
+              {/* Orb arc is band-anchored to the orb color via tierArcFraction
+                  (see compositeArc above), so the dial fill can never sit in a
+                  different band than the tier. thresholds={null} keeps HeroOrb
+                  from re-mapping the already-banded value. */}
               <HeroOrb
                 risk={chromeLevel}
-                score={compositeScore}
+                score={compositeArc}
                 thresholds={null}
                 pulseSpeed={70}
                 ariaLabel={
                   compositeReady
-                    ? `Overall wildfire risk: ${compositeBucket.toUpperCase()}${
-                        compositeScore != null
-                          ? `, composite index ${Math.round(compositeScore * 100)} of 100`
-                          : ''
-                      }.`
+                    ? `Overall wildfire risk: ${compositeBucket.toUpperCase()}.`
                     : 'Overall wildfire risk: loading.'
                 }
               />
@@ -750,7 +755,7 @@ export function StatusScreen() {
         <BlockingErrorOverlay
           ae={ae}
           title="Conditions unavailable"
-          message="We can't load current fire weather and nearby-fire data for your area right now. Check your connection and try again."
+          message="Current fire weather and nearby fire data aren't available right now. Check your connection and try again."
           onRetry={retryStatusData}
         />
       ) : null}
@@ -903,7 +908,18 @@ function ConditionsCard({
                 </div>
               </>
             ) : (
-              <BigNumber>—</BigNumber>
+              <span
+                style={{
+                  fontFamily: ae.fontMono,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  letterSpacing: '0.10em',
+                  color: ae.textMute,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Unavailable
+              </span>
             )}
           </CondTile>
 
@@ -936,7 +952,18 @@ function ConditionsCard({
                 </div>
               </>
             ) : (
-              <BigNumber>—</BigNumber>
+              <span
+                style={{
+                  fontFamily: ae.fontMono,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  letterSpacing: '0.10em',
+                  color: ae.textMute,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Unavailable
+              </span>
             )}
           </CondTile>
         </div>

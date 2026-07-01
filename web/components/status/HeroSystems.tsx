@@ -825,7 +825,7 @@ export function IgnitionCoreCard({
     return (
       <DataErrorState
         title="Ignition estimate unavailable"
-        message="The model couldn't score this location right now — recent weather data may be temporarily unavailable."
+        message="The model couldn't score this location right now. Recent weather data may be temporarily unavailable."
         onRetry={onRetry}
       />
     );
