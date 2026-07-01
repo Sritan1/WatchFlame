@@ -141,7 +141,6 @@ export function InputPanel({
           }}
         >
           {Array.from({ length: 11 }).map((_, i) => (
-            // eslint-disable-next-line react/no-array-index-key
             <div
               key={i}
               style={{

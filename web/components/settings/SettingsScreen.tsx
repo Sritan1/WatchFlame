@@ -18,7 +18,6 @@ import { useUnits, type DistanceUnit, type SpeedUnit, type TempUnit } from '@/li
 type AE = Aesthetic;
 
 // Chrome accent matches the floating sidebar/topbar — peach orange.
-const CHROME = '#FFA76A';
 const CHROME_RGB = '255, 167, 106';
 
 // Important Notice tone (amber warn).

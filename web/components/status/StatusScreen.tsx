@@ -1261,7 +1261,6 @@ function HumidityDial({
         const r2 = r - (i % 6 === 0 ? 9 : 7);
         return (
           <line
-            // eslint-disable-next-line react/no-array-index-key
             key={i}
             x1={c + Math.cos(a) * r1}
             y1={c + Math.sin(a) * r1}

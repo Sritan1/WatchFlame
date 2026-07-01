@@ -26,7 +26,7 @@ import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
 import { satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
-import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/sourceHealth';
+import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/source-health';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
 /** Which feed the rail list is showing. Both are co-equal citizens now:
@@ -1074,7 +1074,6 @@ function SkeletonCards() {
   return (
     <>
       {Array.from({ length: 4 }).map((_, i) => (
-        // eslint-disable-next-line react/no-array-index-key
         <div
           key={i}
           style={{

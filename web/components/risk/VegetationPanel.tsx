@@ -86,7 +86,6 @@ export function VegetationPanel({
             { id: 'season', label: 'By season' },
           ]}
           onChange={onModeChange}
-          color={color}
           glowRgb={glowRgb}
           size="sm"
         />
@@ -96,7 +95,6 @@ export function VegetationPanel({
       {mode === 'season' && isLoading ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {[0, 1, 2, 3].map((i) => (
-            // eslint-disable-next-line react/no-array-index-key
             <Skeleton key={i} width="100%" height={56} rounded="md" />
           ))}
         </div>

@@ -16,7 +16,7 @@ import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
 import { SourceNote } from '@/components/ui/SourceNote';
 import { useAesthetic } from '@/lib/aesthetic';
-import { femaNote, shelterFeedNote, useSourceHealth } from '@/lib/sourceHealth';
+import { femaNote, shelterFeedNote, useSourceHealth } from '@/lib/source-health';
 import { useAnyModalOpen } from '@/lib/modal-state';
 import { type LatLon } from '@/lib/api';
 import {
