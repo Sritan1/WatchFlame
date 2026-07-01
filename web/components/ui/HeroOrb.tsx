@@ -105,7 +105,6 @@ export function HeroOrb({
     const r2 = RING_R + (long ? 10 : 7);
     ticks.push(
       <line
-        // eslint-disable-next-line react/no-array-index-key
         key={i}
         x1={round(cx + Math.cos(a) * r1)}
         y1={round(cy + Math.sin(a) * r1)}
@@ -142,7 +141,6 @@ export function HeroOrb({
         {isAlarming
           ? [0, 1, 2].map((i) => (
               <div
-                // eslint-disable-next-line react/no-array-index-key
                 key={i}
                 style={{
                   position: 'absolute',

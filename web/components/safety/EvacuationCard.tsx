@@ -223,7 +223,6 @@ export function EvacuationCard({
               { id: 'shelter', label: 'Nearest Shelter' },
             ]}
             onChange={onModeChange}
-            color={r.color}
             glowRgb={r.glow}
             size="md"
           />

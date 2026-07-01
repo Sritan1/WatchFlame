@@ -17,7 +17,7 @@ import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
-import { useSourceHealth } from '@/lib/sourceHealth';
+import { useSourceHealth } from '@/lib/source-health';
 
 // Tone palette — orange/grey/green, deliberately desaturated vs the
 // risk-level palette so trajectory reads as direction (a vector), not

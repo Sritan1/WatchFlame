@@ -401,7 +401,6 @@ export function FireDetailScreen() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {passes.map((p, i) => (
                   <div
-                    // eslint-disable-next-line react/no-array-index-key
                     key={`pass-${i}-${p.properties.acq_date}-${p.properties.acq_time}`}
                     style={{ display: 'flex', alignItems: 'center' }}
                   >

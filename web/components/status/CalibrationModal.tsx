@@ -124,7 +124,6 @@ function LadderSkeleton() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {Array.from({ length: 8 }).map((_, i) => (
         <div
-          // eslint-disable-next-line react/no-array-index-key
           key={i}
           style={{
             display: 'grid',

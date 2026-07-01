@@ -12,7 +12,7 @@ import { AttributionControl, CircleMarker, Circle, MapContainer, Marker, TileLay
 import type { FireFeature, NamedIncident } from '@/lib/api';
 import { MapTilerLogo } from '@/components/ui/MapTilerLogo';
 import { SourceNote } from '@/components/ui/SourceNote';
-import { useSourceHealth } from '@/lib/sourceHealth';
+import { useSourceHealth } from '@/lib/source-health';
 import { getRisk, hexToRgb, type RiskLevel } from '@/lib/theme';
 
 /** Two-kind selection: named-incident from NIFC/Cal Fire OR a single
@@ -302,7 +302,6 @@ export function MapImpl({
         const isSel = selectedSatKey === key;
         return (
           <CircleMarker
-            // eslint-disable-next-line react/no-array-index-key
             key={`firms-${i}-${key}`}
             center={[lat, lon]}
             radius={isSel ? radius + 2 : radius}

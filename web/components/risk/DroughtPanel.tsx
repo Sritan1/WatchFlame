@@ -86,7 +86,6 @@ export function DroughtPanel({
             { id: 'days', label: 'Days since rain' },
           ]}
           onChange={onModeChange}
-          color={color}
           glowRgb={glowRgb}
           size="sm"
         />

@@ -3,7 +3,7 @@
 // Small, non-blocking "this feed is down" note: an amber dot + a short line of
 // mono text. Used wherever a single data source can fail without the whole
 // screen erroring, so an empty result is never misread as "nothing here".
-// Copy for each note lives in lib/sourceHealth.ts.
+// Copy for each note lives in lib/source-health.ts.
 
 import { useAesthetic } from '@/lib/aesthetic';
 

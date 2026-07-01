@@ -12,7 +12,7 @@ import { AttributionControl, CircleMarker, MapContainer, TileLayer } from 'react
 import type { FireFeature } from '@/lib/api';
 import { MapTilerLogo } from '@/components/ui/MapTilerLogo';
 import { SourceNote } from '@/components/ui/SourceNote';
-import { useSourceHealth } from '@/lib/sourceHealth';
+import { useSourceHealth } from '@/lib/source-health';
 
 const TILE_URL = (key: string) =>
   `https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key=${key}`;
@@ -75,7 +75,6 @@ export function MiniMapImpl({
       {/* Surrounding cluster — small high-severity dots, capped at 50 */}
       {nearby.slice(0, 50).map((f, i) => (
         <CircleMarker
-          // eslint-disable-next-line react/no-array-index-key
           key={`mini-${i}-${f.properties.lat},${f.properties.lon}`}
           center={[f.properties.lat, f.properties.lon]}
           radius={4}

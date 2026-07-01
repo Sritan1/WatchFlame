@@ -134,9 +134,6 @@ export function hexToRgb(hex: string): string {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(', ');
 }
 
-/** Single shared easing for transitions/animations across the app. */
-export const EMBER_EASE = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
-
 /** Coerce a `low` level to `moderate` for AMBIENT chrome (page background,
  *  hero band palette, card border tint, glows). The literal risk pill / label
  *  should still pass the actual `level` so the user sees "LOW" in green —
