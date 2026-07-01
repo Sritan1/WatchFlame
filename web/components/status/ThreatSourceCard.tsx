@@ -90,7 +90,6 @@ export function ThreatSourceCard({
             }}
           >
             {[0, 1, 2, 3].map((i) => (
-              // eslint-disable-next-line react/no-array-index-key
               <Skeleton key={i} width="100%" height={72} rounded="md" />
             ))}
           </div>

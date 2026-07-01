@@ -30,7 +30,6 @@ import { CALIBRATION_INFO } from '@/lib/regional-thresholds';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 const AMBER = '#E8B339';
-const AMBER_RGB = '232, 179, 57';
 
 /** null = Global (no state calibration). Otherwise 2-letter US state code. */
 export type RegionCode = string | null;
@@ -250,7 +249,6 @@ export function HeroScorePanel({
                 }}
               >
                 {[0, 1, 2, 3].map((i) => (
-                  // eslint-disable-next-line react/no-array-index-key
                   <Skeleton key={i} width={70} height={12} rounded="sm" />
                 ))}
               </div>

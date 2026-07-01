@@ -134,7 +134,6 @@ export function ShelterDetailTile({
   shelter: Shelter;
   ae: Ae;
 }) {
-  const units = useUnits();
   const live = !!shelter.activated;
   const t = shelterTone(shelter);
 

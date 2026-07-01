@@ -520,6 +520,3 @@ export function lookupStateLocal(lat: number, lon: number): string | null {
   };
   return inBox.reduce((best, c) => (d2(c.centroid) < d2(best.centroid) ? c : best)).code;
 }
-
-/** All calibrated state codes. */
-export const CALIBRATED_STATES: string[] = Object.keys(CALIBRATION_INFO.states);

@@ -31,7 +31,6 @@ export function WindDial({
     const r2 = ringR;
     ticks.push(
       <line
-        // eslint-disable-next-line react/no-array-index-key
         key={i}
         x1={round(cx + Math.cos(a) * r1)}
         y1={round(cy + Math.sin(a) * r1)}

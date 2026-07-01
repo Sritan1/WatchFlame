@@ -20,7 +20,7 @@ import type {
   WeatherResponse,
 } from './types';
 import { mockApi } from './mocks';
-import { reportSourceHealth } from '../sourceHealth';
+import { reportSourceHealth } from '../source-health';
 
 export * from './types';
 export { BERKELEY, MOCK_INCIDENTS } from './mocks';
@@ -41,7 +41,7 @@ async function request<T>(path: string, init?: RequestInit, reportHealth = true)
     throw new Error(`API ${res.status} ${path}: ${text || res.statusText}`);
   }
   // Per-request source health rides in a response header (see
-  // lib/sourceHealth.ts). Report it as a side effect so screens can show a
+  // lib/source-health.ts). Report it as a side effect so screens can show a
   // "this feed is down" note. Detail/secondary queries pass reportHealth:false
   // so a transient failure on a narrow request (e.g. the fire-detail cluster)
   // doesn't poison the global feed-health the primary screens + sidebar read.
