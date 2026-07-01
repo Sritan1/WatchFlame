@@ -6,10 +6,13 @@
 
 import L, { type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useMemo, useRef } from 'react';
-import { CircleMarker, Circle, MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AttributionControl, CircleMarker, Circle, MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
 
 import type { FireFeature, NamedIncident } from '@/lib/api';
+import { MapTilerLogo } from '@/components/ui/MapTilerLogo';
+import { SourceNote } from '@/components/ui/SourceNote';
+import { useSourceHealth } from '@/lib/sourceHealth';
 import { getRisk, hexToRgb, type RiskLevel } from '@/lib/theme';
 
 /** Two-kind selection: named-incident from NIFC/Cal Fire OR a single
@@ -41,10 +44,14 @@ function incidentRadiusM(inc: NamedIncident): number {
 // road hierarchy, full POI labeling. Swap to `voyager` for a softer
 // near-white palette or `streets-v2-dark` to revert to a dark theme.
 const TILE_URL = (key: string) =>
-  `https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=${key}`;
+  `https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key=${key}`;
 const ATTRIB =
-  '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © ' +
-  '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  '© <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener noreferrer">MapTiler</a> © ' +
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
+// Leaflet's default prefix link opens in the same tab; provide our own that
+// opens in a new tab so clicking it never navigates away from the map.
+const LEAFLET_PREFIX =
+  '<a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a>';
 
 function fireIcon(severity: RiskLevel, isSelected: boolean): L.DivIcon {
   // The reference's marker is a colored core with optional outer pulse rings.
@@ -173,6 +180,19 @@ export function MapImpl({
 
   const mapRef = useRef<LeafletMap | null>(null);
 
+  // Tile-load health. MapTiler/OSM tiles fail client-side (quota, key, network)
+  // with no backend signal, so we watch Leaflet's tile events directly. A few
+  // stray tileerrors are normal at the edges, so only flip the note after
+  // several pile up, and clear it the moment a visible tile set finishes
+  // loading. Without this, a tile outage leaves a silent gray map.
+  const [tilesDown, setTilesDown] = useState(false);
+  const tileErrorsRef = useRef(0);
+  // health.maptiler is only ever set by the dev `?health=` override (the
+  // backend has no tile-health signal), so it lets the tile note be tested
+  // without an actual tile outage.
+  const health = useSourceHealth();
+  const showTilesNote = tilesDown || health.maptiler === 'down';
+
   // Expose imperative zoom controls via global event so the floating buttons
   // (which sit outside MapContainer's tree) can call into the map.
   useEffect(() => {
@@ -189,6 +209,7 @@ export function MapImpl({
   // emit runs once on mount so the bar isn't blank before the first move.
 
   return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
     <MapContainer
       ref={mapRef}
       center={center}
@@ -197,9 +218,24 @@ export function MapImpl({
       // neighborhood-cluster context, not a city-level crop.
       zoom={8}
       zoomControl={false}
+      attributionControl={false}
       style={{ width: '100%', height: '100%', background: '#0B0E12' }}
     >
-      <TileLayer url={TILE_URL(maptilerKey)} attribution={ATTRIB} />
+      <AttributionControl prefix={LEAFLET_PREFIX} />
+      <TileLayer
+        url={TILE_URL(maptilerKey)}
+        attribution={ATTRIB}
+        eventHandlers={{
+          tileerror: () => {
+            tileErrorsRef.current += 1;
+            if (tileErrorsRef.current >= 4) setTilesDown(true);
+          },
+          load: () => {
+            tileErrorsRef.current = 0;
+            setTilesDown(false);
+          },
+        }}
+      />
 
       <Marker position={center} icon={userMarker} />
 
@@ -303,6 +339,28 @@ export function MapImpl({
       <CameraController center={center} selection={selection} fires={fires} />
       <ZoomBroadcaster />
     </MapContainer>
+      <MapTilerLogo />
+      {showTilesNote ? (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            padding: '8px 13px',
+            borderRadius: 10,
+            background: 'rgba(13, 16, 18, 0.82)',
+            border: '0.5px solid rgba(232, 179, 57, 0.30)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            pointerEvents: 'none',
+          }}
+        >
+          <SourceNote text="Map tiles failed to load" />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -149,7 +149,15 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
             task_names.append("county")
             tasks.append(reverse_geocode(body.lat, body.lon))
 
-        results = dict(zip(task_names, await asyncio.gather(*tasks)))
+        # return_exceptions=True so any single upstream failure degrades to
+        # "that signal is unavailable" instead of 500-ing the whole route. The
+        # fall-backs below all accept a None here: days-since-rain proxy for
+        # KBDI, season multiplier for NDVI, bbox/centroid guess for the state.
+        raw = await asyncio.gather(*tasks, return_exceptions=True)
+        results = {
+            name: (None if isinstance(val, Exception) else val)
+            for name, val in zip(task_names, raw)
+        }
 
         kbdi_data = results.get("kbdi")
         if kbdi_data is not None:

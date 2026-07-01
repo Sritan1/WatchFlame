@@ -35,8 +35,8 @@ const TIER_LONG: Record<RiskLevel, string> = {
 const TIER_PHRASE: Record<RiskLevel, string> = {
   low: 'a low-risk day for your area',
   moderate: 'a moderate-risk day for your area',
-  high: 'a high-risk day — review your plan',
-  extreme: 'an extreme-risk day — prepare to act',
+  high: 'a high-risk day. Review your plan',
+  extreme: 'an extreme-risk day. Be ready to act',
 };
 
 function ordinal(n: number): string {
@@ -89,15 +89,15 @@ export function CompositeExplainerModal({
   return (
     <Modal open={open} onClose={onClose} eyebrow="Methodology" title="Why this score?" maxWidth={660}>
       <p style={textBody(ae)}>
-        Your headline tier comes from <strong style={{ color: ae.text }}>two published
-        lookup matrices</strong>, not a weighted average. First your{' '}
-        <strong style={{ color: ae.text }}>environment</strong> (fire weather combined with the
-        ML ignition likelihood), then that combined with any{' '}
-        <strong style={{ color: ae.text }}>active fire</strong> near you.
+        Your overall level is built from <strong style={{ color: ae.text }}>three things</strong>,
+        combined in <strong style={{ color: ae.text }}>two steps</strong>. First, the{' '}
+        <strong style={{ color: ae.text }}>fire weather</strong>{' '}around you is mixed with how likely a{' '}
+        <strong style={{ color: ae.text }}>fire is to start</strong>{' '}today. Then that is weighed
+        against any <strong style={{ color: ae.text }}>active fire</strong>{' '}burning near you.
       </p>
 
       {/* Three input cards */}
-      <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      <div className="app-stack" style={{ marginTop: 18, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
         <ComponentCard
           ae={ae}
           label="Fire weather"
@@ -105,8 +105,8 @@ export function CompositeExplainerModal({
           rawScore={weatherRawScore}
           contextLine={
             regionalState && regionalThresholds
-              ? `${regionalState} percentile of historical fire-day scores`
-              : 'Global cutoffs (LOW <0.3 · MOD <0.6 · EXT ≥ 0.8)'
+              ? `Graded against ${regionalState}'s fire history`
+              : 'Graded on a nationwide scale'
           }
         />
         <ComponentCard
@@ -116,8 +116,8 @@ export function CompositeExplainerModal({
           rawScoreText={ignitionPercentile != null ? ordinal(ignitionPercentile) : null}
           contextLine={
             ignitionBucket
-              ? 'ML model — how much today resembles past fire-start days'
-              : 'ML estimate unavailable — using fire weather alone'
+              ? 'How much today resembles past days when fires started'
+              : 'Not available right now, using fire weather alone'
           }
         />
         <ComponentCard
@@ -128,7 +128,7 @@ export function CompositeExplainerModal({
           contextLine={
             driver
               ? driver.kind === 'incident'
-                ? `${driver.incident.name} — ${formatDistance(driver.incident.distance_mi, distanceUnit, 1)} away${
+                ? `${driver.incident.name}, ${formatDistance(driver.incident.distance_mi, distanceUnit, 1)} away${
                     driver.incident.acres != null ? `, ${ACRES_FORMAT.format(driver.incident.acres)} ac` : ''
                   }`
                 : `Satellite detection ${formatDistance(driver.distanceMi, distanceUnit, 1)} away`
@@ -138,31 +138,30 @@ export function CompositeExplainerModal({
       </div>
 
       {/* Stage 1 — environment */}
-      <Section ae={ae} title="Step 1 — Environmental danger">
+      <Section ae={ae} title="Step 1: The environment around you">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
-          Fire-weather <strong style={{ color: ae.text }}>severity</strong> and ignition{' '}
-          <strong style={{ color: ae.text }}>likelihood</strong> combine as hazard ={' '}
-          likelihood × consequence — a symmetric grid where either being low pulls the result
-          down, so a single signal can&apos;t run away.
+          This step combines the fire weather with how likely a fire is to start today. If either one
+          is low, your environment stays at moderate or below. It takes both being elevated to push
+          it higher.
         </p>
         <EnvMatrixGrid weatherBucket={weatherBucket} ignitionBucket={ignitionBucket} />
-        <AxisLabels ae={ae} left="ROWS · FIRE WEATHER" right="COLS · IGNITION LIKELIHOOD" />
+        <AxisLabels ae={ae} left="FIRE WEATHER" right="IGNITION LIKELIHOOD" />
         {envBucket ? (
           <p style={{ ...textBody(ae), marginTop: 8 }}>
-            → Environmental danger:{' '}
+            → Your environment:{' '}
             <strong style={{ color: RISK_LEVELS[envBucket].color }}>{TIER_LONG[envBucket]}</strong>
           </p>
         ) : null}
       </Section>
 
       {/* Stage 2 — headline */}
-      <Section ae={ae} title="Step 2 — Your headline">
+      <Section ae={ae} title="Step 2: Your overall level">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
-          Your environmental tier then combines with the worst active fire near you. Your cell is
-          highlighted, with the row and column you fell on emphasized.
+          Now your environment is weighed against the most serious active fire near you. Your result
+          is highlighted in the grid below.
         </p>
         <CompositeMatrixGrid weatherBucket={envBucket} threatBucket={threatBucket} />
-        <AxisLabels ae={ae} left="ROWS · ENVIRONMENT" right="COLS · ACTIVE FIRE THREAT" />
+        <AxisLabels ae={ae} left="ENVIRONMENT" right="ACTIVE FIRE THREAT" />
       </Section>
 
       {compositeBucket ? (
@@ -291,7 +290,7 @@ function OutcomeCallout({
       <div style={{ width: 6, height: 56, borderRadius: 6, background: tone.color, boxShadow: `0 0 12px ${tone.color}`, flexShrink: 0 }} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontFamily: ae.fontMono, fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: ae.textMute, textTransform: 'uppercase' }}>
-          Your headline
+          Your level
         </div>
         <div style={{ marginTop: 4, fontFamily: ae.fontDisplay, fontSize: 16, fontWeight: 800, color: ae.text, letterSpacing: '-0.01em' }}>
           A {eLabel} environment with {threatPhrase}{' '}

@@ -26,6 +26,7 @@ import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
 import { satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
+import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/sourceHealth';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
 /** Which feed the rail list is showing. Both are co-equal citizens now:
@@ -49,6 +50,8 @@ export function IncidentsRail({
   onTabChange,
   userCoords,
   radiusMi = 30,
+  incidentsUpdatedAt,
+  satellitesUpdatedAt,
 }: {
   fires: NamedIncident[];
   /** FIRMS satellite hot-pixels in view (already capped + shown on the map).
@@ -77,6 +80,10 @@ export function IncidentsRail({
   userCoords: LatLon;
   /** Search radius shown in the subtitle ("Within N mi of …"). */
   radiusMi?: number;
+  /** When each feed last successfully fetched (epoch ms from the query's
+   *  dataUpdatedAt). Shown as "Checked HH:MM" on the empty-state panel. */
+  incidentsUpdatedAt?: number;
+  satellitesUpdatedAt?: number;
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
@@ -100,17 +107,29 @@ export function IncidentsRail({
     [satellites, userCoords],
   );
 
+  // Per-source health from the X-Source-Health header. Lets the rail tell a
+  // real feed outage apart from a genuinely-empty result — so a FIRMS outage
+  // reads as "Satellite feed down" instead of a misleading "no detections",
+  // and a single-feed incident outage names which one dropped.
+  const health = useSourceHealth();
+  const firmsDown = firmsNote(health) !== null;
+  const incidentsFullyDown = health.nifc === 'down' && health.calfire === 'down';
+
   // Source-aware subtitle — always describes the ACTIVE feed honestly, so
   // "0 reported" reads in context next to the satellite hotspots that ARE on
   // the map (the old single "No active incidents within range" was the bug).
   const railSubtitle = (() => {
     if (tab === 'incidents') {
       if (incidentsError) return 'Incident feed unavailable';
+      const note = incidentFeedNote(health);
+      if (note) return note;
       if (isLoading && fires.length === 0) return 'Loading incidents…';
       if (fires.length === 0) return 'No active incidents reported within range';
       return `Within ${formatDistance(radiusMi, units.distance, 0)} of ${locationLabel} · sorted by distance`;
     }
     if (satellitesError) return 'Satellite feed unavailable';
+    const note = firmsNote(health);
+    if (note) return note;
     if (satellitesLoading && satellites.length === 0) return 'Loading detections…';
     if (satellites.length === 0) return 'No satellite detections within range';
     return 'NASA FIRMS · last 24h · may include controlled burns';
@@ -317,8 +336,8 @@ export function IncidentsRail({
           satelliteCount={satellites.length}
           incidentsLoading={isLoading && fires.length === 0}
           satellitesLoading={satellitesLoading && satellites.length === 0}
-          incidentsError={incidentsError}
-          satellitesError={satellitesError}
+          incidentsError={incidentsError || incidentsFullyDown}
+          satellitesError={satellitesError || firmsDown}
         />
 
         {/* Source-aware subtitle for the active feed. */}
@@ -372,11 +391,21 @@ export function IncidentsRail({
               <DataErrorState
                 compact
                 title="Incident feed unavailable"
-                message="Couldn't load NIFC/Cal Fire incidents. Satellite hotspots (if any) still show on the map and the Hotspots tab. Try again."
+                message="Couldn't load NIFC and Cal Fire incidents. Satellite detections (if any) still show on the map and the Satellite detections tab. Try again."
                 onRetry={onRetry}
               />
             ) : null}
             {!incidentsError && isLoading && fires.length === 0 ? <SkeletonCards /> : null}
+            {!incidentsError && !isLoading && fires.length === 0 && !incidentsFullyDown ? (
+              <EmptyFeedPanel
+                kind="incidents"
+                locationLabel={locationLabel}
+                radiusLabel={formatDistance(radiusMi, units.distance, 0)}
+                syncedAt={incidentsUpdatedAt}
+                siblingCount={satellites.length}
+                onViewSibling={() => onTabChange('hotspots')}
+              />
+            ) : null}
             {fires.map((f, i) => {
               const sev = severityOf(f);
               const fr = getRisk(sev, accent);
@@ -403,12 +432,22 @@ export function IncidentsRail({
               <DataErrorState
                 compact
                 title="Satellite feed unavailable"
-                message="Couldn't load NASA FIRMS detections. Named incidents (if any) still show on the Incidents tab. Try again."
+                message="Couldn't load NASA FIRMS detections. Named incidents (if any) still show on the Active incidents reported tab. Try again."
                 onRetry={onRetry}
               />
             ) : null}
             {!satellitesError && satellitesLoading && satellites.length === 0 ? (
               <SkeletonCards />
+            ) : null}
+            {!satellitesError && !satellitesLoading && satellites.length === 0 && !firmsDown ? (
+              <EmptyFeedPanel
+                kind="satellite"
+                locationLabel={locationLabel}
+                radiusLabel={formatDistance(radiusMi, units.distance, 0)}
+                syncedAt={satellitesUpdatedAt}
+                siblingCount={fires.length}
+                onViewSibling={() => onTabChange('incidents')}
+              />
             ) : null}
             {satList.map((s, i) => {
               const key = satKey(s);
@@ -942,53 +981,88 @@ function RailTabButton({
         color: 'inherit',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', minHeight: 32 }}>
-        {loading ? (
-          <Skeleton width={42} height={28} rounded="md" />
-        ) : (
+      {error ? (
+        // Feed down — no count to show. Drop the giant em-dash and let
+        // "Unavailable" be the prominent text instead. minHeight matches a
+        // normal tab's two rows so paired tabs stay aligned when only one is
+        // down. The amber dot carries the warning tone.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 53 }}>
+          <span
+            aria-hidden
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: 99,
+              flexShrink: 0,
+              background: '#E8B339',
+              boxShadow: '0 0 8px rgba(232, 179, 57, 0.6)',
+            }}
+          />
           <span
             style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 28,
-              fontWeight: ae.titleWeight,
-              lineHeight: 1,
-              letterSpacing: '-0.02em',
-              color: error ? ae.textMute : active ? ae.text : ae.textDim,
-              fontVariantNumeric: 'tabular-nums',
+              fontFamily: ae.fontMono,
+              fontSize: 15,
+              fontWeight: 700,
+              lineHeight: 1.1,
+              letterSpacing: '0.08em',
+              color: ae.textDim,
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
             }}
           >
-            {error ? '—' : count}
+            Unavailable
           </span>
-        )}
-      </div>
-      <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: 99,
-            flexShrink: 0,
-            marginTop: 3,
-            background: error ? '#E8B339' : color,
-            boxShadow: active && !error ? `0 0 8px ${color}` : 'none',
-          }}
-        />
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontFamily: ae.fontMono,
-            fontSize: 9.5,
-            fontWeight: 700,
-            lineHeight: 1.35,
-            letterSpacing: '0.12em',
-            color: active ? ae.textDim : ae.textMute,
-            textTransform: ae.chipUpper ? 'uppercase' : 'none',
-          }}
-        >
-          {error ? 'Unavailable' : label}
-        </span>
-      </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', minHeight: 32 }}>
+            {loading ? (
+              <Skeleton width={42} height={28} rounded="md" />
+            ) : (
+              <span
+                style={{
+                  fontFamily: ae.fontDisplay,
+                  fontSize: 28,
+                  fontWeight: ae.titleWeight,
+                  lineHeight: 1,
+                  letterSpacing: '-0.02em',
+                  color: active ? ae.text : ae.textDim,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {count}
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 99,
+                flexShrink: 0,
+                marginTop: 3,
+                background: color,
+                boxShadow: active ? `0 0 8px ${color}` : 'none',
+              }}
+            />
+            <span
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontFamily: ae.fontMono,
+                fontSize: 9.5,
+                fontWeight: 700,
+                lineHeight: 1.35,
+                letterSpacing: '0.12em',
+                color: active ? ae.textDim : ae.textMute,
+                textTransform: ae.chipUpper ? 'uppercase' : 'none',
+              }}
+            >
+              {label}
+            </span>
+          </div>
+        </>
+      )}
     </button>
   );
 }
@@ -1042,6 +1116,148 @@ function SkeletonCards() {
         </div>
       ))}
     </>
+  );
+}
+
+// ─── Empty-state panel ──────────────────────────────────────────────────────
+
+/** Fills the list area when a feed has no items in range (success state, not
+ *  loading/error). Replaces the dead blank space below the tabs with a
+ *  centered all-clear panel: radar glyph + headline + search context +
+ *  last-checked time, plus a button across to the sibling feed when it has
+ *  items. */
+function EmptyFeedPanel({
+  kind,
+  locationLabel,
+  radiusLabel,
+  syncedAt,
+  siblingCount,
+  onViewSibling,
+}: {
+  kind: 'incidents' | 'satellite';
+  locationLabel: string;
+  radiusLabel: string;
+  syncedAt?: number;
+  siblingCount: number;
+  onViewSibling: () => void;
+}) {
+  const { ae } = useAesthetic();
+  const isSat = kind === 'satellite';
+  const accent = isSat ? '#ff7a3a' : '#9aa6b2';
+  const glow = isSat ? '255, 122, 58' : '154, 166, 178';
+  const headline = isSat ? 'No satellite detections nearby' : 'No active incidents nearby';
+  const sub = isSat
+    ? `No satellite fire detections near ${locationLabel} right now.`
+    : `No active fire incidents within ${radiusLabel} of ${locationLabel} right now.`;
+  const synced =
+    syncedAt && syncedAt > 0
+      ? new Date(syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      : null;
+  const siblingLabel = isSat
+    ? `View ${siblingCount} ${siblingCount === 1 ? 'incident' : 'incidents'}`
+    : `View ${siblingCount} satellite ${siblingCount === 1 ? 'detection' : 'detections'}`;
+
+  return (
+    <div
+      className="app-empty-feed"
+      style={{
+        minHeight: 340,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '28px 26px',
+        animation: 'ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: ae.fontDisplay,
+          fontSize: 17,
+          fontWeight: 600,
+          color: ae.text,
+          letterSpacing: ae.titleTracking,
+        }}
+      >
+        {headline}
+      </div>
+
+      <p
+        style={{
+          margin: '9px 0 0',
+          maxWidth: 264,
+          fontFamily: ae.fontBody,
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: ae.textDim,
+        }}
+      >
+        {sub}
+      </p>
+
+      {synced ? (
+        <div
+          style={{
+            marginTop: 14,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            fontFamily: ae.fontMono,
+            fontSize: 9.5,
+            fontWeight: 600,
+            letterSpacing: '0.14em',
+            color: ae.textMute,
+            textTransform: ae.chipUpper ? 'uppercase' : 'none',
+          }}
+        >
+          <span
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: 99,
+              background: '#3FB68B',
+              boxShadow: '0 0 8px #3FB68B',
+            }}
+          />
+          Checked {synced}
+        </div>
+      ) : null}
+
+      {siblingCount > 0 ? (
+        <button
+          type="button"
+          onClick={onViewSibling}
+          style={{
+            marginTop: 22,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '11px 16px',
+            borderRadius: 10,
+            cursor: 'pointer',
+            background: `rgba(${glow}, 0.10)`,
+            border: `0.5px solid rgba(${glow}, 0.32)`,
+            color: accent,
+            fontFamily: ae.fontMono,
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            transition: 'background .2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = `rgba(${glow}, 0.16)`;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = `rgba(${glow}, 0.10)`;
+          }}
+        >
+          {siblingLabel}
+          <Icon name="chevron" size={11} color={accent} strokeWidth={2.2} />
+        </button>
+      ) : null}
+    </div>
   );
 }
 

@@ -20,28 +20,28 @@ export default function PrivacyPage() {
       <h2>Location</h2>
       <p>
         If you grant your browser&apos;s location permission, your approximate coordinates are sent to
-        our backend solely to fetch local conditions (fire detections, weather, drought, vegetation)
+        our servers solely to look up local conditions (fire detections, weather, drought, vegetation)
         for your area. You can decline the permission and instead use a searched or saved location.
       </p>
       <ul>
         <li>Coordinates are used transiently to query public data providers and are cached only
-          briefly, keyed by a <strong>coarse, rounded coordinate</strong> (not by you).</li>
-        <li>They are <strong>never tied to an account or identity</strong> (there are none), and are
-          <strong> never sold, rented, or shared</strong> for advertising.</li>
-        <li><strong>Saved locations</strong> are stored only in your own browser (localStorage) on your
-          device — they are not uploaded to or stored on our servers.</li>
+          briefly, keyed by a <strong>coarse, rounded coordinate</strong>{' '}(not by you).</li>
+        <li>They are <strong>never tied to an account or identity</strong>{' '}(there are none), and are{' '}
+          <strong>never sold, rented, or shared</strong>{' '}for advertising.</li>
+        <li><strong>Saved locations</strong>{' '}are stored only in your own browser&apos;s local storage, on your
+          device. They are not uploaded to or stored on our servers.</li>
       </ul>
 
       <h2>Technical / log data</h2>
       <p>
-        Like any website, our hosting providers may record standard request logs (such as IP address,
+        As with any website, our hosting providers may record standard request logs (such as IP address,
         timestamp, and requested URL) for security and reliability. This is transient operational data,
         not used to profile you, and not combined with any identity.
       </p>
 
       <h2>Third parties that receive your coordinates</h2>
       <p>
-        To return local data, your coordinates are passed to the relevant public data providers — e.g.
+        To return local data, your coordinates are passed to the relevant public data providers, such as
         OpenWeatherMap, Open-Meteo, NASA FIRMS, NIFC, CAL FIRE, Copernicus / Sentinel-2, the U.S.
         Census Bureau, NCES, FEMA, and map tiles via MapTiler / OpenStreetMap. Their own privacy terms
         govern their handling of that request.
@@ -58,31 +58,31 @@ export default function PrivacyPage() {
         We keep as little as possible, for as short a time as possible:
       </p>
       <ul>
-        <li><strong>Coordinates</strong> are held only in a temporary in-memory cache, keyed by a coarse
-          rounded value, and expire automatically — they are never written to a persistent database.</li>
-        <li><strong>Request logs</strong> (IP, timestamp, URL) are retained only for the short window our
-          hosting providers keep standard logs — typically a few weeks — and are then rotated out
+        <li><strong>Coordinates</strong>{' '}are held only in a temporary cache, keyed by a coarse
+          rounded value, and expire automatically. They are never saved to a database.</li>
+        <li><strong>Request logs</strong>{' '}(IP, timestamp, URL) are retained only for the short window our
+          hosting providers keep standard logs, typically a few weeks, and are then deleted
           automatically.</li>
-        <li><strong>On-device data</strong> (saved locations, units, theme) stays in your browser until
-          you clear it; we never receive or store it.</li>
+        <li><strong>On-device data</strong>{' '}(saved locations, units, theme) stays in your browser until
+          you clear it. We never receive or store it.</li>
       </ul>
 
       <h2>Your privacy rights (GDPR &amp; CCPA)</h2>
       <p>
-        Because the Service has no accounts and holds coordinates only transiently — keyed by a coarse
-        rounded value rather than by you — we generally hold no information that identifies you, so most
+        Because the Service has no accounts and holds coordinates only transiently, keyed by a coarse
+        rounded value rather than by you, we generally hold no information that identifies you, so most
         data requests have nothing for us to act on. Where applicable, you still have the rights below.
       </p>
       <ul>
-        <li><strong>If you are in the EU/EEA or UK (GDPR):</strong> rights of access, rectification,
+        <li><strong>If you are in the EU/EEA or UK (GDPR):</strong>{' '}rights of access, rectification,
           erasure, restriction, objection, and data portability. Our legal basis for handling the limited
           data above is our legitimate interest in delivering the local conditions you request and in
           operating the Service securely.</li>
-        <li><strong>If you are in California (CCPA/CPRA):</strong> rights to know, delete, and correct
+        <li><strong>If you are in California (CCPA/CPRA):</strong>{' '}rights to know, delete, and correct
           personal information, and to opt out of its sale or sharing. <strong>We do not sell or share
-          your personal information</strong> and never have, so there is nothing to opt out of.</li>
-        <li><strong>On-device data</strong> (saved locations, preferences) is under your direct control —
-          you can erase it yourself at any time by clearing this site&apos;s data in your browser.</li>
+          your personal information</strong>{' '}and never have, so there is nothing to opt out of.</li>
+        <li><strong>On-device data</strong>{' '}(saved locations, preferences) is under your direct control.
+          You can erase it yourself at any time by clearing this site&apos;s data in your browser.</li>
       </ul>
       <p>
         To make any request, email{' '}

@@ -173,6 +173,31 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Safety "Still Waters" backdrop motion (image-based) ─────────────────────
+   Two slowly-drifting copies of the wave artwork shimmer the strands; a
+   travelling sheen reads as energy flowing along them. Transform/opacity only
+   (cheap), and fully disabled under prefers-reduced-motion. */
+@keyframes sw-drift-a {
+  0%   { transform: scale(1.08) translate3d(-2.6%, 1.4%, 0); }
+  50%  { transform: scale(1.15) translate3d(2.6%, -1.8%, 0); }
+  100% { transform: scale(1.08) translate3d(-2.6%, 1.4%, 0); }
+}
+@keyframes sw-drift-b {
+  0%   { transform: scale(1.17) translate3d(3.0%, -1.6%, 0); opacity: 0.28; }
+  50%  { transform: scale(1.10) translate3d(-3.0%, 2.0%, 0); opacity: 0.58; }
+  100% { transform: scale(1.17) translate3d(3.0%, -1.6%, 0); opacity: 0.28; }
+}
+.sw-img-a { animation: sw-drift-a 26s ease-in-out infinite; }
+.sw-img-b { animation: sw-drift-b 21s ease-in-out infinite; }
+/* Radar sweep behind the Suggested Direction compass. */
+@keyframes sf-radar { to { transform: rotate(360deg); } }
+.sf-radar-sweep { animation: sf-radar 6.5s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sw-img-a, .sw-img-b { animation: none !important; }
+  .sw-img-b { opacity: 0.42 !important; }
+  .sf-radar-sweep { animation: none !important; opacity: 0 !important; }
+}
 @keyframes skeleton-pulse {
   /* Two-shade tonal pulse reads more refined than a flat opacity fade. */
   0%, 100% { background-color: #24242a; }
@@ -352,6 +377,20 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 
 .web-footer-link { transition: color .15s ease; }
 .web-footer-link:hover { color: var(--color-ember-text) !important; text-decoration: underline; }
+
+/* Data-feeds popover (Sidebar FeedsPopover) — entrance/exit + row hover. */
+.feeds-pop.anim-in { animation: feeds-pop-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.feeds-pop.anim-out { animation: feeds-pop-out 0.15s ease both; }
+@keyframes feeds-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes feeds-pop-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+.feeds-pop-row { transition: background .15s ease; }
+.feeds-pop-row:hover { background: rgba(255, 255, 255, 0.04); }
 
 .web-icon-btn { transition: background .15s ease, transform .15s ease, border-color .15s ease; }
 .web-icon-btn:hover {
@@ -556,6 +595,11 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .leaflet-tile { opacity: 0; transition: opacity 0.3s ease; }
 .leaflet-tile-loaded { opacity: 1; }
 
+/* Required MapTiler Free-plan logo (see MapTilerLogo.tsx). Smaller on phones so
+   it stays proportional to the map. */
+.maptiler-logo { width: 76px; height: auto; display: block; }
+@media (max-width: 768px) { .maptiler-logo { width: 54px; } }
+
 /* Hover state for SVG-based markers (FIRMS dots, incident circles). 1.15×
  * scale around the marker's center, plus a brightness bump. transform-box
  * fill-box anchors the scale to the SVG element's bounding box. */
@@ -586,7 +630,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .app-bottomnav { display: flex !important; }
 
   /* Content goes full-width (was offset 248px for the rail); leave room at the
-   * bottom so the fixed nav never covers the footer / last card. */
+   * bottom so the fixed nav never covers the last card. */
   .app-content {
     margin-left: 0 !important;
     padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
@@ -604,6 +648,17 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .app-detail-grid .app-detail-late { order: 1 !important; }
   /* Open in Maps CTA sits below even the late panels — the final action. */
   .app-detail-grid .app-detail-last { order: 2 !important; }
+
+  /* Fire-detail mini-map: on a narrow card the bottom-left MapTiler logo and the
+   * bottom-right attribution pill crowd toward each other. Shrink both (only on
+   * the mini-map, scoped via .app-minimap) so they stay legible and clear of one
+   * another. The main map is large enough that it never needs this. */
+  .app-minimap .leaflet-control-attribution {
+    font-size: 8px !important;
+    line-height: 1.25 !important;
+    padding: 2px 6px !important;
+  }
+  .app-minimap .maptiler-logo { width: 44px !important; }
 
   /* Dense 4-across stat strips (e.g. Threat Source Dist/Size/Cont/Wind) reflow
    * to 2×2 so labels/values stop truncating to "DIST 3…". */
@@ -660,6 +715,14 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .inc-rail-scroll {
     max-height: 60vh !important;
     overflow-y: auto !important;
+  }
+
+  /* Empty-state panel: compact on mobile so it doesn't overflow the capped
+   * rail-list height (the desktop 340px min would force an inner scroll on a
+   * short phone). */
+  .app-empty-feed {
+    min-height: 240px !important;
+    padding: 24px 20px !important;
   }
 
   /* Detail footer (flex child under the list) — keep it compact on mobile:

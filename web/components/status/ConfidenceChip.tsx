@@ -134,9 +134,10 @@ export function ConfidenceBreakdownModal({
           color: ae.textDim,
         }}
       >
-        Each upstream signal that feeds your composite tier, with its current status. The
-        overall confidence is the <strong style={{ color: ae.text }}>weakest link</strong> —
-        a single degraded input pulls the composite to MEDIUM, two or more pulls it to LOW.
+        This shows each piece of data behind your overall risk, and whether it&apos;s current and
+        reliable. Your confidence is only as strong as the{' '}
+        <strong style={{ color: ae.text }}>weakest piece</strong>. One stale or estimated input drops
+        it to Medium. Two or more, or one that is completely unavailable, drops it to Low.
       </p>
 
       {/* Signal rows */}
@@ -263,21 +264,6 @@ function SignalRow({
           }}
         >
           {signal.label}
-          {!signal.contributesToLevel ? (
-            <span
-              style={{
-                marginLeft: 8,
-                fontFamily: ae.fontMono,
-                fontSize: 9.5,
-                fontWeight: 500,
-                letterSpacing: '0.14em',
-                color: ae.textMute,
-                textTransform: 'uppercase',
-              }}
-            >
-              · info only
-            </span>
-          ) : null}
         </div>
       </div>
       <span

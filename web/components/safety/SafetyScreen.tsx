@@ -3,17 +3,21 @@
 // Safety Plan orchestrator. Pulls user location + named incidents + FEMA disasters
 // + nearby shelters, computes the escape bearing, and renders the full layout.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { AdvisoryRow } from '@/components/safety/AdvisoryRow';
 import { ChecklistCard } from '@/components/safety/ChecklistCard';
 import { EvacuationCard, type EvacMode } from '@/components/safety/EvacuationCard';
 import { FemaBanner } from '@/components/safety/FemaBanner';
+import { SafetyScene } from '@/components/safety/SafetyScene';
 import { cardinal8 } from '@/components/ui/CompassRose';
 import { DataErrorState } from '@/components/ui/DataErrorState';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
+import { SourceNote } from '@/components/ui/SourceNote';
 import { useAesthetic } from '@/lib/aesthetic';
+import { femaNote, shelterFeedNote, useSourceHealth } from '@/lib/sourceHealth';
+import { useAnyModalOpen } from '@/lib/modal-state';
 import { type LatLon } from '@/lib/api';
 import {
   bearingTo,
@@ -50,6 +54,24 @@ export function SafetyScreen() {
   const disasters = useActiveDisasters(loc.coords);
   const shelters = useNearbyShelters(loc.coords);
   const [evacMode, setEvacMode] = useState<EvacMode>('away');
+
+  // Per-source health from the X-Source-Health header. These routes degrade to
+  // an empty 200 when an upstream is down, so without these notes a FEMA or
+  // shelter-feed outage would silently look like "nothing here".
+  const health = useSourceHealth();
+  const femaSourceNote = femaNote(health);
+  const shelterSourceNote = shelterFeedNote(health);
+
+  // Pause the backdrop's (cheap) CSS motion + the compass radar sweep when the
+  // tab is hidden or a modal is open — mirrors the Status heat-reduction pattern.
+  const anyModalOpen = useAnyModalOpen();
+  const [tabVisible, setTabVisible] = useState(true);
+  useEffect(() => {
+    const onVis = () => setTabVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+  const animActive = tabVisible && !anyModalOpen;
 
   // Route the fire-weather signal through the same calibration pipeline as
   // Status (normalizeWeather → bucketOf). Mathematically equivalent to the
@@ -173,75 +195,81 @@ export function SafetyScreen() {
   };
 
   return (
-    <PageSection top={36} bottom={56}>
-      <SectionEyebrow
-        color="#E8B339"
-        right={`FEMA · NIFC · CAL FIRE · synced ${new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })}`}
-      >
-        Safety Plan · {loc.label}
-      </SectionEyebrow>
+    <>
+      {/* Signature "Still Waters" backdrop — fixed behind the page; content
+          scrolls over it (mirrors the Status backdrop pattern). */}
+      <SafetyScene active={animActive} />
 
-      {/* Hero */}
-      <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: ae.fontDisplay,
-            fontSize: 48,
-            fontWeight: ae.titleWeight,
-            letterSpacing: '-0.025em',
-            color: ae.text,
-            lineHeight: 1.0,
-          }}
-        >
-          Be ready, not rushed.
-        </h1>
-        <p
-          style={{
-            margin: '14px 0 0',
-            maxWidth: 720,
-            fontFamily: ae.fontBody,
-            fontSize: 16,
-            lineHeight: 1.5,
-            color: ae.textDim,
-          }}
-        >
-          Small steps now, so you&apos;re not scrambling later.
-        </p>
-      </div>
-
-      {/* FEMA banner — active declaration, or a compact note when the FEMA
-          lookup itself failed (so an outage doesn't silently hide a possible
-          declaration). When the core data failed the top banner already covers
-          it, so don't double up. */}
-      {disasters.isError && !safetyDataFailed ? (
-        <DataErrorState
-          compact
-          title="FEMA disaster status unavailable"
-          message="Couldn't reach FEMA — an active declaration for your county may exist but isn't shown. Check FEMA.gov or your local alerts."
-          onRetry={() => disasters.refetch()}
-        />
-      ) : activeDisaster ? (
-        <FemaBanner disaster={activeDisaster} />
-      ) : null}
-
-      {/* 2-col body */}
       <div
-        className="app-stack"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)',
-          gap: 20,
-        }}
+        className={animActive ? undefined : 'ember-anim-paused'}
+        style={{ position: 'relative', zIndex: 1 }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <PageSection top={28} bottom={56}>
+          <SectionEyebrow
+            color="#E8B339"
+            right={`FEMA · NIFC · CAL FIRE · synced ${new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}`}
+          >
+            Safety Plan · {loc.label}
+          </SectionEyebrow>
+
+          {/* Hero */}
+          <div style={{ marginBottom: 40 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontFamily: ae.fontDisplay,
+                fontSize: 'clamp(44px, 5.4vw, 84px)',
+                fontWeight: ae.titleWeight,
+                letterSpacing: '-0.04em',
+                color: ae.text,
+                lineHeight: 0.98,
+              }}
+            >
+              Your wildfire safety plan.
+            </h1>
+            <p
+              style={{
+                margin: '20px 0 0',
+                maxWidth: 760,
+                fontFamily: ae.fontBody,
+                fontSize: 20,
+                lineHeight: 1.5,
+                color: ae.textDim,
+              }}
+            >
+              Prepare ahead, and know where to go if a fire reaches your area.
+            </p>
+          </div>
+
+          {/* FEMA banner — active declaration, or a compact note when the FEMA
+              lookup itself failed (so an outage doesn't silently hide a possible
+              declaration). When the core data failed the top banner already covers
+              it, so don't double up. */}
+          {disasters.isError && !safetyDataFailed ? (
+            <DataErrorState
+              compact
+              title="FEMA disaster status unavailable"
+              message="Couldn't reach FEMA. An active declaration for your county may exist but isn't shown. Check FEMA.gov or your local alerts."
+              onRetry={() => disasters.refetch()}
+            />
+          ) : activeDisaster ? (
+            <FemaBanner disaster={activeDisaster} />
+          ) : femaSourceNote && !safetyDataFailed ? (
+            // FEMA (or the Census county lookup it depends on) returned a real
+            // outage, not a genuine "no active declaration". Name it so an
+            // outage isn't read as "all clear, nothing declared".
+            <SourceNote text={femaSourceNote} style={{ marginTop: 6, marginBottom: 6 }} />
+          ) : null}
+
+          {/* Status band — full width (banner + closest-fire), or the blocking
+              "safety data unavailable" state when a core signal errored. */}
           {safetyDataFailed ? (
             <DataErrorState
               title="Safety data unavailable"
-              message="We can't load current fire and weather data for your area right now, so this screen can't confirm whether you're at risk. Check official sources — NWS, CAL FIRE, and your local emergency alerts — and try again."
+              message="Current fire and weather data isn't available for your area right now, so this screen can't confirm whether you're at risk. Check official sources such as the NWS, CAL FIRE, and your local emergency alerts, then try again."
               onRetry={retryCoreData}
             />
           ) : (
@@ -257,55 +285,77 @@ export function SafetyScreen() {
               isLoading={bannerLoading}
             />
           )}
-          <ChecklistCard riskLevel={chromeLevel} />
-        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Render the card whenever we have fire data OR are still loading
-              it. The card itself renders skeletons inline for whichever mode
-              is still waiting on its data, so the toggle stays interactive. */}
-          {(closestDistanceMi != null && closestCoords) ||
-          (shelters.data && shelters.data.length > 0) ||
-          incidents.isLoading ||
-          fires.isLoading ||
-          shelters.isLoading ? (
-            <EvacuationCard
-              origin={loc.coords}
-              fireBearingDeg={closestCoords ? nearestBearing : null}
-              fireDistanceMi={closestDistanceMi}
-              riskLevel={chromeLevel}
-              mode={evacMode}
-              onModeChange={setEvacMode}
-              shelters={shelters.data}
-              fireLoading={incidents.isLoading || fires.isLoading}
-              sheltersLoading={shelters.isLoading}
-            />
-          ) : incidents.isError || fires.isError ? (
-            // Genuinely no evac routing info: we couldn't load fire/incident
-            // locations, so away-from-fire routing is dead. Keyed off the EVAC
-            // queries, NOT safetyDataFailed — if only the weather/risk data
-            // behind the left banner were down but fires/shelters loaded fine,
-            // the card still renders. We only show this when there's actually
-            // no evac info to show AND that's because a fetch errored (not a
-            // genuine "no fire, no shelters" all-clear, which stays null).
-            <DataErrorState
-              title="Evacuation routing unavailable"
-              message="We can't load nearby fire and incident data right now, so this can't route you away from an active fire. Check your local emergency services and try again."
-              onRetry={retryCoreData}
-            />
-          ) : shelters.isError ? (
-            // Fire data is fine (nothing in range) but the shelter lookup
-            // failed — surface that instead of showing nothing.
-            <DataErrorState
-              compact
-              title="Shelter data unavailable"
-              message="Couldn't load nearby shelters. Try again, or check Red Cross / local emergency services directly."
-              onRetry={() => shelters.refetch()}
-            />
-          ) : null}
-        </div>
+          {/* Action band — the two "what to do" cards: the wider preparation
+              checklist beside the gold "Suggested Direction" command card. */}
+          <div
+            className="app-stack"
+            style={{
+              marginTop: 20,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1.34fr) minmax(0, 1fr)',
+              gap: 20,
+              alignItems: 'start',
+            }}
+          >
+            <ChecklistCard riskLevel={chromeLevel} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Render the card whenever we have fire data OR are still loading
+                  it. The card itself renders skeletons inline for whichever mode
+                  is still waiting on its data, so the toggle stays interactive. */}
+              {(closestDistanceMi != null && closestCoords) ||
+              (shelters.data && shelters.data.length > 0) ||
+              incidents.isLoading ||
+              fires.isLoading ||
+              shelters.isLoading ? (
+                <EvacuationCard
+                  origin={loc.coords}
+                  fireBearingDeg={closestCoords ? nearestBearing : null}
+                  fireDistanceMi={closestDistanceMi}
+                  riskLevel={chromeLevel}
+                  mode={evacMode}
+                  onModeChange={setEvacMode}
+                  shelters={shelters.data}
+                  fireLoading={incidents.isLoading || fires.isLoading}
+                  sheltersLoading={shelters.isLoading}
+                />
+              ) : incidents.isError || fires.isError ? (
+                // Genuinely no evac routing info: we couldn't load fire/incident
+                // locations, so away-from-fire routing is dead. Keyed off the EVAC
+                // queries, NOT safetyDataFailed — if only the weather/risk data
+                // behind the left banner were down but fires/shelters loaded fine,
+                // the card still renders. We only show this when there's actually
+                // no evac info to show AND that's because a fetch errored (not a
+                // genuine "no fire, no shelters" all-clear, which stays null).
+                <DataErrorState
+                  title="Evacuation routing unavailable"
+                  message="Nearby fire and incident data isn't available right now, so this can't route you away from an active fire. Check your local emergency services and try again."
+                  onRetry={retryCoreData}
+                />
+              ) : shelters.isError ? (
+                // Fire data is fine (nothing in range) but the shelter lookup
+                // failed — surface that instead of showing nothing.
+                <DataErrorState
+                  compact
+                  title="Shelter data unavailable"
+                  message="Couldn't load nearby shelters. Try again, or check Red Cross / local emergency services directly."
+                  onRetry={() => shelters.refetch()}
+                />
+              ) : null}
+
+              {/* Shelter source-health: one feed dropping still leaves the
+                  others, so name which one and reassure the rest are listed.
+                  Suppressed when the whole route errored (covered above) or
+                  core data failed (the top banner covers it). */}
+              {shelterSourceNote && !shelters.isError && !safetyDataFailed ? (
+                <SourceNote text={shelterSourceNote} />
+              ) : null}
+            </div>
+          </div>
+        </PageSection>
       </div>
-    </PageSection>
+    </>
   );
 }
 

@@ -129,6 +129,7 @@ export function SettingsScreen() {
           ]}
         >
           <div
+            className="app-stack"
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
@@ -162,6 +163,7 @@ export function SettingsScreen() {
           eyebrow="Units"
           eyebrowIcon="crosshair"
           accentRgb={CHROME_RGB}
+          alignCenter
           title="Display units"
           description="Distances, wind speeds, and temperatures across Status, Live Map, Fire-Weather What-If, Safety Plan, and the full report page all respect these."
           meta={[
@@ -172,7 +174,15 @@ export function SettingsScreen() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              // Each toggle is capped at 200px and the leftover desktop width is
+              // distributed BETWEEN them, so on a wide well they spread evenly
+              // across the row instead of stretching to ~300px (sparse) or
+              // clustering on the left. On a phone the well is narrower than
+              // 3×200, so the tracks shrink to fill it (no leftover → the
+              // space-between is a no-op) and the toggles fill the width exactly
+              // as before.
+              gridTemplateColumns: 'repeat(3, minmax(0, 200px))',
+              justifyContent: 'space-between',
               gap: 12,
             }}
           >
@@ -345,17 +355,48 @@ export function SettingsScreen() {
           >
             Real-time satellite fire detections from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>NASA FIRMS</strong>. Active incident metadata from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>NIFC</strong> and{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>NIFC</strong>{' '}and{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>Cal Fire</strong>. Current conditions from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>OpenWeatherMap</strong>, with drought (KBDI) history from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>Open-Meteo</strong> and live vegetation stress (NDVI) from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index — based on the Fosberg, Hot-Dry-Windy, and McArthur indices — calibrated per state against historical fire records (<strong style={{ color: ae.text, fontWeight: 600 }}>FPA-FOD</strong>), using{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong> geographies. The machine-learning ignition model also reads land cover (fuel type) from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Open-Meteo</strong>{' '}and live vegetation stress (NDVI) from{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index, based on the Fosberg, Hot-Dry-Windy, and McArthur indices, calibrated per state against historical fire records (<strong style={{ color: ae.text, fontWeight: 600 }}>FPA-FOD</strong>), using{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong>{' '}geographies. The machine-learning ignition model also reads land cover (fuel type) from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>NLCD / EnviroAtlas</strong>. Federal disaster declarations and open shelters from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>FEMA</strong>. Map tiles by{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>MapTiler</strong> with{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>OpenStreetMap</strong> data.
+            <strong style={{ color: ae.text, fontWeight: 600 }}>MapTiler</strong>{' '}with{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>OpenStreetMap</strong>{' '}data.
           </p>
+
+          {/* Required attributions / licenses for third-party data sources. */}
+          <div
+            style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: `0.5px solid ${ae.line}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              fontFamily: ae.fontBody,
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: ae.textMute,
+              maxWidth: 820,
+            }}
+          >
+            <div>Contains modified Copernicus Sentinel data 2026.</div>
+            <div>
+              Weather data by{' '}
+              <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" style={{ color: ae.textDim, textDecoration: 'underline' }}>Open-Meteo</a>{' '}
+              (CC BY 4.0) and{' '}
+              <a href="https://openweathermap.org" target="_blank" rel="noopener noreferrer" style={{ color: ae.textDim, textDecoration: 'underline' }}>OpenWeather</a>.
+            </div>
+            <div>
+              Map data ©{' '}
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" style={{ color: ae.textDim, textDecoration: 'underline' }}>OpenStreetMap contributors</a>, tiles by{' '}
+              <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener noreferrer" style={{ color: ae.textDim, textDecoration: 'underline' }}>MapTiler</a>.
+            </div>
+            <div>This product uses the FEMA OpenFEMA API, but is not endorsed by FEMA.</div>
+          </div>
         </SettingsRow>
 
         {/* ───── Footer build line ─────────────────────────────── */}
@@ -438,6 +479,12 @@ interface SettingsRowProps {
   meta?: { label: string; value: string }[];
   children: ReactNode;
   fullBleed?: boolean;
+  /** Vertically center the control well against the (taller) header rail
+   *  instead of top-aligning it. Used when the control is short (e.g. the unit
+   *  toggles) so it sits balanced beside the description rather than stranded
+   *  at the top with a large blank space below. Desktop only — the grid is a
+   *  single column on mobile, where alignItems has no effect. */
+  alignCenter?: boolean;
 }
 
 function SettingsRow({
@@ -451,6 +498,7 @@ function SettingsRow({
   meta,
   children,
   fullBleed,
+  alignCenter,
 }: SettingsRowProps) {
   const accent = accentRgb || '255, 255, 255';
   return (
@@ -488,7 +536,7 @@ function SettingsRow({
             : 'minmax(200px, 240px) minmax(0, 1fr)',
           gap: fullBleed ? 0 : 36,
           padding: '28px 28px',
-          alignItems: 'start',
+          alignItems: alignCenter ? 'center' : 'start',
         }}
       >
         {/* Header rail */}

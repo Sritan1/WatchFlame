@@ -332,7 +332,7 @@ const MOCK_IGNITION: IgnitionResponse = {
 
 export const mockApi = {
   health: () => delay({ ok: true }),
-  fires: (_opts?: { days?: number; bbox?: string }) => delay(MOCK_FIRES),
+  fires: (_opts?: { days?: number; bbox?: string; reportHealth?: boolean }) => delay(MOCK_FIRES),
   risk: (body: RiskRequest) => delay(computeMockRisk(body), 320),
   riskCalibration: () => delay(CALIBRATION_INFO, 120),
   trajectory: (_lat: number, _lon: number): Promise<TrajectoryResponse | null> =>
@@ -350,7 +350,7 @@ export const mockApi = {
   },
   shelters: (_lat: number, _lon: number, _radiusMi = 50, limit = 20) =>
     delay(MOCK_SHELTERS.slice(0, limit)),
-  incidentsNear: (_lat: number, _lon: number, _radiusMi = 15, limit = 5) =>
+  incidentsNear: (_lat: number, _lon: number, _radiusMi = 15, limit = 5, _reportHealth = true) =>
     delay(MOCK_INCIDENTS.slice(0, limit)),
   disastersNear: (_lat: number, _lon: number) => delay(MOCK_DISASTERS),
 };

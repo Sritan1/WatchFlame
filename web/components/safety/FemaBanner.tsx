@@ -46,15 +46,18 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
   };
   return (
     <div
-      className="ember-card ember-hero-card"
       style={{
-        background: `linear-gradient(180deg, ${ae.surface2}, ${ae.surface})`,
-        border: `0.5px solid rgba(${AMBER_RGB}, 0.28)`,
+        position: 'relative',
+        overflow: 'hidden',
+        // Matte-glass surface (matches the Safety cards) with an amber tint so
+        // the federal-alert identity stays distinct from the neutral cards.
+        background: `linear-gradient(180deg, rgba(${AMBER_RGB},0.10), rgba(${AMBER_RGB},0.035)), linear-gradient(180deg, rgba(17,21,27,0.62), rgba(13,17,23,0.55))`,
+        border: `0.5px solid rgba(${AMBER_RGB}, 0.34)`,
         borderRadius: ae.radiusLg,
-        boxShadow: `0 20px 50px rgba(${AMBER_RGB}, 0.10)`,
+        boxShadow: `0 16px 50px rgba(0,0,0,0.35), 0 0 44px rgba(${AMBER_RGB}, 0.10)`,
+        backdropFilter: 'blur(20px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
         marginBottom: 20,
-        ['--card-accent' as string]: AMBER,
-        ['--card-accent-soft' as string]: `rgba(${AMBER_RGB}, 0.18)`,
       }}
     >
       <StripePattern color={AMBER} opacity={0.04} />
