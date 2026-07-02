@@ -102,7 +102,7 @@ export function DroughtPanel({
           color={color}
           glowRgb={glowRgb}
           index={4}
-          caption="Keetch-Byram Drought Index, 0–800. Higher = drier soil + fuels."
+          caption="Keetch-Byram Drought Index, 0-800. Higher = drier soil + fuels."
           onChange={onKbdiChange}
           isLoading={isLoading}
           footer={footer}

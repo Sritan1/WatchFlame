@@ -42,7 +42,7 @@ export function MiniMapImpl({
   const showTilesNote = tilesDown || health.maptiler === 'down';
 
   return (
-    <div className="app-minimap" style={{ position: 'relative', width: '100%', height: 220 }}>
+    <div className="app-minimap" style={{ position: 'relative', width: '100%', height: 220, isolation: 'isolate' }}>
     <MapContainer
       center={center}
       zoom={9}

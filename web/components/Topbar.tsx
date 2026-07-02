@@ -17,7 +17,7 @@ const ROUTE_META: Record<string, { group: string; title: string }> = {
   '/':         { group: 'Operations', title: 'Status' },
   '/map':      { group: 'Operations', title: 'Live Map' },
   '/risk':     { group: 'Planning',   title: 'Fire-Weather What-If' },
-  '/safety':   { group: 'Planning',   title: 'Safety Plan' },
+  '/safety':   { group: 'Planning',   title: 'Safety' },
   '/settings': { group: 'Account',    title: 'Settings' },
 };
 

@@ -212,7 +212,7 @@ export function SafetyScreen() {
               minute: '2-digit',
             })}`}
           >
-            Safety Plan · {loc.label}
+            Safety · {loc.label}
           </SectionEyebrow>
 
           {/* Hero */}

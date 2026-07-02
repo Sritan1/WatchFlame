@@ -66,6 +66,22 @@ export function AdvisoryRow({
           <SafetyStatusSkeleton />
         ) : (
           <>
+            {/* Framing eyebrow — makes clear this reads the CURRENT situation
+                (fire weather + active fires), distinct from Status's overall
+                risk tier (which also folds in ignition likelihood). */}
+            <div
+              style={{
+                fontFamily: ae.fontMono,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.14em',
+                color: ae.textMute,
+                textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                marginBottom: 14,
+              }}
+            >
+              Current conditions + active fires
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <div
                 style={{
@@ -258,6 +274,9 @@ export function AdvisoryRow({
 function SafetyStatusSkeleton() {
   return (
     <>
+      <div style={{ marginBottom: 14 }}>
+        <Skeleton width={190} height={11} rounded="sm" />
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
         <Skeleton width={44} height={44} rounded="md" />
         <Skeleton width={150} height={23} rounded="sm" />

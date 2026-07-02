@@ -57,7 +57,7 @@ export function ConfidenceChip({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`${tone.label} — open breakdown`}
+      aria-label={`${tone.label}, open breakdown`}
       className="ember-fade-up"
       style={{
         display: 'inline-flex',

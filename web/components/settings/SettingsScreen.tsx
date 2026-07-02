@@ -110,7 +110,7 @@ export function SettingsScreen() {
               maxWidth: 640,
             }}
           >
-            Preferences are saved to this browser only — no account needed. The disclaimer below applies to every screen.
+            Preferences are saved to this browser only. No account needed. The disclaimer below applies to every screen.
           </p>
         </header>
 
@@ -137,7 +137,7 @@ export function SettingsScreen() {
           >
             {(
               [
-                { value: 'gov', tag: 'GOV', label: 'Government utility' },
+                { value: 'gov', tag: 'EDITORIAL', label: 'Editorial standard' },
                 { value: 'startup', tag: 'STUDIO', label: 'Modern studio' },
                 { value: 'tactical', tag: 'TACTICAL', label: 'Tactical instrument' },
               ] as { value: AestheticId; tag: string; label: string }[]
@@ -164,7 +164,7 @@ export function SettingsScreen() {
           accentRgb={CHROME_RGB}
           alignCenter
           title="Display units"
-          description="Distances, wind speeds, and temperatures across Status, Live Map, Fire-Weather What-If, Safety Plan, and the full report page all respect these."
+          description="Distances, wind speeds, and temperatures across Status, Live Map, Fire-Weather What-If, Safety, and the full report page all respect these."
           meta={[
             { label: 'Locale', value: 'Auto · US' },
             { label: 'Conversion', value: 'Live' },
@@ -268,7 +268,7 @@ export function SettingsScreen() {
               num={2}
               accentRgb={WARN_RGB}
               title="Detection delays exist"
-              body="NASA satellite detections (FIRMS) lag the real fire by roughly 1–4 hours. Named-incident metadata from NIFC and Cal Fire is updated on each agency's own schedule and may also be delayed."
+              body="NASA satellite detections (FIRMS) lag the real fire by roughly 1-4 hours. Named-incident metadata from NIFC and Cal Fire is updated on each agency's own schedule and may also be delayed."
             />
             <NoticeBullet
               ae={ae}
@@ -282,14 +282,14 @@ export function SettingsScreen() {
               num={4}
               accentRgb={WARN_RGB}
               title="Shelters: open vs. potential"
-              body="Open shelters reported by the FEMA National Shelter System appear with live status and capacity. Everything else is a potential evacuation point drawn from OpenStreetMap and the NCES public-school database — not a confirmed open site. Call ahead during a real emergency."
+              body="Open shelters reported by the FEMA National Shelter System appear with live status and capacity. Everything else is a potential evacuation point drawn from OpenStreetMap and the NCES public-school database, not a confirmed open site. Call ahead during a real emergency."
             />
             <NoticeBullet
               ae={ae}
               num={5}
               accentRgb={WARN_RGB}
               title="What this is"
-              body="An independent, informational tool — not a commercial or operational emergency service. It comes with no guarantees of uptime or accuracy, and there's no team monitoring it around the clock."
+              body="An independent, informational tool, not a commercial or operational emergency service. It comes with no guarantees of uptime or accuracy, and there's no team monitoring it around the clock."
             />
           </div>
           <p
