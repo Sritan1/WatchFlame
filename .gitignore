@@ -68,6 +68,8 @@ screens.jsx
 tokens.jsx
 web-map.jsx
 web-risk.jsx
+web-risk-chip.jsx
+web-risk-status.jsx
 web-safety.jsx
 web-shell.jsx
 web-settings.jsx

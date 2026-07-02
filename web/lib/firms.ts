@@ -33,3 +33,22 @@ export function satelliteTitle(code: string | null | undefined): string {
   const platform = firmsPlatform(code);
   return platform ? `${platform} detection` : 'Satellite detection';
 }
+
+/** User-facing label for a FIRMS detection's confidence field. Handles both the
+ *  categorical VIIRS codes (L/N/H, the default source) and MODIS's numeric
+ *  0-100 scale, so it stays correct if FIRMS_SOURCE switches sensors. Returns
+ *  '—' when the value is missing or unrecognized. */
+export function confidenceLabel(c: string | null): string {
+  if (c == null) return '—';
+  const v = c.trim().toUpperCase();
+  if (v === 'L') return 'Low';
+  if (v === 'N') return 'Nominal';
+  if (v === 'H') return 'High';
+  const n = Number(v);
+  if (Number.isFinite(n)) {
+    if (n >= 80) return 'High';
+    if (n >= 30) return 'Nominal';
+    return 'Low';
+  }
+  return '—';
+}

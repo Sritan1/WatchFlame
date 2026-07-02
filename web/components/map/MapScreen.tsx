@@ -211,7 +211,7 @@ export function MapScreen() {
         )}
 
         {/* Filter chips — top-left */}
-        <div style={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 8 }}>
+        <div className="app-map-filter-bar" style={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 8 }}>
           <FilterChips active={filter} onChange={setFilter} counts={counts} />
         </div>
 

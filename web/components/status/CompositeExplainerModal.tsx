@@ -1,6 +1,6 @@
 'use client';
 
-// "Why this score?" — opens from a small text trigger on the Status hero.
+// "Score Breakdown" — opens from a small text trigger on the Status hero.
 // Walks the user through their headline tier as a TWO-STAGE story, both stages
 // being published lookup matrices (no hidden weights):
 //
@@ -87,7 +87,7 @@ export function CompositeExplainerModal({
   const { ae } = useAesthetic();
 
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="Why this score?" maxWidth={660}>
+    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="Score Breakdown" maxWidth={660}>
       <p style={textBody(ae)}>
         Your overall level is built from <strong style={{ color: ae.text }}>three things</strong>,
         combined in <strong style={{ color: ae.text }}>two steps</strong>. First, the{' '}

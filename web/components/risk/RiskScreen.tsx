@@ -84,11 +84,11 @@ const SEASON_LABEL: Record<Season, string> = {
  *  labels in the mobile Risk Calculator's ndviLabel() — same semantic
  *  ranges, slightly different copy phrased for the parenthetical context. */
 function ndviQualitative(anomaly: number): string {
-  if (anomaly <= -0.10) return 'much drier than 3-yr norm — more fire risk';
+  if (anomaly <= -0.10) return 'much drier than 3-yr norm, more fire risk';
   if (anomaly <= -0.03) return 'drier than 3-yr norm';
   if (anomaly <   0.03) return 'near 3-yr norm';
   if (anomaly <   0.10) return 'greener than 3-yr norm';
-  return 'much greener than 3-yr norm — less fire risk';
+  return 'much greener than 3-yr norm, less fire risk';
 }
 
 function currentSeason(): Season {

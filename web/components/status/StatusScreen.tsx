@@ -1,7 +1,7 @@
 'use client';
 
 // Status — mirrors mobile app/(tabs)/index.tsx as closely as possible.
-//   Hero band: HeroOrb + ShimmerPill + headline + subtitle + CTAs + Calibration link
+//   Hero band: SegmentedRiskChip + HeroOrb + headline + subtitle + CTAs + Calibration link
 //   2x2 grid: Conditions card (Wind + Temperature) | Humidity card
 //             LocalKbdiCard                         | LocalNdviCard
 // Cards beyond these (Active Incident, Regional Risk Index, Closest Fires list,
@@ -29,7 +29,7 @@ import { WavesBackground } from '@/components/WavesBackground';
 import { HeroOrb } from '@/components/ui/HeroOrb';
 import { PageSection } from '@/components/ui/PageSection';
 import { SectionEyebrow } from '@/components/ui/SectionEyebrow';
-import { ShimmerPill } from '@/components/ui/ShimmerPill';
+import { SegmentedRiskChip } from '@/components/ui/SegmentedRiskChip';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Stagger } from '@/components/ui/Stagger';
 import { TiltCard } from '@/components/ui/TiltCard';
@@ -81,7 +81,7 @@ const dirLabel = (deg: number | null | undefined) =>
   deg == null ? '—' : cardinal8(deg);
 
 /** Shared visual treatment for the two ghost-text triggers in the hero
- *  meta-info row (Calibration · Why this score?). Both are small mono
+ *  meta-info row (Calibration · Score Breakdown). Both are small mono
  *  caps with a trailing info icon; identical layout so they read as a
  *  pair rather than two unrelated affordances. */
 function metaTriggerStyle(
@@ -378,11 +378,17 @@ export function StatusScreen() {
               style={{
                 position: 'relative',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 minHeight: 360,
               }}
             >
+              {/* Segmented risk chip sits above the orb (matches the reference
+                  Command Center hero). Loading placeholder matches its footprint. */}
+              <div style={{ marginBottom: 28 }}>
+                <SegmentedRiskChip risk={pillTone} loading={!compositeReady} />
+              </div>
               {/* Orb arc is band-anchored to the orb color via tierArcFraction
                   (see compositeArc above), so the dial fill can never sit in a
                   different band than the tier. thresholds={null} keeps HeroOrb
@@ -392,6 +398,7 @@ export function StatusScreen() {
                 score={compositeArc}
                 thresholds={null}
                 pulseSpeed={70}
+                loading={!compositeReady}
                 ariaLabel={
                   compositeReady
                     ? `Overall wildfire risk: ${compositeBucket.toUpperCase()}.`
@@ -401,13 +408,6 @@ export function StatusScreen() {
             </div>
 
             <div>
-              <div className="ember-fade-up" style={{ marginBottom: 16 }}>
-                {compositeReady ? (
-                  <ShimmerPill risk={pillTone} />
-                ) : (
-                  <Skeleton width={96} height={28} rounded="full" />
-                )}
-              </div>
               {compositeReady ? (
                 <h1
                   key={headlineLines.join('-')}
@@ -482,7 +482,7 @@ export function StatusScreen() {
                 />
               </div>
 
-              {/* Hero meta-info row: calibration hint + "Why this score?"
+              {/* Hero meta-info row: calibration hint + "Score Breakdown"
                   trigger. Both open their respective modals — the
                   calibration ladder explains where your bucket comes from,
                   the explainer walks you through the matrix that produced
@@ -508,10 +508,10 @@ export function StatusScreen() {
                     type="button"
                     onClick={() => setWhyOpen(true)}
                     className="ember-fade-up"
-                    aria-label="Why this score? — open the matrix explainer"
+                    aria-label="Score Breakdown, open the matrix explainer"
                     style={metaTriggerStyle(ae, '600ms')}
                   >
-                    Why this score?
+                    Score Breakdown
                     <Icon name="info" size={11} color={ae.textMute} strokeWidth={1.8} />
                   </button>
                 ) : null}
@@ -534,7 +534,7 @@ export function StatusScreen() {
                   icon="shield"
                   onClick={() => { window.location.href = '/safety'; }}
                 >
-                  Safety Plan
+                  Safety
                 </Button>
               </div>
             </div>
@@ -572,8 +572,8 @@ export function StatusScreen() {
                 : { low: 0.3, moderate: 0.6, extreme: 0.8 },
               scoreMax: risk.data?.regional_thresholds?.score_max ?? 1.0,
               caption: risk.data?.regional_state
-                ? 'Fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.'
-                : 'Global thresholds — fuses temperature, humidity, wind, drought, and vegetation into a 0–1 likelihood.',
+                ? 'Fuses temperature, humidity, wind, drought, and vegetation into a 0-1 likelihood.'
+                : 'Global thresholds. Fuses temperature, humidity, wind, drought, and vegetation into a 0-1 likelihood.',
               emptyText: '—',
               isLoading: !compositeReady,
               howCalculatedHref: '/risk',
@@ -601,8 +601,8 @@ export function StatusScreen() {
               zoneBoundaries: { low: 0.25, moderate: 0.5, extreme: 0.75 },
               scoreMax: 1.0,
               caption: anyFireInRange
-                ? `Worst-case among fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)} — accounts for size, containment, distance, and wind alignment.`
-                : 'No active fires within range — score is zero until a fire is detected near you.',
+                ? `Worst-case among fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}. Accounts for size, containment, distance, and wind alignment.`
+                : 'No active fires within range. Score is zero until a fire is detected near you.',
               emptyText: 'None',
               isLoading: !compositeReady,
             }}
@@ -1259,13 +1259,16 @@ function HumidityDial({
         const a = (i * 15 * Math.PI) / 180;
         const r1 = r - 5;
         const r2 = r - (i % 6 === 0 ? 9 : 7);
+        // Round trig outputs so SSR (x86) and client (e.g. ARM phone) stringify
+        // these coords identically — avoids a hydration mismatch on the ticks.
+        const rnd = (n: number) => Math.round(n * 1000) / 1000;
         return (
           <line
             key={i}
-            x1={c + Math.cos(a) * r1}
-            y1={c + Math.sin(a) * r1}
-            x2={c + Math.cos(a) * r2}
-            y2={c + Math.sin(a) * r2}
+            x1={rnd(c + Math.cos(a) * r1)}
+            y1={rnd(c + Math.sin(a) * r1)}
+            x2={rnd(c + Math.cos(a) * r2)}
+            y2={rnd(c + Math.sin(a) * r2)}
             stroke={i % 6 === 0 ? ae.lineStrong : ae.line}
             strokeWidth="0.5"
           />

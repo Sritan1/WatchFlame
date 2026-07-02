@@ -1,6 +1,6 @@
 'use client';
 
-// Tier-lookup matrix grids for the "Why this score?" explainer modal. A generic
+// Tier-lookup matrix grids for the "Score Breakdown" explainer modal. A generic
 // `TierMatrixGrid` renders any (rowTier × colTier → outputTier) lookup, with the
 // user's actual cell highlighted (brighter fill + colored border + glow) and the
 // user's row/column emphasized for cross-hatch readability. Two wrappers use it:

@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
-import { satelliteTitle } from '@/lib/firms';
+import { confidenceLabel, satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/source-health';
 import { formatDistance, useUnits } from '@/lib/use-units';
@@ -535,21 +535,6 @@ function buildSatelliteStats(feature: FireFeature): FooterStat[] {
 
 /** FIRMS confidence is reported either as one of L/N/H (MODIS) or a 0-100
  *  integer (VIIRS). Normalize both to a short word; "—" when missing. */
-function confidenceLabel(c: string | null): string {
-  if (c == null) return '—';
-  const v = c.trim().toUpperCase();
-  if (v === 'L') return 'Low';
-  if (v === 'N') return 'Nominal';
-  if (v === 'H') return 'High';
-  const n = Number(v);
-  if (Number.isFinite(n)) {
-    if (n >= 80) return 'High';
-    if (n >= 30) return 'Nominal';
-    return 'Low';
-  }
-  return '—';
-}
-
 /** Compact "20m" / "3h" / "2d" formatter for the footer stats strip — short
  *  enough to fit alongside Brightness + Confidence without wrapping. */
 function firmsAgeShort(ageHr: number | null): string {

@@ -209,7 +209,7 @@ export function MapImpl({
   // emit runs once on mount so the bar isn't blank before the first move.
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
     <MapContainer
       ref={mapRef}
       center={center}

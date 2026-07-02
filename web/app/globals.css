@@ -303,6 +303,17 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   pointer-events: none;
 }
 
+/* Segmented risk-chip loading state: a diagonal sheen sweeps across the value
+   placeholders, and the four index bars "charge" (staggered opacity pulse) in a
+   left-to-right wave, so the skeleton reads as this instrument, not a gray box. */
+@keyframes ember-chip-sweep  { 0% { transform: translateX(-160%); } 55%, 100% { transform: translateX(420%); } }
+@keyframes ember-chip-charge { 0%, 100% { opacity: 0.22; } 50% { opacity: 1; } }
+.ember-chip-sheen  { animation: ember-chip-sweep 3.4s cubic-bezier(0.5, 0, 0.5, 1) infinite; }
+.ember-chip-charge { animation: ember-chip-charge 1.5s ease-in-out infinite; will-change: opacity; }
+@media (prefers-reduced-motion: reduce) {
+  .ember-chip-sheen, .ember-chip-charge { animation: none !important; }
+}
+
 /* TiltCard shine — radial highlight that follows --mx/--my set by the JS handler */
 .tilt-card.with-shine::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
@@ -639,6 +650,25 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   /* Two-column structural grids collapse to a single column. Screens opt in by
    * tagging the grid container with `app-stack` (desktop ignores the class). */
   .app-stack { grid-template-columns: 1fr !important; }
+
+  /* Secondary text that can be dropped on narrow screens to avoid an awkward
+   * wrap (e.g. the Threat Source summary blurb next to its pill). */
+  .app-hide-sm { display: none !important; }
+
+  /* Threat Source identity: on mobile the name + Threat Level badge no longer
+   * share a row. The name block takes the full width (so a long incident name
+   * wraps cleanly instead of colliding with the badge), and the badge drops to
+   * its own line below. Title also shrinks so it stays compact. */
+  .app-threat-id { flex-basis: 100% !important; }
+  .app-threat-title { font-size: 22px !important; }
+
+  /* Map filter chips: compact single-line pills so all four fit across a phone
+   * instead of wrapping/overflowing off the right edge. */
+  .app-map-filter-bar { left: 8px !important; right: 8px !important; top: 12px !important; }
+  .app-map-filters { gap: 4px !important; }
+  .app-map-filters > button { height: 28px !important; padding: 0 6px !important; gap: 4px !important; }
+  .app-map-filters > button > span { font-size: 8.5px !important; letter-spacing: 0 !important; white-space: nowrap !important; }
+  .app-map-filters > button > span:last-child { padding: 1px 3px !important; font-size: 8px !important; }
 
   /* Fire-detail: once the two columns stack, flatten their wrappers into the
    * single grid (display:contents) so individual panels become grid items, then

@@ -70,7 +70,7 @@ export function ScoreGauge({
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label={`Risk score ${score.toFixed(2)} of 1.00 — ${activeZone.label} band.`}
+        aria-label={`Risk score ${score.toFixed(2)} of 1.00, ${activeZone.label} band.`}
       >
         {segments.map((s, i) => {
           const x = pad + s.from * innerW;
