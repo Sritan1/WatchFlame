@@ -160,7 +160,7 @@ export function LocalKbdiCard({
                 color: ae.textDim,
               }}
             >
-              Keetch-Byram Drought Index — fitted from a year of local weather. Replaces the
+              Keetch-Byram Drought Index, fitted from a year of local weather. Replaces the
               days-since-rain proxy when your location is known.
             </p>
           </>

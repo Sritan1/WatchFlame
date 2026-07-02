@@ -47,7 +47,7 @@ export interface Aesthetic {
 export const AESTHETICS: Record<AestheticId, Aesthetic> = {
   gov: {
     id: 'gov',
-    name: 'Government utility',
+    name: 'Editorial standard',
     bg: '#0B0E12',
     surface: '#10141B',
     surface2: '#161B24',

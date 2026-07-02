@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { LegalLayout } from '@/components/legal/LegalLayout';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — Ember Watch',
+  title: 'Privacy Policy · Ember Watch',
   description: 'How Ember Watch handles location and technical data.',
 };
 

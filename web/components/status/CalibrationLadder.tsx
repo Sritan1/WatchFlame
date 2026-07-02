@@ -193,12 +193,12 @@ export function CalibrationLadder({
         </p>
       ) : liveLocation && userScore == null ? (
         <p style={{ ...captionStyle(ae), marginTop: 14 }}>
-          Your location hasn&apos;t resolved yet — once it does, your state&apos;s
+          Your location hasn&apos;t resolved yet. Once it does, your state&apos;s
           row will be highlighted.
         </p>
       ) : (
         <p style={{ ...captionStyle(ae), marginTop: 14 }}>
-          No state calibration applies — your score buckets via the global
+          No state calibration applies. Your score buckets via the global
           cutoffs (LOW &lt;{data.global_thresholds.low.toFixed(2)} ·
           MOD &lt;{data.global_thresholds.moderate.toFixed(2)} ·
           EXT &ge;{data.global_thresholds.extreme.toFixed(2)}).

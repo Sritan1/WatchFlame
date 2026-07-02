@@ -34,7 +34,7 @@ export function FilterChips({
   ];
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div className="app-map-filters" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {chips.map((f) => {
         const isActive = active === f.id;
         return (

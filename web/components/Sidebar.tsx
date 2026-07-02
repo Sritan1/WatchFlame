@@ -28,7 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/',       icon: 'grid',   label: 'Status', group: 'Operations' },
   { href: '/map',    icon: 'map',    label: 'Live Map' },
   { href: '/risk',   icon: 'flame',  label: 'Fire-Weather What-If',  group: 'Planning' },
-  { href: '/safety', icon: 'shield', label: 'Safety Plan' },
+  { href: '/safety', icon: 'shield', label: 'Safety' },
 ];
 
 // Chrome accent — peach-orange that reads as the brand's signature warmth.
