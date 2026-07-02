@@ -13,7 +13,7 @@ Wildfire information is scattered. Red-flag bulletins live in one place, raw sat
 - **The fire-weather index is fitted to real fires.** Spearman ρ **+0.32**, ahead of Hot-Dry-Windy (+0.30) and Fosberg (+0.28) on the same fires. [Details](#how-the-scoring-works)
 - **Machine-learning ignition model.** ROC-AUC **0.84**, spatially cross-validated and probability-calibrated. [Details](#how-the-scoring-works)
 - **Per-state calibration across 17 states.** The same score reads as a different tier depending on your state's fire history. [Details](#how-the-scoring-works)
-- **Handles upstream outages.** Every external feed has a fallback, so one provider going down doesn't take the page with it. Plus 153 backend tests and a Python-to-TypeScript scorer-parity test. [Details](#testing)
+- **Handles upstream outages.** Every external feed has a fallback, so one provider going down doesn't take the page with it. Plus 161 backend tests and a Python-to-TypeScript scorer-parity test. [Details](#testing)
 
 ---
 
@@ -39,17 +39,17 @@ Deep dive: [full technical detail](docs/ARCHITECTURE.md).
 
 Five screens, all running on the same backend and the same calibrated algorithm.
 
-**Status.** A live overall-risk tier for your location, built from three signals: the rule-based fire-weather index, a machine-learning ignition-likelihood model, and the proximity of active fires within 50 mi. Several tap-to-open modals open up the math behind it: a calibration ladder, the two-stage "Why this score?" explainer, the ignition model, a 6-hour forecast, and a confidence breakdown. The screen also shows drought, vegetation stress, and the closest fires.
+**Status.** A live overall-risk tier for your location, built from three signals: the rule-based fire-weather index, a machine-learning ignition-likelihood model, and the proximity of active fires within 50 mi. Several tap-to-open modals open up the math behind it: a calibration ladder, the two-stage "Score Breakdown" explainer, the ignition model, a 6-hour forecast, and a confidence breakdown. The screen also shows drought, vegetation stress, and the active fire driving your threat.
 
 **Live Map.** NASA FIRMS satellite detections plus named incidents from NIFC and Cal Fire, sized by acreage and tinted by fire-weather risk. Zoom-aware hit testing, click-to-inspect, and one rail with two tabs: named incidents and browsable satellite detections.
 
 **Fire-Weather What-If.** A slider sandbox over temperature, humidity, wind, KBDI, and vegetation that runs the validated fire-weather index. It's the environment half of the Status score on its own. Drag the sliders to simulate any conditions, watch each factor move the score, and see where that score lands across the 17 calibrated states. It works fully offline.
 
-**Safety Plan.** Open shelters from the live **FEMA National Shelter System**, with status and capacity, plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. There's a direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
+**Safety.** Open shelters from the live **FEMA National Shelter System**, with status and capacity, plus potential evacuation points from OpenStreetMap and the NCES school database, sorted by distance. There's a direction-of-evacuation cue, an evacuation checklist that scales with risk, and a maps hand-off for directions.
 
 **Settings.** Three dark themes, unit preferences (all browser-local, no account), a full disclaimer, dedicated Terms / Privacy / Accessibility pages, and the full data-source attribution.
 
-Plus **saved locations** (Home / Work, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and meets **WCAG 2.1 AA** (color contrast, keyboard focus management, and text alternatives for the charts).
+Plus **saved locations** (search and save any city, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and meets **WCAG 2.1 AA** (color contrast, keyboard focus management, and text alternatives for the charts).
 
 ---
 
@@ -59,8 +59,8 @@ Plus **saved locations** (Home / Work, swappable from the rail) and a per-incide
      1. Status hero — orb + headline + confidence chip + trajectory chip
      2. Live Map — markers + incident rail open
      3. Fire-Weather What-If — sliders + score gauge
-     4. Safety Plan — open shelter tile + checklist
-     5. "Why this score?" matrix modal -->
+     4. Safety — open shelter tile + checklist
+     5. "Score Breakdown" matrix modal -->
 
 _App UI captures aren't committed yet._
 
@@ -223,7 +223,7 @@ npm run dev
 
 ## Testing
 
-The full backend suite is **153 tests**. Run it with:
+The full backend suite is **161 tests**. Run it with:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1

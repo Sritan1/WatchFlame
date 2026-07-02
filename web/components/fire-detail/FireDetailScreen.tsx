@@ -112,9 +112,15 @@ export function FireDetailScreen() {
   const daynight = params.get('daynight');
 
   const coordsValid = Number.isFinite(fireLat) && Number.isFinite(fireLon);
-  const fireLoc: LatLon | undefined = coordsValid
-    ? { lat: fireLat, lon: fireLon }
-    : undefined;
+  // Memoized so its identity is stable across renders (only changes when the
+  // coords do). Downstream query hooks key by lat/lon *value* so this doesn't
+  // affect fetching, but it restores the memoization of the distance/bearing/
+  // detectionId/nearbyOthers useMemos below, which a fresh object each render
+  // would otherwise defeat.
+  const fireLoc: LatLon | undefined = useMemo(
+    () => (coordsValid ? { lat: fireLat, lon: fireLon } : undefined),
+    [coordsValid, fireLat, fireLon],
+  );
 
   const me = useUserLocation();
   const weather = useWeather(fireLoc);
@@ -755,7 +761,7 @@ function buildDescription(
     ? `Reported by ${matched.agency ?? 'the responsible agency'}${
         matched.started ? ` on ${formatDate(matched.started)}` : ''
       }.`
-    : `All metrics below are computed from real-time data — no named-incident match was found within ${formatDistance(10, distanceUnit, 0)}.`;
+    : `All metrics below are computed from real-time data. No named-incident match was found within ${formatDistance(10, distanceUnit, 0)}.`;
   return `${lead} ${tail}`;
 }
 

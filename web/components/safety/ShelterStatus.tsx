@@ -14,6 +14,7 @@ import { Icon } from '@/components/Icon';
 import { cardinal8 } from '@/components/ui/CompassRose';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
+import { bearingTo } from '@/lib/composite-risk';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
@@ -28,15 +29,6 @@ const POTENTIAL_TONE = { color: '#9ca3af', rgb: '156, 163, 175', label: 'Potenti
 export function shelterTone(s: Shelter): { color: string; rgb: string; label: string } {
   if (s.activated) return LIVE_TONES[s.status ?? 'OPEN'] ?? LIVE_TONES.OPEN;
   return POTENTIAL_TONE;
-}
-
-function bearingTo(from: LatLon, to: LatLon): number {
-  const dLon = (to.lon - from.lon) * (Math.PI / 180);
-  const lat1 = from.lat * (Math.PI / 180);
-  const lat2 = to.lat * (Math.PI / 180);
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 function gmapsDirectionsUrl(origin: LatLon, dest: LatLon): string {
@@ -180,7 +172,7 @@ export function ShelterDetailTile({
             color: ae.textDim,
           }}
         >
-          Community-tagged location — not confirmed open. Call ahead before relying on it.
+          Community-tagged location, not confirmed open. Call ahead before relying on it.
         </p>
         {typeLabel ? (
           <div style={{ marginTop: 10 }}>

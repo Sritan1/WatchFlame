@@ -18,6 +18,7 @@ import { GlassSegmented } from '@/components/ui/GlassSegmented';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
+import { bearingTo } from '@/lib/composite-risk';
 import { getRisk, type RiskLevel } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
@@ -342,8 +343,8 @@ export function EvacuationCard({
             {mode === 'shelter'
               ? 'Distances are straight-line. Google Maps figures out actual roads. Always follow official guidance.'
               : noFire
-                ? 'No evacuation route needed right now — conditions can change, so check back if a fire develops nearby.'
-                : `Suggestion only — targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`}
+                ? 'No evacuation route needed right now. Conditions can change, so check back if a fire develops nearby.'
+                : `Suggestion only. Targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`}
           </p>
         </div>
 
@@ -471,13 +472,4 @@ function NoFirePanel({
       </div>
     </>
   );
-}
-
-function bearingTo(from: LatLon, to: LatLon): number {
-  const dLon = (to.lon - from.lon) * (Math.PI / 180);
-  const lat1 = from.lat * (Math.PI / 180);
-  const lat2 = to.lat * (Math.PI / 180);
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  return (Math.atan2(y, x) * 180) / Math.PI;
 }

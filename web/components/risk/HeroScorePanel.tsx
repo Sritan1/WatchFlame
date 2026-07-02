@@ -429,7 +429,7 @@ export function HeroScorePanel({
             {score.toFixed(2)}
           </strong>
           . Below, that same number is bucketed against each fitted state&apos;s historical
-          fire-day distribution — the right-side column shows which tier your score would land
+          fire-day distribution. The right-side column shows which tier your score would land
           in for that state.
         </p>
         <div style={{ marginTop: 18 }}>

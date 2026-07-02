@@ -71,9 +71,14 @@ function ordinalSuffix(n: number): string {
 }
 
 // ── geometry helpers (deg: 0 = top, clockwise positive) ──────────────────────
+// Round trig outputs so the server (x86 Node) and client (e.g. an ARM phone)
+// stringify SVG coordinate attributes identically. Math.sin/cos aren't
+// bit-identical across CPU architectures, so unrounded tick/endpoint coords
+// otherwise trip a hydration mismatch on the gauge. Same technique as HeroOrb.
+const hsRound = (n: number): number => Math.round(n * 1000) / 1000;
 function hsPolar(cx: number, cy: number, r: number, deg: number): [number, number] {
   const t = (deg * Math.PI) / 180;
-  return [cx + r * Math.sin(t), cy - r * Math.cos(t)];
+  return [hsRound(cx + r * Math.sin(t)), hsRound(cy - r * Math.cos(t))];
 }
 function hsArc(cx: number, cy: number, r: number, a0: number, a1: number): string {
   const [x0, y0] = hsPolar(cx, cy, r, a0);
@@ -651,8 +656,8 @@ function HsAICore({
           >
             {Array.from({ length: o.n }).map((_, k) => {
               const a = (k / o.n) * Math.PI * 2;
-              const x = c + Math.cos(a) * o.r;
-              const y = c + Math.sin(a) * o.r;
+              const x = hsRound(c + Math.cos(a) * o.r);
+              const y = hsRound(c + Math.sin(a) * o.r);
               return (
                 <g key={k}>
                   <line x1={c} y1={c} x2={x} y2={y} stroke={`rgba(${tone.glow}, 0.12)`} strokeWidth="0.5" strokeDasharray="2 4" style={{ animation: `hs-dataflow ${3 + k * 0.4}s linear infinite` }} />
@@ -877,7 +882,7 @@ export function IgnitionCoreCard({
                 ))}
                 {[30, 150, 270].map((d, i) => {
                   const a = (d * Math.PI) / 180;
-                  return <circle key={i} cx={13 + Math.cos(a) * 11.4} cy={13 + Math.sin(a) * 11.4} r="1.3" fill={tone.color} />;
+                  return <circle key={i} cx={hsRound(13 + Math.cos(a) * 11.4)} cy={hsRound(13 + Math.sin(a) * 11.4)} r="1.3" fill={tone.color} />;
                 })}
               </svg>
             </div>
@@ -957,7 +962,7 @@ export function IgnitionCoreCard({
               <HsDistribution ae={ae} pct={Math.min(1, Math.max(0, pctNum / 100))} tone={tone} highlight={highlight} />
             )}
             <p style={{ margin: '12px 0 0', fontFamily: ae.fontBody, fontSize: 13, lineHeight: 1.5, color: ae.textDim, maxWidth: 560 }}>
-              How closely today&apos;s conditions resemble the days fires have actually started — a relative likelihood, not an absolute chance.
+              How closely today&apos;s conditions resemble the days fires have actually started, a relative likelihood, not an absolute chance.
             </p>
           </div>
         </div>

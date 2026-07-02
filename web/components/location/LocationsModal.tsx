@@ -115,7 +115,7 @@ export function LocationsModal({
                 letterSpacing: '0.04em',
               }}
             >
-              Search below to save Home, Work, or any city you want to follow.
+              Search below to save any city you want to follow.
             </div>
           </div>
         </div>

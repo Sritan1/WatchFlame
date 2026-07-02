@@ -66,7 +66,7 @@ export function TrajectoryChip({
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Forecast unavailable — open for details"
+        aria-label="Forecast unavailable, open for details"
         className="ember-fade-up"
         style={{
           display: 'inline-flex',
@@ -108,7 +108,7 @@ export function TrajectoryChip({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Trajectory ${tone.label} — open phase-space view`}
+      aria-label={`Trajectory ${tone.label}, open phase-space view`}
       className="ember-fade-up"
       style={{
         display: 'inline-flex',

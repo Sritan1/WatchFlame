@@ -678,7 +678,7 @@ function TrajectoryPlot({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '20px 50px 1fr',
+        gridTemplateColumns: '20px 56px 1fr',
         gridTemplateRows: '1fr 22px 20px',
         height: 384,
         background: '#080b0c',
@@ -716,13 +716,13 @@ function TrajectoryPlot({
             key={`yn-${t.lbl}`}
             style={{
               position: 'absolute',
-              right: 8,
+              right: 5,
               top: `${(1 - t.v) * 100}%`,
               transform: 'translateY(-50%)',
               fontFamily: mono,
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 600,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.02em',
               color: ae.textDim,
               textShadow: '0 1px 3px rgba(0,0,0,0.75)',
               whiteSpace: 'nowrap',
@@ -736,13 +736,13 @@ function TrajectoryPlot({
             key={`yt-${t.lbl}`}
             style={{
               position: 'absolute',
-              left: 2,
+              left: 0,
               top: `${(1 - t.c) * 100}%`,
               transform: 'translateY(-50%)',
               fontFamily: mono,
-              fontSize: 9.5,
+              fontSize: 9,
               fontWeight: 700,
-              letterSpacing: '0.14em',
+              letterSpacing: '0.06em',
               color: 'rgba(255,255,255,0.9)',
               textShadow: '0 1px 4px rgba(0,0,0,0.85)',
               whiteSpace: 'nowrap',

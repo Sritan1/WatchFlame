@@ -62,6 +62,7 @@ export function HeroOrb({
   thresholds,
   pulseSpeed = 70,
   ariaLabel,
+  loading = false,
 }: {
   risk: RiskLevel;
   /** Actual numeric risk score 0–1. When provided, drives the arc fill so
@@ -76,6 +77,9 @@ export function HeroOrb({
   /** Text alternative for assistive tech. When set, the orb is announced as a
    *  single labeled image (role="img") instead of its meaningless SVG tree. */
   ariaLabel?: string;
+  /** Indeterminate spinner while /risk is still resolving — a short arc
+   *  segment orbits the track instead of showing a fixed value. */
+  loading?: boolean;
 }) {
   const { ae, accent } = useAesthetic();
   const r = getRisk(risk, accent);
@@ -202,34 +206,55 @@ export function HeroOrb({
           {/* Track */}
           <circle cx={cx} cy={cy} r={ARC_R} fill="none" stroke={ae.line} strokeWidth="2" />
 
-          {/* Risk arc */}
-          <circle
-            cx={cx}
-            cy={cy}
-            r={ARC_R}
-            fill="none"
-            stroke={`url(#orb-arc-${risk})`}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray={`${arcLen * ratio} ${arcLen}`}
-            transform={`rotate(-90 ${cx} ${cy})`}
-            style={{
-              transition: 'stroke-dasharray 1.2s cubic-bezier(0.3, 1.2, 0.4, 1)',
-              filter: `drop-shadow(0 0 8px ${r.color})`,
-            }}
-          />
+          {loading ? (
+            /* Indeterminate spinner — a short bright arc segment orbits the
+               track while /risk resolves, then snaps to the value arc below. */
+            <g style={{ transformOrigin: `${cx}px ${cy}px`, animation: 'px-slow-rot 1.4s linear infinite' }}>
+              <circle
+                cx={cx}
+                cy={cy}
+                r={ARC_R}
+                fill="none"
+                stroke={`url(#orb-arc-${risk})`}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${round(arcLen * 0.16)} ${round(arcLen)}`}
+                transform={`rotate(-90 ${cx} ${cy})`}
+                style={{ filter: `drop-shadow(0 0 8px ${r.color})` }}
+              />
+            </g>
+          ) : (
+            <>
+              {/* Risk arc */}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={ARC_R}
+                fill="none"
+                stroke={`url(#orb-arc-${risk})`}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${arcLen * ratio} ${arcLen}`}
+                transform={`rotate(-90 ${cx} ${cy})`}
+                style={{
+                  transition: 'stroke-dasharray 1.2s cubic-bezier(0.3, 1.2, 0.4, 1)',
+                  filter: `drop-shadow(0 0 8px ${r.color})`,
+                }}
+              />
 
-          {/* Endpoint dot */}
-          <g style={{ transition: 'transform 1.2s cubic-bezier(0.3, 1.2, 0.4, 1)' }}>
-            <circle
-              cx={endX}
-              cy={endY}
-              r="4.5"
-              fill={r.color}
-              style={{ filter: `drop-shadow(0 0 8px ${r.color})` }}
-            />
-            <circle cx={endX} cy={endY} r="2" fill="#fff" />
-          </g>
+              {/* Endpoint dot */}
+              <g style={{ transition: 'transform 1.2s cubic-bezier(0.3, 1.2, 0.4, 1)' }}>
+                <circle
+                  cx={endX}
+                  cy={endY}
+                  r="4.5"
+                  fill={r.color}
+                  style={{ filter: `drop-shadow(0 0 8px ${r.color})` }}
+                />
+                <circle cx={endX} cy={endY} r="2" fill="#fff" />
+              </g>
+            </>
+          )}
 
           {/* Counter-rotating dashed ring */}
           <g style={{ transformOrigin: `${cx}px ${cy}px`, animation: 'px-slow-rot-rev 22s linear infinite' }}>
