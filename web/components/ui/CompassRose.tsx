@@ -2,7 +2,7 @@
 
 // Compass with 4 cardinal letters + tick marks + rotating arrow needle.
 // `bearingDeg` is the direction the needle points (0° = N, 90° = E, etc).
-// `cardinal` is the closest cardinal label (N/NE/E/SE/...) to highlight.
+// `cardinal` is the closest 4-point cardinal label (N/E/S/W) to highlight.
 
 import { useAesthetic } from '@/lib/aesthetic';
 
@@ -114,7 +114,8 @@ export function CompassRose({
   );
 }
 
-/** Pick the nearest 8-point cardinal label (N/NE/E/SE/...) for a bearing. */
+/** Pick the nearest 4-point cardinal (N/E/S/W) for a bearing. For the 8-point
+ *  label (NE/SE/...), use cardinal8. */
 export function cardinalOf(bearingDeg: number): 'N' | 'E' | 'S' | 'W' {
   const norm = ((bearingDeg % 360) + 360) % 360;
   if (norm < 45 || norm >= 315) return 'N';

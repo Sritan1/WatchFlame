@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ..core.source_health import OK, set_source_health
+from ..core.source_health import DOWN, OK, SourceUnavailable, set_source_health
 from ..services.firms import fetch_fires_geojson
 
 router = APIRouter(prefix="/fires", tags=["fires"])
@@ -37,13 +37,13 @@ async def get_fires(
     ),
 ):
     clean_bbox = _canonical_bbox(bbox) if bbox else None
-    data = await fetch_fires_geojson(days=days, bbox=clean_bbox)
-    # FIRMS health rides in a private `_sources` key on the degraded path. Read
-    # it (default ok) into the header and strip it from the body so the public
-    # GeoJSON shape is unchanged. A shallow rebuild avoids mutating the cached
-    # service dict.
-    sources = data.get("_sources", {"firms": OK})
-    set_source_health(response, sources)
-    if "_sources" in data:
-        data = {k: v for k, v in data.items() if k != "_sources"}
+    # FIRMS signals a real outage by raising (same mechanism as the other
+    # degrading feeds). Report firms=down and fall back to an empty
+    # FeatureCollection so the frontend shows "feed down", not "no fires".
+    try:
+        data = await fetch_fires_geojson(days=days, bbox=clean_bbox)
+        set_source_health(response, {"firms": OK})
+    except SourceUnavailable:
+        set_source_health(response, {"firms": DOWN})
+        data = {"type": "FeatureCollection", "features": []}
     return data

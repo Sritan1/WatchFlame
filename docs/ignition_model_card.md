@@ -49,12 +49,21 @@ The first version was **weather-only** and trained **exclusively on fire-prone l
 1. **A land-cover feature with developed intensity split** — collapsing NLCD developed classes 21–24 into one "developed" bucket hid that dense-urban (24) is only **0.6%** of fire days while grassy open-space developed (21) is **5.3%**. Splitting them lets the model separate downtown from parks.
 2. **Background negatives from non-fire locations** — so "developed/urban" is no longer always a fire location, and the model can learn it ignites less.
 
-Result: **Chicago drops 76 → 61 (now "moderate")** for that scenario, while genuinely fire-prone **Phoenix stays high (80)** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [ARCHITECTURE: the overall-risk composite](ARCHITECTURE.md#the-overall-risk-composite)).
+Result: the land-cover split and background negatives took the same **Chicago** scenario from the 76th percentile down to the 61st, and a later calibration and look-back correction (below) carried it the rest of the way, to about the **39th percentile ("low")**, while genuinely fire-prone **Phoenix stays high** — the model now distinguishes "no fuel" from real fire weather. Overall discrimination held (ROC-AUC 0.834 → 0.840). The residual elevation is partly *real* (developed areas do see human-caused ignitions), and the two-stage composite further tempers it at the headline (see [ARCHITECTURE: the overall-risk composite](ARCHITECTURE.md#the-overall-risk-composite)).
+
+### A later calibration and look-back correction
+
+Two follow-up fixes to the training pipeline pushed the same Chicago scenario the rest of the way down, to about the **39th percentile ("low")**, without changing the model's ranking ability (spatial ROC-AUC stayed 0.840, out-of-time 0.832).
+
+1. **Grouped out-of-fold calibration.** The isotonic calibrator and the percentile reference are now fit on spatial out-of-fold scores, so a fire's positive day and its same-location "typical day" negatives no longer leak across the calibration step. The shipped probabilities and percentiles are honest rather than optimistic.
+2. **A symmetric days-since-rain ceiling.** Each fire's negatives are drawn from earlier in the same 365-day window as the fire, so their days-since-rain was limited by their position in the window, while the fire day and the live server (which reads the end of a fresh window) could reach much higher values. Capping every example at a common ceiling removes that positional shortcut, so the model cannot separate fire days from typical days on it and live scoring no longer pushes arid locations past the range the model trained on.
+
+The two changes together take the standalone Chicago reading to about the 39th percentile while Phoenix and other genuinely fire-prone locations stay high.
 
 ## Serving
 
-- **Training/serving parity:** live features are computed by the same `summarize_window_with_kbdi` function used in training, from the same Open-Meteo archive source.
-- The raw probability is mapped to a **percentile** against the training-score distribution, so the UI shows a relative index.
+- **Training/serving parity:** live features are computed by the same `summarize_window_with_kbdi` function used in training, from the same Open-Meteo archive source, and days-since-rain is clipped to the same ceiling used in training.
+- The calibrated probability is mapped to a **percentile** against a reference distribution of out-of-fold scores, so the UI shows a relative index.
 - **Graceful degradation:** returns `null` (UI hides the card) if the model or upstream weather is unavailable.
 
 ## Intended use & interpretation

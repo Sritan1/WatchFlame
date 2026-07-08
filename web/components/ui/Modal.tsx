@@ -4,7 +4,7 @@
 // Renders via React portal into document.body so z-index ordering is correct
 // regardless of where the trigger lives. Constrained max-width for readability.
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Icon } from '@/components/Icon';
@@ -29,6 +29,15 @@ export function Modal({
 }) {
   const { ae } = useAesthetic();
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  // Keep the latest onClose in a ref so the trap effect doesn't depend on it.
+  // Callers pass inline-arrow onClose handlers whose identity changes on every
+  // parent render; depending on it would tear down + re-run the whole focus
+  // trap (stealing focus and churning the modal-open store) on each render.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -41,9 +50,12 @@ export function Modal({
       if (!panel) return [];
       return Array.from(
         panel.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])',
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
         ),
-      ).filter((el) => el.offsetParent !== null);
+        // getClientRects() is empty for display:none but non-empty for visible
+        // elements including position:fixed ones (offsetParent is null for
+        // fixed, which would wrongly drop them from the tab cycle).
+      ).filter((el) => el.getClientRects().length > 0);
     };
 
     // Move focus into the dialog so screen-reader / keyboard users land inside it.
@@ -51,7 +63,7 @@ export function Modal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -82,7 +94,7 @@ export function Modal({
       prevFocused?.focus?.();
       popModalOpen();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -92,6 +104,8 @@ export function Modal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={!title ? (eyebrow ?? 'Dialog') : undefined}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -153,6 +167,7 @@ export function Modal({
               ) : null}
               {title ? (
                 <h2
+                  id={titleId}
                   style={{
                     margin: 0,
                     fontFamily: ae.fontDisplay,

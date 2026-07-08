@@ -23,14 +23,24 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from scipy import stats
+# Windows consoles default to cp1252, which can't encode the ρ we print below.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
 
-from api.core.risk_algorithm import compute_risk
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from scipy import stats  # noqa: E402
+
+from api.core.risk_algorithm import compute_risk  # noqa: E402
 
 CSV_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
+# Same stratified split as scripts/fit_v4_params.py, so the ρ reported here is
+# measured on the exact held-out fires the fitted constants never trained on.
+SEED = 7
+TEST_FRAC = 0.30
 BUCKETS = ["small", "medium", "large", "very_large"]
 LABELS = {
     "small": "<1 ac",
@@ -39,6 +49,21 @@ LABELS = {
     "very_large": ">1,000 ac",
 }
 COLORS = ["#7ee787", "#fbbf24", "#fb923c", "#ef4444"]
+
+
+def _heldout_test_mask(df: pd.DataFrame) -> np.ndarray:
+    """Boolean mask marking the held-out TEST split — identical stratified
+    split to scripts/fit_v4_params.py (same SEED, TEST_FRAC, per-size-bucket,
+    fresh Generator used only for this shuffle) so the ρ measured on it is the
+    honest out-of-sample number for the fitted production constants."""
+    rng = np.random.default_rng(SEED)
+    test_idx: list = []
+    for b in BUCKETS:
+        idx = np.array(df.index[df["size_bucket"] == b].to_numpy(), copy=True)
+        rng.shuffle(idx)
+        k = int(round(len(idx) * TEST_FRAC))
+        test_idx.extend(idx[:k].tolist())
+    return df.index.isin(test_idx)
 
 
 def main() -> None:
@@ -89,14 +114,23 @@ def main() -> None:
 
     # 5. Continuous correlation (log size vs predicted score).
     ew["log_size"] = np.log10(ew["fire_size"] + 1.0)
-    spearman_r = float(ew[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
-    pearson_r = float(ew[["log_size", "risk_v4"]].corr(method="pearson").iloc[0, 1])
+    spearman_full = float(ew[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
+    pearson_full = float(ew[["log_size", "risk_v4"]].corr(method="pearson").iloc[0, 1])
 
-    print("\n-- current V4 metrics ----------------------------------")
-    print(f"N (weather-complete):       {len(ew)}")
-    print(f"N (with real KBDI):         {n_with_kbdi}")
-    print(f"Spearman r (log size, V4):  {spearman_r:+.3f}")
-    print(f"Pearson  r (log size, V4):  {pearson_r:+.3f}")
+    # Held-out validation: the production constants were fit on ~70% of these
+    # fires, so the full-set ρ above is an in-sample hindcast (descriptive
+    # only). The honest, quotable figure is ρ on the SAME held-out test split
+    # those constants never saw — that is the headline for the chart + README.
+    test = ew.loc[_heldout_test_mask(ew)]
+    spearman_test = float(test[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
+
+    print("\n-- fire-weather metrics --------------------------------")
+    print(f"N (weather-complete):          {len(ew)}")
+    print(f"N (with real KBDI):            {n_with_kbdi}")
+    print(f"N (held-out test split):       {len(test)}")
+    print(f"Spearman ρ HELD-OUT (headline):{spearman_test:+.3f}")
+    print(f"Spearman ρ full-set (in-samp): {spearman_full:+.3f}")
+    print(f"Pearson  r full-set:           {pearson_full:+.3f}")
     print("Per-bucket mean +/- 95% CI:")
     for b in BUCKETS:
         row = agg.loc[b]
@@ -158,8 +192,8 @@ def main() -> None:
     ax.set_ylabel("Mean predicted fire-weather score (95 % CI)", fontsize=11)
     ax.set_xlabel("Fire size bucket", fontsize=11, labelpad=36)
     ax.set_title(
-        f"Fire-weather algorithm — validated against {len(ew)} historical fires\n"
-        f"Spearman ρ(log size, predicted score) = {spearman_r:+.2f}   "
+        f"Fire-weather algorithm — hindcast over {len(ew)} historical fires\n"
+        f"Held-out test-split Spearman ρ(log size, score) = {spearman_test:+.2f}   "
         f"non-overlapping 95 % CIs between extremes: {'yes' if non_overlap else 'no'}",
         fontsize=12,
         pad=14,

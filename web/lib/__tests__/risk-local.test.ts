@@ -17,6 +17,11 @@ type ScoreInput = Parameters<typeof scoreV4>[0];
 // regenerate it after any RiskParams re-fit. Catches silent backend/frontend
 // drift that nothing else would.
 describe('scoreV4 ↔ Python compute_risk parity', () => {
+  // Guard the guard: it.each([]) registers zero cases and reports green, so a
+  // failed/empty fixture export would silently disable the parity check.
+  it('fixture is non-empty', () => {
+    expect(fixture.length).toBeGreaterThan(0);
+  });
   it.each(fixture)('parity case %#', (c) => {
     const { score } = scoreV4(c.input as ScoreInput);
     expect(score).toBeCloseTo(c.expectedScore, 3);

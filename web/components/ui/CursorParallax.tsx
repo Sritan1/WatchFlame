@@ -3,7 +3,7 @@
 // Subtle cursor-following translation — used inside HeroOrb so the orb drifts
 // a few pixels toward the cursor, giving the parallax depth of a real instrument.
 
-import { useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 
 export function CursorParallax({
   children,
@@ -15,8 +15,14 @@ export function CursorParallax({
   style?: CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  // Suppress the cursor-follow drift for users who ask for reduced motion.
+  const reduced = useRef(false);
+  useEffect(() => {
+    reduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
 
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (reduced.current) return;
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();

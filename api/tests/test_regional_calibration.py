@@ -358,6 +358,20 @@ def test_regional_level_partial_thresholds_falls_back_to_global(monkeypatch):
     assert level == "MODERATE"  # 0.3 ≤ 0.55 < 0.6 in globals
 
 
+def test_valid_thresholds_helper():
+    assert rc._valid_thresholds({"low": 0.3, "moderate": 0.6, "extreme": 0.8}) is True
+    assert rc._valid_thresholds({"low": 0.3, "moderate": 0.6}) is False  # no extreme
+    assert rc._valid_thresholds({}) is False
+    assert rc._valid_thresholds(None) is False
+    assert rc._valid_thresholds("nope") is False
+
+
+def test_loaded_global_is_always_valid():
+    """Whatever the JSON's "global" block held, the module guards _GLOBAL at load
+    so the uncalibrated-location fallback in _bucket can never KeyError."""
+    assert rc._valid_thresholds(rc._GLOBAL)
+
+
 def test_loader_handles_missing_file(tmp_path, monkeypatch):
     # Point _DATA_PATH at a non-existent file and call _load() directly.
     # We don't importlib.reload — that re-runs module-level code and would

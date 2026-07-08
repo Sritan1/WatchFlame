@@ -118,15 +118,23 @@ async def get_incidents_near(
         norm = _normalize_name(str(r["name"]))
         rl_lat = float(r["lat"])  # type: ignore[arg-type]
         rl_lon = float(r["lon"])  # type: ignore[arg-type]
-        match_idx = next(
-            (
-                i
-                for i, prev in enumerate(merged)
-                if _normalize_name(str(prev["name"])) == norm
-                and haversine_mi(rl_lat, rl_lon, float(prev["lat"]), float(prev["lon"]))  # type: ignore[arg-type]
-                < 5.0
-            ),
-            None,
+        # Only dedupe on a REAL name. Two distinct unnamed fires both normalize
+        # to a placeholder ("unnamed"/""/"none"), so name-matching them would
+        # merge two separate nearby incidents into one and drop a real fire.
+        # Generic-named rows are always kept distinct.
+        match_idx = (
+            None
+            if norm in _GENERIC_NAMES
+            else next(
+                (
+                    i
+                    for i, prev in enumerate(merged)
+                    if _normalize_name(str(prev["name"])) == norm
+                    and haversine_mi(rl_lat, rl_lon, float(prev["lat"]), float(prev["lon"]))  # type: ignore[arg-type]
+                    < 5.0
+                ),
+                None,
+            )
         )
         if match_idx is None:
             merged.append(r)
@@ -143,6 +151,11 @@ async def get_incidents_near(
 
     merged.sort(key=lambda x: x["distance_mi"])  # type: ignore[arg-type]
     return merged[:limit]
+
+
+# Normalized names that carry no identity — a row with one of these must never
+# dedupe-merge with another (they are not "the same fire", just both unnamed).
+_GENERIC_NAMES = frozenset({"", "unnamed", "none", "unknown", "null"})
 
 
 def _normalize_name(name: str) -> str:

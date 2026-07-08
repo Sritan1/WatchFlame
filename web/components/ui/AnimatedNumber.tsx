@@ -20,21 +20,34 @@ export function AnimatedNumber({
   style?: CSSProperties;
 }) {
   const [n, setN] = useState(startFrom);
-  const fromRef = useRef(startFrom);
+  // The value currently on screen. Starting a new tween from this (rather than
+  // the last fully-completed value) means an interrupted tween continues from
+  // where it visibly is instead of snapping backward and re-animating.
+  const currentRef = useRef(startFrom);
 
   useEffect(() => {
-    const from = fromRef.current;
-    const start = performance.now();
+    // Honor prefers-reduced-motion: jump straight to the target, no count-up.
+    const reduce =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let raf = 0;
+    if (reduce) {
+      currentRef.current = value;
+      raf = requestAnimationFrame(() => setN(value));
+      return () => cancelAnimationFrame(raf);
+    }
+
+    const from = currentRef.current;
+    const start = performance.now();
     const ease = (t: number) => 1 - Math.pow(1 - t, 3.2);
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
       const cur = from + (value - from) * ease(t);
+      currentRef.current = cur;
       setN(cur);
       if (t < 1) {
         raf = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = value;
       }
     };
     raf = requestAnimationFrame(tick);

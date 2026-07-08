@@ -20,16 +20,75 @@ import { useSyncExternalStore } from 'react';
 export type SourceStatus = 'ok' | 'down';
 export type SourceHealth = Record<string, SourceStatus>;
 
-// Real per-request reports from the header.
-let realState: SourceHealth = {};
-// Dev overrides (win over realState). Always {} in production.
+// Real per-request reports from the header, each tagged with the time it
+// arrived so a stale `down` can age out (see FRESH_MS).
+type Entry = { status: SourceStatus; ts: number };
+let realState: Record<string, Entry> = {};
+// Dev overrides (win over realState). Always {} in production — the setter is a
+// no-op there (see setSourceHealthOverrides), so this stays empty.
 let overrides: SourceHealth = {};
 // Merged, referentially-stable snapshot handed to useSyncExternalStore.
 let snapshot: SourceHealth = {};
 const listeners = new Set<() => void>();
 
+// A `down` with no fresh report within this window is treated as stale and
+// dropped, so a feed that recovered — or that we stopped querying after the
+// user navigated away — does not show a lingering "down" note. The
+// health-reporting queries carry a `refetchInterval` (see HEALTH_REFETCH_MS in
+// queries.ts) so a feed that is genuinely still down keeps re-reporting while
+// its screen is focused, refreshing the timestamp before this elapses. Keep
+// this above every such interval (all <= 15m) or a live down note would flicker
+// off between refetches.
+const FRESH_MS = 20 * 60_000;
+
+// A single low-frequency timer prunes stale `down` entries so a note can clear
+// even with no further reports or navigation. It only runs while something is
+// mounted AND a `down` exists, and stops itself otherwise (no idle timer).
+let pruneTimer: ReturnType<typeof setInterval> | null = null;
+
+function anyDown(): boolean {
+  for (const k in realState) if (realState[k].status === 'down') return true;
+  return false;
+}
+
+function ensurePruneTimer(): void {
+  if (pruneTimer !== null || listeners.size === 0 || !anyDown()) return;
+  pruneTimer = setInterval(pruneStaleDowns, 60_000);
+}
+
+function stopPruneTimer(): void {
+  if (pruneTimer === null) return;
+  clearInterval(pruneTimer);
+  pruneTimer = null;
+}
+
+function pruneStaleDowns(): void {
+  const now = Date.now();
+  const next: Record<string, Entry> = {};
+  let removed = false;
+  for (const k of Object.keys(realState)) {
+    const e = realState[k];
+    if (e.status === 'down' && now - e.ts > FRESH_MS) {
+      removed = true;
+      continue;
+    }
+    next[k] = e;
+  }
+  if (removed) {
+    realState = next;
+    rebuild();
+  }
+  if (listeners.size === 0 || !anyDown()) stopPruneTimer();
+}
+
+function merged(): SourceHealth {
+  const out: SourceHealth = {};
+  for (const k in realState) out[k] = realState[k].status;
+  return { ...out, ...overrides };
+}
+
 function rebuild(): void {
-  const next: SourceHealth = { ...realState, ...overrides };
+  const next = merged();
   const keys = new Set([...Object.keys(snapshot), ...Object.keys(next)]);
   let changed = false;
   for (const k of keys) {
@@ -46,22 +105,27 @@ function rebuild(): void {
 
 /** Merge a per-request {source: status} map (from the header) into the store. */
 export function reportSourceHealth(partial: SourceHealth): void {
+  const now = Date.now();
   let touched = false;
   for (const k of Object.keys(partial)) {
     const v = partial[k];
     if (v !== 'ok' && v !== 'down') continue;
-    if (realState[k] !== v) {
-      realState = { ...realState, [k]: v };
-      touched = true;
-    }
+    const prev = realState[k];
+    if (!prev || prev.status !== v) touched = true;
+    // Always refresh the timestamp so a still-down feed keeps its note alive.
+    realState = { ...realState, [k]: { status: v, ts: now } };
   }
   if (touched) rebuild();
+  ensurePruneTimer(); // (re)arm if a `down` is now present
 }
 
 /** Dev-only: force a set of sources "down" (or "ok"). Replaces any prior
  *  overrides. These win over real header reports so a forced state survives
- *  the next refetch. */
+ *  the next refetch. No-op in production: NODE_ENV is statically inlined, so
+ *  the body below is dead-code-eliminated from prod builds, keeping the
+ *  "overrides always {} in production" invariant literally true. */
 export function setSourceHealthOverrides(map: SourceHealth): void {
+  if (process.env.NODE_ENV === 'production') return;
   overrides = { ...map };
   rebuild();
 }
@@ -81,8 +145,10 @@ export function parseHealthParam(value: string): SourceHealth {
 
 function subscribe(l: () => void): () => void {
   listeners.add(l);
+  ensurePruneTimer();
   return () => {
     listeners.delete(l);
+    if (listeners.size === 0) stopPruneTimer();
   };
 }
 

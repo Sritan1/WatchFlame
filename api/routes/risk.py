@@ -25,9 +25,12 @@ Season = Literal["winter", "spring", "summer", "fall"]
 
 
 class RiskRequest(BaseModel):
-    temperature: float = Field(..., description="Celsius")
+    # Bounded to record Earth surface extremes. Besides rejecting garbage, this
+    # keeps out NaN/Infinity (which pydantic accepts by default) and the
+    # t_c = -237.3 singularity in saturation_vapor_pressure_hpa.
+    temperature: float = Field(..., ge=-90, le=60, description="Celsius")
     humidity: float = Field(..., ge=0, le=100, description="Percent 0-100")
-    wind_speed: float = Field(..., ge=0, description="km/h")
+    wind_speed: float = Field(..., ge=0, le=250, description="km/h")
     days_since_rain: int = Field(..., ge=0)
     season: Season
     lat: float | None = Field(

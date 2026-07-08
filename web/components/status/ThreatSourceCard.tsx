@@ -33,7 +33,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { TiltCard } from '@/components/ui/TiltCard';
 import { useAesthetic } from '@/lib/aesthetic';
 import { bucketOf, formatFirmsAge, type ThreatDriver, type WindAlignment } from '@/lib/composite-risk';
-import { confidenceLabel, firmsPlatform } from '@/lib/firms';
+import { confidenceLabel, firmsDetailHref, firmsPlatform } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskTone } from '@/lib/theme';
 import { convertDistance, useUnits } from '@/lib/use-units';
 
@@ -776,7 +776,9 @@ function ContainmentBlock({ ae, pct }: { ae: Ae; pct: number | null }) {
   const statusTone = contained
     ? { color: RISK_LEVELS.low.color, glow: RISK_LEVELS.low.glow }
     : { color: '#FF7A3A', glow: '255, 122, 58' };
-  const statusText = !known ? 'Active' : contained ? 'Contained' : 'Active';
+  // `contained` already implies `known`, so unknown and not-contained both read
+  // "Active" — no separate `known` branch needed here (it still drives the bar).
+  const statusText = contained ? 'Contained' : 'Active';
   const barPct = known ? Math.max(3, Math.round(pct)) : 0;
 
   return (
@@ -918,15 +920,5 @@ function buildDetailHref(driver: ThreatDriver): string {
   if (driver.kind === 'incident') {
     return `/fire-detail?lat=${driver.incident.lat}&lon=${driver.incident.lon}`;
   }
-  const p = driver.feature.properties;
-  const params = new URLSearchParams();
-  params.set('lat', String(p.lat));
-  params.set('lon', String(p.lon));
-  if (p.brightness != null) params.set('brightness', String(p.brightness));
-  if (p.confidence) params.set('confidence', p.confidence);
-  if (p.acq_date) params.set('acq_date', p.acq_date);
-  if (p.acq_time) params.set('acq_time', p.acq_time);
-  if (p.satellite) params.set('satellite', p.satellite);
-  if (p.daynight) params.set('daynight', p.daynight);
-  return `/fire-detail?${params.toString()}`;
+  return firmsDetailHref(driver.feature);
 }

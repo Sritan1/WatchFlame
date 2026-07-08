@@ -240,7 +240,17 @@ def summarize_window_with_kbdi(
     precs: list[float | None] = daily.get("precipitation_sum", []) or []
 
     iso = fire_date.isoformat()
-    if iso not in times or len(temps) < 30 or len(precs) < 30:
+    # The three daily arrays must align: compute_kbdi_series requires equal
+    # temp/precip lengths, and series[fire_idx] indexes by the time array. A
+    # partial upstream response (one array short) would otherwise raise instead
+    # of degrading to a null KBDI.
+    if (
+        iso not in times
+        or len(temps) < 30
+        or len(precs) < 30
+        or len(times) != len(temps)
+        or len(temps) != len(precs)
+    ):
         return base
     fire_idx = times.index(iso)
 

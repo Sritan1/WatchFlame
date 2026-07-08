@@ -718,66 +718,90 @@ export function bucketOf(score: number): RiskLevel {
   return 'extreme';
 }
 
-/** Subtitle copy that maps deliberately across every cell of
- *  `COMPOSITE_MATRIX`. Each cell's message names which inputs are driving
- *  the headline tier, even when the matrix downgrades the tier from what
- *  one axis alone would suggest (e.g. W=ext × T=none → MOD; the subtitle
- *  still acknowledges weather is elevated and explains why we don't escalate).
+/** Subtitle copy for the Status headline.
  *
- *  Verified cell-by-cell against the 4×5 matrix (see test table in the
- *  source comments below). No cell falls through to a generic fallback —
- *  every (weatherBucket, threatBucket) pair has its own dedicated message.
+ *  Keyed on the ENVIRONMENTAL tier (`envBucket` = fire weather ⊗ ignition
+ *  likelihood) and `threatBucket` — the exact two inputs `compositeFromBuckets`
+ *  uses for the headline tier — so the subtitle can never contradict the orb.
+ *  (The previous version keyed on raw `weatherBucket` and so understated any
+ *  headline that ignition escalated.)
  *
- *  Cells (W row × T col, with matrix tier in [brackets]):
- *
- *    W=low   × T=none [LOW]  · low/low [LOW]  · low/mod [LOW]
- *    W=low   × T=high [MOD]  · low/ext [HIGH] → "active fire" copy
- *    W=mod   × T=none [LOW]  · mod/low [MOD]  · mod/mod [MOD]
- *    W=mod   × T=high [HIGH] · mod/ext [HIGH] → "active fire" copy
- *    W=high  × T=none [MOD]  · high/low [MOD] · high/mod [HIGH]    → "weather elevated" copy
- *    W=high  × T=high [HIGH] · high/ext [EXT]                       → "both elevated" copy
- *    W=ext   × T=none [MOD]  · ext/low [HIGH] · ext/mod [HIGH]      → "weather elevated" copy
- *    W=ext   × T=high [EXT]  · ext/ext [EXT]                        → "both elevated" copy */
+ *  When the environment is elevated (E = high or extreme) the copy names the
+ *  driver: fire conditions, ignition likelihood, or both. E can only be high/
+ *  extreme when at least one of weather/ignition is itself high+ (and E=extreme
+ *  only when both are), so a driver phrase is always available. The call to
+ *  action tracks the resulting headline tier: none for LOW, "Stay aware." for
+ *  MODERATE, "Review your plan." for HIGH/EXTREME. The E-elevated + no-fire
+ *  cells stay MODERATE by design and say so ("but no active fires are nearby"),
+ *  which is where we explain why an extreme environment alone does not escalate. */
 export function compositeSubtitle(args: {
-  weatherBucket: RiskLevel;
+  /** Environmental tier (weather ⊗ ignition) — drives the headline, so drives
+   *  the subtitle too. */
+  envBucket: RiskLevel;
   /** Null when no fires are in range (distinct from LOW threat). */
   threatBucket: RiskLevel | null;
+  /** Raw component buckets — used only to name the driver when E is elevated. */
+  weatherBucket: RiskLevel;
+  ignitionBucket: RiskLevel | null;
 }): string {
-  const { weatherBucket, threatBucket } = args;
+  const { envBucket, threatBucket, weatherBucket, ignitionBucket } = args;
+  const threatKey: ThreatTier = threatBucket ?? 'none';
+
+  // Environment calm (E = low): lead with the fire/threat story.
+  if (envBucket === 'low') {
+    switch (threatKey) {
+      case 'none': return 'No active fires nearby and conditions are calm.';
+      case 'low': return 'A fire is in the area but it poses little threat right now.';
+      case 'moderate': return 'A nearby fire is adding a little risk. Conditions are otherwise calm.';
+      case 'high': return 'An active fire is nearby. Stay aware.';
+      case 'extreme': return 'An active fire nearby is a serious threat. Review your plan.';
+    }
+  }
+
+  // Environment mildly elevated (E = moderate).
+  if (envBucket === 'moderate') {
+    switch (threatKey) {
+      case 'none': return 'No active fires nearby right now.';
+      case 'low': return 'A fire is in the area and adding some risk. Stay aware.';
+      case 'moderate': return 'A nearby fire is adding risk. Stay aware.';
+      case 'high': return 'An active fire is nearby. Review your plan.';
+      case 'extreme': return 'An active fire nearby is a serious threat. Review your plan.';
+    }
+  }
+
+  // Environment elevated (E = high or extreme): name the driver, then the
+  // threat tail + call to action.
   const wHot = weatherBucket === 'high' || weatherBucket === 'extreme';
-  const tHigh = threatBucket === 'high' || threatBucket === 'extreme';
+  const iHot = ignitionBucket === 'high' || ignitionBucket === 'extreme';
+  const severe = envBucket === 'extreme'; // only reachable when both are extreme
 
-  // Both axes elevated → matrix lands at HIGH or EXT
-  if (wHot && tHigh) {
-    return 'Both fire weather and a nearby fire are elevated — review your plan.';
-  }
-
-  // Active fire is the dominant signal → matrix lands at MOD/HIGH from threat alone
-  if (tHigh) {
-    return 'An active fire is nearby — review your plan.';
-  }
-
-  // Weather is the dominant signal (W=high or W=ext, T not high)
-  if (wHot) {
-    if (threatBucket == null) {
-      return 'Fire weather is elevated, but no active fires nearby.';
-    }
-    if (threatBucket === 'low') {
-      return 'Fire weather is elevated and a fire is in the area.';
-    }
-    // threatBucket === 'moderate'
-    return 'Fire weather is elevated and a nearby fire is adding risk.';
+  let driver: string;
+  if (severe || (wHot && iHot)) {
+    driver = severe
+      ? 'Fire conditions and ignition risk are extreme'
+      : 'Fire conditions and ignition risk are elevated';
+  } else if (iHot && !wHot) {
+    driver = 'Conditions look primed for ignition';
+  } else {
+    driver = 'Fire conditions are elevated'; // weather-driven (or safe fallback)
   }
 
-  // Neither axis elevated → matrix lands at LOW or MOD
-  if (threatBucket == null) {
-    return 'No immediate fire risk in your area.';
+  switch (threatKey) {
+    case 'none':
+      return `${driver}, but no active fires are nearby. Stay aware.`;
+    case 'low':
+      // E=high/low lands at MODERATE; E=extreme/low lands at HIGH.
+      return severe
+        ? `${driver}, and a fire is in the area. Review your plan.`
+        : `${driver}, and a fire is in the area. Stay aware.`;
+    case 'moderate':
+      return `${driver}, and a nearby fire is adding risk. Review your plan.`;
+    case 'high':
+      return `${driver}, and an active fire is nearby. Review your plan.`;
+    case 'extreme':
+      return `${driver}, and a nearby fire is a serious threat. Review your plan.`;
   }
-  if (threatBucket === 'low') {
-    return 'A nearby fire is at low threat — monitor for changes.';
-  }
-  // threatBucket === 'moderate'
-  return 'A nearby fire is adding risk — stay aware.';
+  return `${driver}.`; // unreachable: threatKey is always one of the cases above
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────

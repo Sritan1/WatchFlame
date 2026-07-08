@@ -118,5 +118,41 @@
       "ndviAnomaly": null
     },
     "expectedScore": 0.5608
+  },
+  {
+    "input": {
+      "temperatureC": 30.0,
+      "humidityPct": 20.0,
+      "windKph": 20.0,
+      "daysSinceRain": 5,
+      "season": "summer",
+      "kbdi": 400.0,
+      "ndviAnomaly": 0.6
+    },
+    "expectedScore": 0.2011
+  },
+  {
+    "input": {
+      "temperatureC": 38.0,
+      "humidityPct": 12.0,
+      "windKph": 35.0,
+      "daysSinceRain": 20,
+      "season": "summer",
+      "kbdi": 950.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.7858
+  },
+  {
+    "input": {
+      "temperatureC": 22.0,
+      "humidityPct": 55.0,
+      "windKph": 12.0,
+      "daysSinceRain": 1,
+      "season": "spring",
+      "kbdi": -75.0,
+      "ndviAnomaly": null
+    },
+    "expectedScore": 0.176
   }
 ]

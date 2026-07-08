@@ -3,6 +3,8 @@
 // Small compass with a rotating arrow + tick marks. `angle` is the direction
 // the wind is blowing TOWARD, measured clockwise from north (0° = N).
 
+import { useEffect, useRef, useState } from 'react';
+
 import { useAesthetic } from '@/lib/aesthetic';
 
 const round = (n: number): number => Math.round(n * 1000) / 1000;
@@ -22,6 +24,20 @@ export function WindDial({
   const cx = size / 2;
   const cy = size / 2;
   const ringR = size / 2 - 2;
+
+  // Keep the needle rotation continuous across the 0/360 wrap so the CSS
+  // transition always animates the SHORT way (<=180 deg). Feeding the raw angle
+  // straight in makes a 359 -> 1 shift interpolate the long way around backward.
+  const [rot, setRot] = useState(angle);
+  const rotRef = useRef(angle);
+  useEffect(() => {
+    const prev = rotRef.current;
+    let delta = (((angle - prev) % 360) + 360) % 360;
+    if (delta > 180) delta -= 360;
+    const next = prev + delta;
+    rotRef.current = next;
+    setRot(next);
+  }, [angle]);
 
   const ticks: React.ReactElement[] = [];
   for (let i = 0; i < 24; i++) {
@@ -49,7 +65,7 @@ export function WindDial({
         <circle cx={cx} cy={cy} r={ringR} fill="none" stroke={ae.line} strokeWidth="0.5" />
         {ticks}
         <g
-          transform={`rotate(${angle} ${cx} ${cy})`}
+          transform={`rotate(${rot} ${cx} ${cy})`}
           style={{ transition: 'transform 0.9s cubic-bezier(0.3, 1.2, 0.4, 1)' }}
         >
           <polygon

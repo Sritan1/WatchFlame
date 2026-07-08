@@ -56,6 +56,46 @@ def test_dev_is_permissive():
     assert Settings(environment="dev", allowed_origins="*").startup_problems() == []
 
 
+# ── Rate-limit key: X-Forwarded-For spoofing ─────────────────────────────────
+def _req(xff: str | None = None, client_host: str = "10.0.0.1") -> Request:
+    headers = []
+    if xff is not None:
+        headers.append((b"x-forwarded-for", xff.encode()))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": headers,
+        "client": (client_host, 12345),
+    }
+    return Request(scope)
+
+
+def test_rate_limit_key_uses_proxy_appended_entry():
+    """With one trusted proxy (Railway), the key is the RIGHTMOST XFF entry —
+    the IP the proxy appended — not the client-controlled leftmost one."""
+    from api.core.rate_limit import client_ip
+
+    r = _req("1.1.1.1, 2.2.2.2, 3.3.3.3")  # client spoofs 1.1.1.1; proxy appended 3.3.3.3
+    assert client_ip(r) == "3.3.3.3"
+
+
+def test_rate_limit_key_ignores_spoofed_leftmost():
+    """Two requests that differ only in the client-supplied (leftmost) XFF value
+    must land in the SAME bucket — otherwise the per-IP cap is bypassable."""
+    from api.core.rate_limit import client_ip
+
+    r1 = _req("9.9.9.9, 3.3.3.3")
+    r2 = _req("8.8.8.8, 3.3.3.3")
+    assert client_ip(r1) == client_ip(r2) == "3.3.3.3"
+
+
+def test_rate_limit_key_falls_back_to_peer_without_xff():
+    from api.core.rate_limit import client_ip
+
+    assert client_ip(_req(None, client_host="5.5.5.5")) == "5.5.5.5"
+
+
 # ── Input validation / injection ─────────────────────────────────────────────
 def test_fires_rejects_malformed_bbox():
     for bad in ("world/../etc", "1,2,3", "abc,2,3,4", "200,2,3,4", "1,2,1,2"):
@@ -92,6 +132,21 @@ def test_oversized_body_rejected():
     assert client.post("/risk", json=body).status_code == 413
 
 
+def test_oversized_streamed_body_rejected():
+    """A chunked body with NO Content-Length must still be capped (the cap is
+    enforced as bytes arrive, not just from the header)."""
+    def gen():
+        # 80 KiB, well over the 16 KiB cap; httpx streams this chunked with no
+        # Content-Length header.
+        for _ in range(10):
+            yield b"x" * 8192
+
+    r = client.post(
+        "/risk", content=gen(), headers={"Content-Type": "application/json"}
+    )
+    assert r.status_code == 413
+
+
 # ── Safe failure ─────────────────────────────────────────────────────────────
 def test_unhandled_error_is_generic(monkeypatch):
     async def boom(*a, **k):
@@ -105,6 +160,23 @@ def test_unhandled_error_is_generic(monkeypatch):
     # No stack trace / internal detail leaks to the client.
     assert "ValueError" not in r.text
     assert "sensitive internal detail" not in r.text
+
+
+def test_unhandled_error_keeps_cors_header(monkeypatch):
+    """A 500 must still carry Access-Control-Allow-Origin — otherwise the browser
+    reports it as a CORS error and masks the real failure."""
+    async def boom(*a, **k):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("api.routes.weather.fetch_current_weather", boom)
+    safe = TestClient(app, raise_server_exceptions=False)
+    r = safe.get(
+        "/weather?lat=37&lon=-122", headers={"Origin": "http://localhost:3000"}
+    )
+    assert r.status_code == 500
+    assert "access-control-allow-origin" in r.headers
+    # Security headers wrap it too (it went through the inner->outer stack).
+    assert r.headers["x-content-type-options"] == "nosniff"
 
 
 # ── Security headers ─────────────────────────────────────────────────────────
