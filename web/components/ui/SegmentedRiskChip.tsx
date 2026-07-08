@@ -19,6 +19,8 @@ export function SegmentedRiskChip({ risk, loading = false }: { risk: RiskTone; l
   }
   return (
     <div
+      role="img"
+      aria-label={`Fire risk ${risk.label}, index ${risk.bar} of 4`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

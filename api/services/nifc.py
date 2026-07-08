@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from ..core.parse import safe_float, safe_int
+from ..core.source_health import SourceUnavailable
 
 WFIGS_URL = (
     "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/"
@@ -31,6 +32,11 @@ _CACHE: dict[str, Any] = {"ts": 0.0, "data": []}
 
 def _ttl() -> int:
     return int(os.getenv("NIFC_CACHE_TTL_SECONDS", "600"))  # 10 minutes
+
+
+def _fail_ttl() -> int:
+    # How long a transient upstream failure suppresses re-hitting WFIGS.
+    return int(os.getenv("NIFC_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 @dataclass
@@ -53,6 +59,12 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
     if not force and _CACHE["data"] and now - _CACHE["ts"] < _ttl():
         return [_to_inc(r) for r in _CACHE["data"]]
 
+    # A recent failure? Back off (at most one probe per _fail_ttl()) and signal
+    # the outage so /incidents/near reports nifc `down` rather than conflating a
+    # real outage with a genuinely-empty feed.
+    if not force and now - _CACHE.get("fail_ts", 0.0) < _fail_ttl():
+        raise SourceUnavailable("nifc upstream failed (cached)")
+
     params = {
         # Filter to actual wildfires only — exclude RX (prescribed burns) and
         # training exercises which dominate the raw feed off-season.
@@ -74,16 +86,16 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
             resp.raise_for_status()
             payload = resp.json()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # /incidents/near already swallows our exceptions via gather().
-        # Cache empty briefly so a degraded WFIGS doesn't get re-hit during
-        # the cache window — short TTL (60s) so the next try comes soon.
+        # Real outage. Record a short-lived failure marker so we probe at most
+        # once per _fail_ttl() instead of hammering WFIGS, and raise so
+        # /incidents/near reports `down` (an empty list would read as "no fires
+        # nearby" — the misleading state the source-health system exists to fix).
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
-            f"[nifc] upstream {status} ({type(e).__name__}); returning empty"
+            f"[nifc] upstream {status} ({type(e).__name__}); reporting down"
         )
-        _CACHE["ts"] = now - max(_ttl() - 60, 0)
-        _CACHE["data"] = []
-        return []
+        _CACHE["fail_ts"] = now
+        raise SourceUnavailable(f"nifc upstream {status}") from e
 
     raw_rows: list[dict[str, Any]] = []
     for feat in payload.get("features", []):
@@ -121,6 +133,7 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
 
     _CACHE["ts"] = now
     _CACHE["data"] = raw_rows
+    _CACHE["fail_ts"] = 0.0
     return [_to_inc(r) for r in raw_rows]
 
 

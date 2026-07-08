@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 
 from ..core.geo import bbox_around, in_us
+from ..core.source_health import SourceUnavailable
 
 NCES_FEATURESERVER = (
     "https://services1.arcgis.com/Ua5sjt3LWTPigjyD/arcgis/rest/services/"
@@ -28,9 +29,16 @@ NCES_FEATURESERVER = (
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
+# Short-lived negative cache for transient upstream failures (see census.py).
+_FAIL_CACHE: dict[str, float] = {}
+
 
 def _ttl() -> int:
     return int(os.getenv("NCES_CACHE_TTL_SECONDS", "3600"))
+
+
+def _fail_ttl() -> int:
+    return int(os.getenv("NCES_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 @dataclass
@@ -56,6 +64,12 @@ async def fetch_schools(
     if cached and now - cached[0] < _ttl():
         return [_to_school(r) for r in cached[1]]
 
+    # Recent failure for this area? Back off and signal the outage so /shelters
+    # reports shelters_nces `down` instead of a misleading empty list.
+    failed_at = _FAIL_CACHE.get(cache_key)
+    if failed_at is not None and now - failed_at < _fail_ttl():
+        raise SourceUnavailable("nces failed (cached)")
+
     minLon, minLat, maxLon, maxLat = bbox_around(lat, lon, radius_mi)
     params = {
         "where": "1=1",
@@ -76,17 +90,16 @@ async def fetch_schools(
             resp.raise_for_status()
             payload = resp.json()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # ArcGIS endpoints occasionally 5xx during heavy ingest windows. The
-        # /shelters route already swallows our exceptions via gather(), but
-        # we log+cache empty here so the trace stays clean and we don't
-        # hammer the upstream while it's degraded.
+        # ArcGIS endpoints occasionally 5xx during heavy ingest windows. Record a
+        # short-lived failure marker to back off, and raise so /shelters reports
+        # `down` rather than a misleading empty list.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[nces] upstream {status} for {lat:.2f},{lon:.2f} "
-            f"({type(e).__name__}); returning empty"
+            f"({type(e).__name__}); reporting down"
         )
-        _CACHE[cache_key] = (now, [])
-        return []
+        _FAIL_CACHE[cache_key] = now
+        raise SourceUnavailable(f"nces upstream {status}") from e
 
     raw_rows: list[dict[str, Any]] = []
     for feat in payload.get("features", []):
@@ -120,6 +133,7 @@ async def fetch_schools(
         )
 
     _CACHE[cache_key] = (now, raw_rows)
+    _FAIL_CACHE.pop(cache_key, None)
     return [_to_school(r) for r in raw_rows]
 
 

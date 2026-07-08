@@ -35,6 +35,7 @@ import pandas as pd  # noqa: E402
 
 from api.core.openmeteo import _key, _load_cache, summarize_window_with_kbdi  # noqa: E402
 from api.core.validation import doy_to_season  # noqa: E402
+from api.services.ignition import DAYS_SINCE_RAIN_CAP  # noqa: E402
 from api.services.landcover import land_cover_class_cached  # noqa: E402
 
 # ── Tunables (mirrored in ML.md "open decisions") ────────────────────────────
@@ -199,6 +200,15 @@ def main() -> int:
         print(f"  + {n_bg:,} background negatives (Route B, non-fire locations)")
 
     df = pd.DataFrame(rows)
+    # Symmetric days_since_rain ceiling (see api/services/ignition.py). Same-
+    # location negatives sit earlier in the shared window than the positive, so
+    # their days_since_rain is capped at their window position while the positive
+    # — and the live server, which scores the window END — can reach ~365.
+    # Clipping every row (positive, same-location negative, background) to the
+    # common reachable ceiling removes that positional artifact, which was
+    # inflating serve-time scores for arid locations. Serving applies the same
+    # clip, so training and serving stay in parity.
+    df["days_since_rain"] = df["days_since_rain"].clip(upper=DAYS_SINCE_RAIN_CAP)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT_PATH, index=False)
 

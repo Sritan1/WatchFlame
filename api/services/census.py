@@ -42,11 +42,25 @@ _FIPS_TO_STATE: dict[str, str] = {
 
 _CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
+# Short-lived negative cache for transient upstream failures. Kept separate from
+# _CACHE on purpose: a success stores dict-or-None, where None means
+# "legitimately not in a US county" and is trusted for 24h. A failure must never
+# be remembered as that real answer. During a Census outage this bounds us to
+# one probe per _fail_ttl() window instead of re-hitting the failing endpoint on
+# every /risk and /disasters call, while still recovering within a minute.
+# Mirrors the degraded-cache FIRMS already keeps.
+_FAIL_CACHE: dict[str, float] = {}
+
 
 def _ttl() -> int:
     # Reverse geocode for a given coordinate doesn't change.
     # 24 hours is more than enough.
     return int(os.getenv("CENSUS_CACHE_TTL_SECONDS", "86400"))
+
+
+def _fail_ttl() -> int:
+    # How long a transient failure suppresses re-hitting the upstream.
+    return int(os.getenv("CENSUS_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 @dataclass
@@ -74,6 +88,13 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
             return None
         return CountyInfo(**cached[1])
 
+    # A recent failure for this point? Serve the outage from the negative cache
+    # so we don't re-hit a failing / rate-limited endpoint on every request, but
+    # still raise so the route surfaces `down` (never a silent not-in-US).
+    failed_at = _FAIL_CACHE.get(cache_key)
+    if failed_at is not None and now - failed_at < _fail_ttl():
+        raise SourceUnavailable("census reverse-geocode failed (cached)")
+
     params = {
         "x": str(lon),
         "y": str(lat),
@@ -89,10 +110,15 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
-        # Real outage (rate-limit, 5xx, timeout). Don't cache — retry next time
-        # — and signal `down` so the route can surface it rather than silently
-        # falling back as if the point were outside the US.
+        # Real outage (rate-limit, 5xx, timeout). Record a short-lived failure
+        # so we probe at most once per _fail_ttl() instead of hammering the
+        # failing endpoint, and signal `down` so the route can surface it rather
+        # than silently falling back as if the point were outside the US.
+        _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable("census reverse-geocode failed") from e
+
+    # Fetch succeeded — drop any stale failure marker for this point.
+    _FAIL_CACHE.pop(cache_key, None)
 
     geos = (
         data.get("result", {})

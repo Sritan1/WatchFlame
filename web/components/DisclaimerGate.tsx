@@ -6,7 +6,7 @@
 // a required acknowledgment, then never again. Links to the full Terms.
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -20,6 +20,7 @@ export function DisclaimerGate() {
   // Default hidden so SSR + first paint never flash the gate; an effect reveals
   // it only when the ack flag is absent.
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -28,6 +29,35 @@ export function DisclaimerGate() {
       // localStorage unavailable (private mode) — don't block the app.
     }
   }, []);
+
+  // Trap Tab focus inside the gate so a keyboard / screen-reader user can't move
+  // into the live app behind it without acknowledging the disclaimer first.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const f = Array.from(
+        panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled])'),
+      ).filter((el) => el.getClientRects().length > 0);
+      if (f.length === 0) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +99,7 @@ export function DisclaimerGate() {
       }}
     >
       <div
+        ref={panelRef}
         style={{
           width: '100%',
           maxWidth: 460,

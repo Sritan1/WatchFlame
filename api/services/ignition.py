@@ -38,12 +38,30 @@ WINDOW_DAYS = 365
 ARCHIVE_LAG_DAYS = 6
 _CORE = ("temperature_c", "humidity_pct", "wind_kph", "days_since_rain")
 
+# Symmetric days_since_rain ceiling. In training, a fire's same-location
+# negatives sit EARLIER in the shared 365-day window than the fire day, so their
+# days_since_rain is structurally capped at their window position (min 90 =
+# KBDI warm-up), while the positive — and this live server, which always scores
+# the window END — can reach ~365. Left unclipped, the model separates the two
+# classes partly on that positional artifact and then, because serving always
+# presents the positive-like ceiling, over-flags arid locations. Clipping every
+# example (training rows AND this serve path) to the common reachable ceiling
+# removes the artifact. Must stay in sync with build_ignition_dataset.py.
+DAYS_SINCE_RAIN_CAP = 90
+
 _cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _artifact: dict[str, Any] | None = None
 
 
 def _ttl() -> int:
     return int(os.getenv("IGNITION_CACHE_TTL_SECONDS", str(6 * 3600)))
+
+
+def _fail_ttl() -> int:
+    # A None result (transient fetch failure or too-sparse window) is cached only
+    # briefly, so a blip doesn't hide the chip for the full 6h success TTL — the
+    # next request re-probes once the upstream/quota recovers.
+    return int(os.getenv("IGNITION_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 def _grid_key(lat: float, lon: float) -> str:
@@ -83,13 +101,21 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
     if any(row.get(c) is None for c in _CORE):
         return None
     feat = dict(row)
+    # Parity with training: clip days_since_rain to the common ceiling so the
+    # serve-time value can't exceed what a negative example could express.
+    feat["days_since_rain"] = min(feat["days_since_rain"], DAYS_SINCE_RAIN_CAP)
     feat.setdefault("vpd_hpa", _vpd(feat["temperature_c"], feat["humidity_pct"]))
     # land_cover is a model feature; when a caller can't supply it (lookup failed,
     # offshore, older test fixture) fall back to "unknown" — a class the model saw
     # in training — so scoring degrades to weather-only instead of erroring.
     feat.setdefault("land_cover", "unknown")
     X = pd.DataFrame([feat])[art["features"]]
-    prob = float(art["model"].predict_proba(X)[0, 1])
+    # Production model = base GBM (trained on all rows) + an isotonic calibrator
+    # fit on GROUPED out-of-fold scores, so the calibrated probability + the
+    # percentile below are free of the same-location sibling leakage a single
+    # in-sample CalibratedClassifierCV(cv=3) would bake in.
+    raw = float(art["base_model"].predict_proba(X)[0, 1])
+    prob = float(art["calibrator"].transform([raw])[0])
     ref = art["ref_scores"]
     pct = float(np.searchsorted(ref, prob) / len(ref) * 100.0)
     return {"percentile": round(pct, 1), "probability": round(prob, 4),
@@ -128,8 +154,11 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
     key = _grid_key(lat, lon)
     now = time.time()
     cached = _cache.get(key)
-    if cached and now - cached[0] < _ttl():
-        return cached[1]
+    if cached:
+        # Successes persist for the full TTL; a cached None recovers quickly.
+        ttl = _ttl() if cached[1] is not None else _fail_ttl()
+        if now - cached[0] < ttl:
+            return cached[1]
 
     raw = await _fetch_window(lat, lon)
     result: dict[str, Any] | None = None

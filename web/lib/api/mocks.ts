@@ -85,9 +85,12 @@ const MOCK_FIRES: FireCollection = {
     geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] },
     properties: {
       lat: p.lat, lon: p.lon,
-      brightness: p.brightness, confidence: 'nominal',
+      // Raw FIRMS codes, exactly as the backend passes them through, so the
+      // display helpers (confidenceLabel / firmsPlatform) render the same
+      // "Nominal" / "Suomi NPP" the real feed produces.
+      brightness: p.brightness, confidence: 'n',
       acq_date: '2026-05-20', acq_time: '1314',
-      satellite: 'Suomi NPP', frp: p.frp, daynight: 'D',
+      satellite: 'N', frp: p.frp, daynight: 'D',
     },
   })),
 };

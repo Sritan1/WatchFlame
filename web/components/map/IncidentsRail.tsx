@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
-import { confidenceLabel, satelliteTitle } from '@/lib/firms';
+import { confidenceLabel, firmsDetailHref, satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/source-health';
 import { formatDistance, useUnits } from '@/lib/use-units';
@@ -500,7 +500,7 @@ export function IncidentsRail({
           )}
           accentColor="#ff7a3a"
           accentGlow="255, 122, 58"
-          detailHref={buildFirmsDetailHref(selection.feature)}
+          detailHref={firmsDetailHref(selection.feature)}
           stats={buildSatelliteStats(selection.feature)}
         />
       ) : null}
@@ -542,21 +542,6 @@ function firmsAgeShort(ageHr: number | null): string {
   if (ageHr < 1) return `${Math.max(1, Math.round(ageHr * 60))}m`;
   if (ageHr < 24) return `${Math.round(ageHr)}h`;
   return `${Math.round(ageHr / 24)}d`;
-}
-
-/** Build the /fire-detail URL for a FIRMS satellite pixel. Passes through
- *  all the satellite-specific URL params the detail page consumes. */
-function buildFirmsDetailHref(feature: FireFeature): string {
-  const p = feature.properties;
-  return (
-    `/fire-detail?lat=${p.lat}&lon=${p.lon}` +
-    (p.brightness != null ? `&brightness=${p.brightness}` : '') +
-    (p.confidence != null ? `&confidence=${encodeURIComponent(p.confidence)}` : '') +
-    (p.acq_date != null ? `&acq_date=${p.acq_date}` : '') +
-    (p.acq_time != null ? `&acq_time=${p.acq_time}` : '') +
-    (p.satellite != null ? `&satellite=${encodeURIComponent(p.satellite)}` : '') +
-    (p.daynight != null ? `&daynight=${encodeURIComponent(p.daynight)}` : '')
-  );
 }
 
 // ─── Incident Card ────────────────────────────────────────────────────────

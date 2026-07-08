@@ -44,6 +44,7 @@ export function GlassSegmented<T extends string>({
           <button
             key={o.id}
             type="button"
+            aria-pressed={active}
             onClick={() => onChange(o.id)}
             style={{
               height: h,

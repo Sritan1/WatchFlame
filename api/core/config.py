@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     rate_limit_expensive: str = "20/minute"    # /risk /trajectory /weather /geocode /shelters
     rate_limit_cheap: str = "120/minute"       # /fires /healthz
 
+    # Number of trusted reverse proxies in front of the app (Railway = 1). The
+    # rate-limit key is taken this many entries from the RIGHT of X-Forwarded-For
+    # — the IP the trusted proxy appended — so a client-supplied (leftmost) XFF
+    # can't be rotated to dodge the per-IP cap. 0 = use the direct peer.
+    rate_limit_trusted_proxies: int = 1
+
     # Hard cap on request body size (bytes) — guards POST /risk against
     # oversized payloads. 16 KiB is ~100x the largest legitimate body.
     max_request_bytes: int = 16_384

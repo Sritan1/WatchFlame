@@ -5,36 +5,43 @@
 
 import type { NamedIncident } from '@/lib/api';
 
-/** Minimum length for a name to participate in substring matching. Short
- *  tokens ("Cow", "The", "Oak") are too generic and produced false matches
- *  under the old raw `includes` check. */
-const MIN_MATCH_LEN = 4;
+// Tokens shorter than this are too generic to anchor a match on their own.
+const MIN_TOKEN_LEN = 3;
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Words that carry no identifying signal for a fire name.
+const STOPWORDS = new Set([
+  'fire',
+  'fires',
+  'wildfire',
+  'wildfires',
+  'complex',
+  'the',
+  'of',
+  'and',
+]);
 
-/** Whole-word containment: does `needle` appear in `haystack` on word
- *  boundaries? "creek" matches "cow creek" but NOT "creekside" — the old
- *  `String.includes` matched the latter too. */
-function wordContains(haystack: string, needle: string): boolean {
-  if (needle.length < MIN_MATCH_LEN) return false;
-  return new RegExp(`\\b${escapeRegExp(needle)}\\b`).test(haystack);
+/** Split a name into lowercased identifying tokens (drops the "Fire"/"Complex"
+ *  style noise words and very short words). "Cow Creek Fire" -> ["cow", "creek"]. */
+function tokenize(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= MIN_TOKEN_LEN && !STOPWORDS.has(t));
 }
 
 /** Try to find the NIFC/CalFire incident that corresponds to a FEMA disaster
  *  title. FEMA titles are like "Canyon Fire" / "Cow Creek Fire"; NIFC/CalFire
  *  incident names are like "Canyon" / "Cow Creek" (the trailing " Fire" is
- *  almost always dropped). We try exact name match first, then whole-word
- *  containment in either direction. Returns null when nothing plausibly
- *  matches.
+ *  almost always dropped). We try an exact name match first, then score
+ *  candidates by how much of the title's identifying tokens they share.
+ *  Returns null when nothing plausibly matches.
  *
- *  When multiple incidents match (e.g. both "Creek" and "Cow Creek" exist for
- *  a "Cow Creek Fire" title), the LONGEST incident name wins — it's the most
- *  specific. The previous implementation used raw `includes` + `.find`, which
- *  (a) matched substrings inside larger words and (b) returned whichever
- *  candidate happened to be first in the array, so a short coincidental name
- *  like "Creek" could shadow the correct "Cow Creek". */
+ *  Ranking is by shared-token count, then FEWEST extra tokens, then shorter
+ *  name. The fewest-extra tie-break is the fix for the old longest-name rule,
+ *  which let a broader superset shadow the real fire (e.g. "Canyon Fire" would
+ *  land on "Grand Canyon Complex" instead of "Canyon"). A candidate must cover
+ *  at least half of the title's tokens to match at all, so one common word
+ *  can't carry an otherwise-unrelated incident. */
 export function matchIncidentByFemaTitle(
   femaTitle: string,
   fires: NamedIncident[],
@@ -47,21 +54,36 @@ export function matchIncidentByFemaTitle(
     .toLowerCase();
   if (!needle) return null;
 
-  const normalized = fires.map((f) => ({
-    fire: f,
-    name: f.name.trim().toLowerCase(),
-  }));
+  const normalized = fires.map((f) => ({ fire: f, name: f.name.trim().toLowerCase() }));
 
-  const exact = normalized.find((n) => n.name === needle);
+  // Exact name match wins outright (the common, clean case).
+  const exact = normalized.find((n) => n.name && n.name === needle);
   if (exact) return exact.fire;
 
-  let best: { fire: NamedIncident; len: number } | null = null;
+  const needleSet = new Set(tokenize(needle));
+  if (needleSet.size === 0) return null;
+
+  let best:
+    | { fire: NamedIncident; shared: number; extra: number; len: number }
+    | null = null;
   for (const n of normalized) {
     if (!n.name) continue;
-    const matches = wordContains(needle, n.name) || wordContains(n.name, needle);
-    if (matches && (!best || n.name.length > best.len)) {
-      best = { fire: n.fire, len: n.name.length };
-    }
+    const candSet = new Set(tokenize(n.name));
+    if (candSet.size === 0) continue;
+
+    let shared = 0;
+    for (const t of needleSet) if (candSet.has(t)) shared++;
+    // Require the candidate to cover at least half of the title's tokens.
+    if (shared === 0 || shared / needleSet.size < 0.5) continue;
+
+    const extra = candSet.size - shared;
+    const better =
+      best == null ||
+      shared > best.shared ||
+      (shared === best.shared && extra < best.extra) ||
+      (shared === best.shared && extra === best.extra && n.name.length < best.len);
+    if (better) best = { fire: n.fire, shared, extra, len: n.name.length };
   }
+
   return best ? best.fire : null;
 }

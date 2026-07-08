@@ -34,8 +34,10 @@ export function MiniMapImpl({
 }) {
   // Same tile-health watch as the main MapImpl: a MapTiler/OSM outage fails
   // client-side with no backend signal, so flip a note after a few tileerrors
-  // and clear it once a tile set loads. health.maptiler is the dev `?health=`
-  // override so the note is testable here too.
+  // and clear it once a tile actually loads. Clear off the per-tile `tileload`
+  // event, not the batch `load` (errored tiles fire `load` too, which would
+  // reset the count and hide the note on a full outage). health.maptiler is the
+  // dev `?health=` override so the note is testable here too.
   const [tilesDown, setTilesDown] = useState(false);
   const tileErrorsRef = useRef(0);
   const health = useSourceHealth();
@@ -65,7 +67,7 @@ export function MiniMapImpl({
             tileErrorsRef.current += 1;
             if (tileErrorsRef.current >= 4) setTilesDown(true);
           },
-          load: () => {
+          tileload: () => {
             tileErrorsRef.current = 0;
             setTilesDown(false);
           },

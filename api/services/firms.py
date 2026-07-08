@@ -8,19 +8,33 @@ from typing import Any
 import httpx
 
 from ..core.parse import safe_float
-from ..core.source_health import DOWN
+from ..core.source_health import SourceUnavailable
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+# Short-lived negative cache so a FIRMS outage isn't re-hit on every request.
+# Mirrors the census + openfema degraded caches; separate from _CACHE because a
+# success there is a real (possibly empty) FeatureCollection, not an outage.
+_FAIL_CACHE: dict[str, float] = {}
 
 # Defense-in-depth: `area` is interpolated into the FIRMS URL path, so it must
 # never be arbitrary text. Callers (the /fires route) already validate, but the
 # service refuses anything that isn't "world" or four comma-separated numbers
 # and falls back to "world" rather than building a URL from untrusted input.
-_BBOX_RE = re.compile(r"^-?\d{1,3}(?:\.\d+)?(?:,-?\d{1,3}(?:\.\d+)?){3}$")
+# The optional [eE] exponent is required because the route formats coordinates
+# with a plain f-string, so a near-zero bbox stringifies as "1e-05"; without it
+# a legitimate tiny bbox would fail this allowlist and silently downgrade to a
+# WORLD query (returning global fires). Still numeric-only — no injection risk.
+_NUM = r"-?\d{1,3}(?:\.\d+)?(?:[eE][+-]?\d+)?"
+_BBOX_RE = re.compile(rf"^{_NUM}(?:,{_NUM}){{3}}$")
 
 
 def _ttl() -> int:
     return int(os.getenv("CACHE_TTL_SECONDS", "300"))
+
+
+def _fail_ttl() -> int:
+    # How long a transient FIRMS outage suppresses re-hitting the upstream.
+    return int(os.getenv("FIRMS_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 def _source() -> str:
@@ -38,6 +52,12 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     """
     Fetch recent fire detections from NASA FIRMS area API and return GeoJSON.
 
+    Raises SourceUnavailable when FIRMS itself FAILS (network error, quota
+    burst, 5xx, timeout) so the /fires route can report firms=down — a real
+    outage returns the same empty FeatureCollection as "satellite saw nothing,"
+    and the two must be told apart. A successful-but-empty result is NOT an
+    outage and returns normally.
+
     FIRMS area API:
       https://firms.modaps.nasa.gov/api/area/csv/<KEY>/<SOURCE>/<AREA>/<DAYS>
       AREA is "world" or "minLon,minLat,maxLon,maxLat".
@@ -53,6 +73,12 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     if cached and now - cached[0] < _ttl():
         return cached[1]
 
+    # A recent outage for this query? Signal `down` from the negative cache
+    # instead of re-hitting a flaky / quota-limited FIRMS on every request.
+    failed_at = _FAIL_CACHE.get(cache_key)
+    if failed_at is not None and now - failed_at < _fail_ttl():
+        raise SourceUnavailable("firms area fetch failed (cached)")
+
     # NOTE: the API key is embedded in this URL path — never log `url`. Error
     # logging below intentionally references only `area`/`days`. (The root
     # logger also has a redaction filter as a backstop; see core/logging_setup.)
@@ -64,20 +90,16 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
             text = resp.text
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
         # FIRMS is flaky: transaction-quota bursts return 400 (not 429), and
-        # cold satellite-pass windows occasionally 5xx. Treat any upstream
-        # failure as "satellite saw nothing right now" so the app falls back
-        # to its empty-state UI instead of a generic error toast.
+        # cold satellite-pass windows occasionally 5xx. Signal a real outage
+        # (distinct from "satellite saw nothing") so /fires reports firms down,
+        # and record a short-lived failure so we don't hammer it meanwhile.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
-        print(f"[firms] upstream {status} for {area}/{days} ({type(e).__name__}); returning empty")
-        # `_sources` rides along so the /fires route can report FIRMS as down
-        # (an empty FeatureCollection from a real outage looks identical to
-        # "satellite saw nothing"). The route strips this private key before
-        # returning the body, so the public response shape is unchanged.
-        empty = {"type": "FeatureCollection", "features": [], "_sources": {"firms": DOWN}}
-        # Cache the empty result for a short window so we don't hammer FIRMS
-        # while it's degraded. Use a 60s sub-TTL via a sentinel timestamp.
-        _CACHE[cache_key] = (now - max(_ttl() - 60, 0), empty)
-        return empty
+        print(f"[firms] upstream {status} for {area}/{days} ({type(e).__name__}); reporting down")
+        _FAIL_CACHE[cache_key] = now
+        raise SourceUnavailable("firms area fetch failed") from e
+
+    # Success — drop any stale failure marker for this query.
+    _FAIL_CACHE.pop(cache_key, None)
 
     features: list[dict[str, Any]] = []
     reader = csv.DictReader(io.StringIO(text))

@@ -1,8 +1,9 @@
 'use client';
 
-// Loading placeholder — solid #26262a block that pulses opacity 0.55→1 every
-// 800ms. Ported from app/components/ui/Skeleton.tsx. Use anywhere a query is
-// in flight and the slot has a known size (most numeric readouts + headlines).
+// Loading placeholder — a rounded block whose background tone pulses between two
+// shades via the `skeleton-pulse` keyframe (1.2s). Ported from
+// app/components/ui/Skeleton.tsx. Use anywhere a query is in flight and the slot
+// has a known size (most numeric readouts + headlines).
 
 export type SkeletonRounded = 'sm' | 'md' | 'lg' | 'full';
 

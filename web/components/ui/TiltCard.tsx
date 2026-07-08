@@ -4,7 +4,7 @@
 // (0..100%) — the .tilt-card.with-shine rules in globals.css use these to
 // render a moving highlight that gives cards real depth.
 
-import { useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 
 export function TiltCard({
   children,
@@ -25,8 +25,14 @@ export function TiltCard({
   onClick?: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  // Suppress the cursor-follow tilt for users who ask for reduced motion.
+  const reduced = useRef(false);
+  useEffect(() => {
+    reduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
 
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (reduced.current) return;
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();

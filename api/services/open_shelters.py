@@ -31,6 +31,7 @@ from typing import Any
 import httpx
 
 from ..core.geo import bbox_around
+from ..core.source_health import SourceUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ _OUT_FIELDS = ",".join(
 
 _CACHE: dict[str, tuple[float, list["OpenShelter"]]] = {}
 
+# Short-lived negative cache for transient upstream failures (see census.py).
+_FAIL_CACHE: dict[str, float] = {}
+
 
 @dataclass
 class OpenShelter:
@@ -95,6 +99,10 @@ def _ttl() -> int:
     # Open-shelter status shifts over minutes-to-hours during operations; 5 min
     # is a good balance of freshness vs. politeness to the FEMA endpoint.
     return int(os.getenv("OPEN_SHELTERS_CACHE_TTL_SECONDS", "300"))
+
+
+def _fail_ttl() -> int:
+    return int(os.getenv("OPEN_SHELTERS_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 def _grid_key(lat: float, lon: float, radius_mi: float) -> str:
@@ -220,6 +228,12 @@ async def _fetch_nss_open_shelters(
     if cached and now - cached[0] < _ttl():
         return cached[1]
 
+    # Recent failure for this area? Back off and signal the outage so /shelters
+    # reports shelters_open `down` rather than a misleading empty list.
+    failed_at = _FAIL_CACHE.get(cache_key)
+    if failed_at is not None and now - failed_at < _fail_ttl():
+        raise SourceUnavailable("open-shelters failed (cached)")
+
     # Bounding-box envelope around the point (the route trims to the exact
     # radius with haversine afterward, so a slightly-larger box is fine).
     min_lon, min_lat, max_lon, max_lat = bbox_around(lat, lon, radius_mi)
@@ -242,13 +256,17 @@ async def _fetch_nss_open_shelters(
             resp.raise_for_status()
             data = resp.json()
     except (httpx.HTTPError, ValueError) as e:
+        # Real outage. Back off and signal `down` so /shelters shows a feed-down
+        # note instead of a misleading empty open-shelter list.
         logger.warning("FEMA NSS open-shelters query failed: %s", e)
-        return cached[1] if cached else []
+        _FAIL_CACHE[cache_key] = now
+        raise SourceUnavailable("open-shelters upstream failed") from e
 
-    # ArcGIS reports query errors in-body with a 200; treat as empty.
+    # ArcGIS reports query errors in-body with a 200 — a real upstream problem.
     if isinstance(data, dict) and data.get("error"):
         logger.warning("FEMA NSS returned error: %s", data["error"])
-        return cached[1] if cached else []
+        _FAIL_CACHE[cache_key] = now
+        raise SourceUnavailable("open-shelters returned an error body")
 
     out: list[OpenShelter] = []
     for feat in data.get("features") or []:
@@ -257,6 +275,7 @@ async def _fetch_nss_open_shelters(
             out.append(s)
 
     _CACHE[cache_key] = (now, out)
+    _FAIL_CACHE.pop(cache_key, None)
     return out
 
 

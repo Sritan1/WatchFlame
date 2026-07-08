@@ -183,8 +183,10 @@ export function MapImpl({
   // Tile-load health. MapTiler/OSM tiles fail client-side (quota, key, network)
   // with no backend signal, so we watch Leaflet's tile events directly. A few
   // stray tileerrors are normal at the edges, so only flip the note after
-  // several pile up, and clear it the moment a visible tile set finishes
-  // loading. Without this, a tile outage leaves a silent gray map.
+  // several pile up, and clear it as soon as a tile actually loads. We key the
+  // clear off the per-tile `tileload` event, NOT the batch `load` event:
+  // errored tiles count as "done" and fire `load` too, so on a full outage the
+  // batch `load` would immediately reset the error count and hide the note.
   const [tilesDown, setTilesDown] = useState(false);
   const tileErrorsRef = useRef(0);
   // health.maptiler is only ever set by the dev `?health=` override (the
@@ -230,7 +232,7 @@ export function MapImpl({
             tileErrorsRef.current += 1;
             if (tileErrorsRef.current >= 4) setTilesDown(true);
           },
-          load: () => {
+          tileload: () => {
             tileErrorsRef.current = 0;
             setTilesDown(false);
           },

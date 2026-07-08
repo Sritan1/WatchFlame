@@ -24,16 +24,27 @@ from typing import Any
 import httpx
 
 from ..core.geo import in_us
+from ..core.source_health import SourceUnavailable
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+# Short-lived negative cache for transient upstream failures — bounds us to one
+# probe per _fail_ttl() window instead of re-hitting a throttled mirror on every
+# request. Kept separate from _CACHE so a failure is never remembered as a real
+# "no shelters here" answer. Mirrors the pattern in census.py / firms.py.
+_FAIL_CACHE: dict[str, float] = {}
 
 
 def _ttl() -> int:
     # Overpass data is updated minute-to-minute by OSM contributors but for our
     # purposes (rare event, "potential shelters" rarely move) an hour is plenty.
     return int(os.getenv("SHELTER_CACHE_TTL_SECONDS", "3600"))
+
+
+def _fail_ttl() -> int:
+    return int(os.getenv("SHELTER_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 # ----- Tag filtering --------------------------------------------------------
@@ -127,6 +138,12 @@ async def fetch_shelters(
     if cached and now - cached[0] < _ttl():
         return [_to_shelter(r) for r in cached[1]]
 
+    # Recent failure for this area? Back off and signal the outage so /shelters
+    # reports shelters_osm `down` instead of a misleading empty candidate list.
+    failed_at = _FAIL_CACHE.get(cache_key)
+    if failed_at is not None and now - failed_at < _fail_ttl():
+        raise SourceUnavailable("overpass failed (cached)")
+
     query = f"""
 [out:json][timeout:25];
 (
@@ -151,16 +168,16 @@ out body 600;
             resp.raise_for_status()
             payload = resp.json()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # Overpass public mirrors throttle to 429 / 504 under load. /shelters
-        # already swallows our exceptions via gather(), but cache empty here
-        # so the log stays clean and we back off the mirror for the TTL.
+        # Overpass public mirrors throttle to 429 / 504 under load. Record a
+        # short-lived failure marker so we back off the mirror, and raise so
+        # /shelters reports `down` rather than an empty (misleading) list.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[overpass] upstream {status} for {lat:.2f},{lon:.2f} "
-            f"({type(e).__name__}); returning empty"
+            f"({type(e).__name__}); reporting down"
         )
-        _CACHE[cache_key] = (now, [])
-        return []
+        _FAIL_CACHE[cache_key] = now
+        raise SourceUnavailable(f"overpass upstream {status}") from e
 
     raw_rows: list[dict[str, Any]] = []
     for el in payload.get("elements", []):
@@ -188,6 +205,7 @@ out body 600;
         )
 
     _CACHE[cache_key] = (now, raw_rows)
+    _FAIL_CACHE.pop(cache_key, None)
     return [_to_shelter(r) for r in raw_rows]
 
 

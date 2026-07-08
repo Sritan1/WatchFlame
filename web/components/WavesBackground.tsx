@@ -285,8 +285,20 @@ export function WavesBackground({
     };
     wakeRef.current = start;
 
+    // On any size change, re-fit the backing store; if the loop isn't currently
+    // painting (paused / reduced-motion / frozen), repaint the current frame so
+    // the canvas doesn't sit blank or stretched after a resize.
+    const onResize = () => {
+      resize();
+      if (!looping) render(0);
+    };
+
     resize();
-    window.addEventListener('resize', resize);
+    window.addEventListener('resize', onResize);
+    // Also observe the canvas box directly so container-driven size changes that
+    // don't fire a window resize (panel toggles, layout shifts) still re-fit.
+    const ro = new ResizeObserver(onResize);
+    ro.observe(canvas);
     // Draw the current (possibly resumed) frame synchronously before paint so a
     // remount never flashes a blank canvas before the loop's first rAF tick.
     render(0);
@@ -297,7 +309,8 @@ export function WavesBackground({
     return () => {
       looping = false;
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', onResize);
+      ro.disconnect();
       wakeRef.current = () => {};
     };
   }, [risk, pulseSpeed]);
