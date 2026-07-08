@@ -113,6 +113,23 @@ def _stub_census(monkeypatch):
     monkeypatch.setattr("api.routes.risk.reverse_geocode", _none)
 
 
+@pytest.fixture(autouse=True)
+def _stub_openmeteo(monkeypatch):
+    """Default Open-Meteo stubs return None so coord-bearing /risk tests never
+    reach the live Archive/Forecast APIs. Without this, any test with lat/lon
+    fans out real fetch_kbdi_today + fetch_days_since_rain_today calls (the
+    route requests them whenever body.kbdi is None), and asyncio.gather's
+    return_exceptions=True silently swallows the network failure — so the suite
+    would pass while making live, slow, quota-consuming HTTP calls. None matches
+    the graceful-degrade behavior (KBDI unavailable falls back to
+    days_since_rain; days-since-rain unavailable falls back to the body value).
+    Individual tests override these to exercise the KBDI path."""
+    async def _none(*_args, **_kwargs):
+        return None
+    monkeypatch.setattr("api.routes.risk.fetch_kbdi_today", _none)
+    monkeypatch.setattr("api.routes.risk.fetch_days_since_rain_today", _none)
+
+
 def test_risk_basic_no_location():
     """Without lat/lon AND without state hint, every regional/satellite/kbdi
     field should be None — pure what-if path."""
@@ -138,6 +155,29 @@ def test_risk_validates_season():
     bad = {**_RISK_BODY, "season": "monsoon"}  # not in Literal
     r = client.post("/risk", json=bad)
     assert r.status_code == 422
+
+
+def test_risk_rejects_out_of_domain_temperature():
+    """Temperature is bounded (record Earth extremes). Values near the
+    saturation-vapor-pressure singularity (t = -237.3) must 422, not 500."""
+    for bad_temp in (-237.3, -238.0, -500.0, 200.0):
+        r = client.post("/risk", json={**_RISK_BODY, "temperature": bad_temp})
+        assert r.status_code == 422, f"temperature={bad_temp} should be rejected"
+
+
+def test_risk_rejects_nonfinite_temperature():
+    """NaN / Infinity (which JSON + pydantic accept by default) must be
+    rejected by the bound, not silently scored."""
+    import json as _json
+    for token in ("NaN", "Infinity", "-Infinity"):
+        r = client.post(
+            "/risk",
+            content=_json.dumps({**_RISK_BODY, "temperature": None}).replace(
+                "null", token
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+        assert r.status_code == 422, f"temperature={token} should be rejected"
 
 
 def test_risk_with_location_returns_regional(monkeypatch):
@@ -688,7 +728,7 @@ def test_disasters_near_outside_us(monkeypatch):
 def test_disasters_near_returns_active(monkeypatch):
     async def stub_geo(lat, lon):
         return _CountyInfo()
-    async def stub_fema(state, county_name):
+    async def stub_fema(state, county_name, is_city=False):
         return [_Declaration()]
     monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
     monkeypatch.setattr("api.routes.disasters.fetch_active_for_county", stub_fema)
@@ -703,11 +743,38 @@ def test_disasters_near_returns_active(monkeypatch):
     assert decl["url"] == "https://www.fema.gov/disaster/4900"
 
 
+def test_openfema_area_match_distinguishes_county_from_city():
+    """A county user must not match a like-named independent-city declaration
+    (Fairfax County VA vs the independent city of Fairfax), and vice versa."""
+    from api.services.openfema import _area_matches
+
+    # County user (is_city=False)
+    assert _area_matches("fairfax (county)", "fairfax", is_city=False) is True
+    assert _area_matches("fairfax (city)", "fairfax", is_city=False) is False
+    # City user (is_city=True)
+    assert _area_matches("fairfax (city)", "fairfax", is_city=True) is True
+    assert _area_matches("fairfax (county)", "fairfax", is_city=True) is False
+    # Whole-word: a prefix collision must not match.
+    assert _area_matches("franklinton (county)", "franklin", is_city=False) is False
+    # No type qualifier falls through to the name match.
+    assert _area_matches("statewide", "fairfax", is_city=False) is False
+
+
+def test_disasters_is_independent_city_by_fips():
+    from api.routes.disasters import _is_independent_city
+
+    assert _is_independent_city("51600") is True   # Fairfax city VA
+    assert _is_independent_city("51059") is False  # Fairfax County VA
+    assert _is_independent_city("06037") is False  # Los Angeles County
+    assert _is_independent_city(None) is False
+    assert _is_independent_city("") is False
+
+
 def test_disasters_near_filters_old_declarations(monkeypatch):
     """Declarations older than 365 days must be filtered out."""
     async def stub_geo(lat, lon):
         return _CountyInfo()
-    async def stub_fema(state, county_name):
+    async def stub_fema(state, county_name, is_city=False):
         return [_Declaration(incident_begin="2020-01-01T00:00:00.000Z")]
     monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
     monkeypatch.setattr("api.routes.disasters.fetch_active_for_county", stub_fema)
@@ -735,21 +802,19 @@ def test_fires_health_ok_on_success(monkeypatch):
     assert _health(r) == {"firms": "ok"}
 
 
-def test_fires_health_down_strips_private_key(monkeypatch):
-    """On a FIRMS outage the service returns an empty FeatureCollection tagged
-    with `_sources`. The route must report firms=down AND strip the private
-    key so the public body shape is unchanged."""
+def test_fires_health_down_on_outage(monkeypatch):
+    """On a real FIRMS outage the service raises SourceUnavailable (same
+    mechanism as the other degrading feeds). The route must report firms=down
+    and degrade to an empty FeatureCollection."""
+    from api.core.source_health import SourceUnavailable
+
     async def stub(days=1, bbox=None):
-        return {
-            "type": "FeatureCollection",
-            "features": [],
-            "_sources": {"firms": "down"},
-        }
+        raise SourceUnavailable("firms down")
     monkeypatch.setattr("api.routes.fires.fetch_fires_geojson", stub)
     r = client.get("/fires?days=1")
     assert r.status_code == 200
     assert _health(r) == {"firms": "down"}
-    assert r.json() == {"type": "FeatureCollection", "features": []}  # no _sources
+    assert r.json() == {"type": "FeatureCollection", "features": []}
 
 
 def test_incidents_health_reports_nifc_down(monkeypatch):
@@ -800,7 +865,7 @@ def test_disasters_health_fema_down(monkeypatch):
     """County resolves but FEMA is down: census=ok, fema=down, county present."""
     async def stub_geo(lat, lon):
         return _CountyInfo()
-    async def stub_fema(state, county_name):
+    async def stub_fema(state, county_name, is_city=False):
         raise SourceUnavailable("fema down")
     monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
     monkeypatch.setattr("api.routes.disasters.fetch_active_for_county", stub_fema)

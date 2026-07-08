@@ -39,11 +39,15 @@ const INITIAL_GPS: GpsState = {
   permission: 'pending',
 };
 
-/** Internal hook — talks to navigator.geolocation only (no saved-locations layer). */
-function useDeviceGps(): GpsState {
+/** Internal hook — talks to navigator.geolocation only (no saved-locations
+ *  layer). `enabled` is false when a saved location is overriding GPS, so we
+ *  don't fire a location permission prompt + hardware lookup whose result would
+ *  just be discarded. */
+function useDeviceGps(enabled: boolean): GpsState {
   const [state, setState] = useState<GpsState>(INITIAL_GPS);
 
   useEffect(() => {
+    if (!enabled) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setState({ ...INITIAL_GPS, permission: 'unavailable' });
       return;
@@ -70,7 +74,7 @@ function useDeviceGps(): GpsState {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [enabled]);
 
   return state;
 }
@@ -83,7 +87,6 @@ function useDeviceGps(): GpsState {
  *  a fresh `{ lat, lon }` literal on every render, invalidating every dependent memo
  *  in the tree and re-running threat aggregation on each tick. */
 export function useUserLocation(): LocationState {
-  const gps = useDeviceGps();
   const { items, activeId } = useSavedLocations();
 
   const active = activeId ? items.find((i) => i.id === activeId) : undefined;
@@ -94,6 +97,10 @@ export function useUserLocation(): LocationState {
     () => (savedLat != null && savedLon != null ? { lat: savedLat, lon: savedLon } : null),
     [savedLat, savedLon],
   );
+
+  // Only reach for GPS when no saved location is overriding it — otherwise the
+  // GPS result is discarded anyway and the permission prompt is pure friction.
+  const gps = useDeviceGps(!(active && savedCoords));
 
   if (active && savedCoords) {
     return {

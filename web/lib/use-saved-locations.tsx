@@ -39,6 +39,22 @@ function newId(): string {
   return 'loc_' + Math.random().toString(36).slice(2, 10);
 }
 
+/** Validate a value read back from localStorage. Storage can hold a non-array
+ *  or a malformed entry (an older key format, a value written by another tab,
+ *  manual/corrupted data); trusting the shape and calling .find/.filter/.map
+ *  on a non-array would crash the whole tree, so we filter down to well-formed
+ *  entries instead. */
+function isSavedLocation(v: unknown): v is SavedLocation {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.id === 'string' &&
+    typeof o.label === 'string' &&
+    typeof o.lat === 'number' &&
+    typeof o.lon === 'number'
+  );
+}
+
 export function SavedLocationsProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<SavedLocation[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(null);
@@ -47,7 +63,10 @@ export function SavedLocationsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setItems(JSON.parse(raw) as SavedLocation[]);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) setItems(parsed.filter(isSavedLocation));
+      }
       const active = localStorage.getItem(STORAGE_ACTIVE_KEY);
       if (active) setActiveIdState(active);
     } catch {

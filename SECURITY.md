@@ -48,12 +48,18 @@ packages:
   never the `sklearn` dummy shim that is a known squat vector. New dependencies
   are verified to exist and to be the intended project before being added;
   AI-suggested package names are never trusted blindly.
-- **npm installs are integrity-checked.** `web/package-lock.json` pins exact
+- **npm installs pin integrity hashes.** `web/package-lock.json` records exact
   versions with SHA-512 integrity hashes, so a malicious re-publish under an
-  existing version fails the install.
-- **pip installs are auditable and hash-verifiable.** `pip-audit` (OSV) runs in
-  CI against the production set; for deployment the pinned set is compiled with
-  hashes and installed with integrity verification:
+  existing version fails a `npm ci` install. (CI itself runs `npm install` for
+  a cross-platform-lockfile reason noted in the repo history, so the strict
+  hash gate applies to `npm ci` / local + deploy installs, not the CI step.)
+- **pip dependencies are audited, and hash-verifiable on deploy.** `pip-audit`
+  (OSV) runs in CI against the production set as an advisory signal.
+  `api/requirements.txt` uses lower-bound floors (`>=`) so patched releases are
+  picked up; the default Railway build installs it directly. For a hardened,
+  reproducible deploy, compile the pinned set with hashes and install with
+  integrity verification **on the Linux target** (this is the recommended
+  release step, not the default build command):
 
   ```bash
   # Generate ON the Linux deploy target: uvicorn[standard] pulls Unix-only

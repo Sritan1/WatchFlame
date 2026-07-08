@@ -5,12 +5,14 @@ import {
   aggregateThreat,
   bucketOf,
   compositeFromBuckets,
+  compositeSubtitle,
   envFromBuckets,
   fireThreatFactor,
   findThreatDriver,
   firmsAgeHours,
   normalizeWeather,
 } from '@/lib/composite-risk';
+import type { RiskLevel } from '@/lib/theme';
 
 describe('bucketOf', () => {
   it('maps a normalized 0-1 score to a tier', () => {
@@ -77,10 +79,13 @@ describe('fireThreatFactor', () => {
       fireThreatFactor({ ...base, distanceMi: 5, containedPct: 0 }),
     );
   });
-  it('wind alignment modulates threat', () => {
-    const a = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 180, windSpeedKph: 30 });
-    const b = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 0, windSpeedKph: 30 });
-    expect(a).not.toBe(b);
+  it('wind aligned toward the fire bearing raises threat above wind opposed to it', () => {
+    // base.bearingToFireDeg = 0, so windDeg 0 is aligned (delta 0 → ×(1+WIND_REL))
+    // and windDeg 180 is opposed (delta 180 → ×(1-WIND_REL)). Asserting direction,
+    // not just inequality, catches a flipped cos sign.
+    const aligned = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 0, windSpeedKph: 30 });
+    const opposed = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 180, windSpeedKph: 30 });
+    expect(aligned).toBeGreaterThan(opposed);
   });
 });
 
@@ -129,5 +134,61 @@ describe('aggregateThreat / findThreatDriver', () => {
     const driver = findThreatDriver(args);
     expect(agg).toBeGreaterThan(0);
     expect(driver?.threat).toBeCloseTo(agg, 10);
+  });
+});
+
+describe('compositeSubtitle', () => {
+  const tiers: RiskLevel[] = ['low', 'moderate', 'high', 'extreme'];
+  const threats: (RiskLevel | null)[] = [null, 'low', 'moderate', 'high', 'extreme'];
+
+  it('never contradicts the headline tier (call to action matches the orb)', () => {
+    // Drive the subtitle across every (weather, ignition, threat) combination
+    // and assert the call to action tracks the SAME tier the orb shows:
+    // Review your plan on HIGH/EXTREME, Stay aware on MODERATE, neither on LOW.
+    // The old subtitle keyed on raw weather and could understate an
+    // ignition-escalated headline; this guards that it can't.
+    for (const weatherBucket of tiers) {
+      for (const ignitionBucket of tiers) {
+        const envBucket = envFromBuckets(weatherBucket, ignitionBucket)!;
+        for (const threatBucket of threats) {
+          const tier = compositeFromBuckets(envBucket, threatBucket)!;
+          const s = compositeSubtitle({ envBucket, weatherBucket, ignitionBucket, threatBucket });
+          const where = `env=${envBucket} threat=${threatBucket}`;
+          if (tier === 'high' || tier === 'extreme') {
+            expect(s, where).toContain('Review your plan');
+          } else if (tier === 'moderate') {
+            expect(s, where).toContain('Stay aware');
+          } else {
+            expect(s, where).not.toContain('Review your plan');
+            expect(s, where).not.toContain('Stay aware');
+          }
+        }
+      }
+    }
+  });
+
+  it('names ignition as the driver when it escalates the environment', () => {
+    // weather MODERATE but ignition EXTREME -> env HIGH -> headline HIGH.
+    const envBucket = envFromBuckets('moderate', 'extreme')!;
+    expect(envBucket).toBe('high');
+    const s = compositeSubtitle({
+      envBucket,
+      weatherBucket: 'moderate',
+      ignitionBucket: 'extreme',
+      threatBucket: 'moderate',
+    });
+    expect(s).toContain('primed for ignition');
+    expect(s).toContain('Review your plan');
+  });
+
+  it('explains why an extreme environment with no fire stays moderate', () => {
+    const s = compositeSubtitle({
+      envBucket: 'extreme',
+      weatherBucket: 'extreme',
+      ignitionBucket: 'extreme',
+      threatBucket: null,
+    });
+    expect(s).toContain('no active fires are nearby');
+    expect(s).toContain('Stay aware');
   });
 });

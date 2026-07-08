@@ -60,7 +60,9 @@ async def get_disasters_near(
         return {"county": None, "active": []}
 
     try:
-        decls = await fetch_active_for_county(info.state, info.county_name)
+        decls = await fetch_active_for_county(
+            info.state, info.county_name, is_city=_is_independent_city(info.county_fips)
+        )
     except SourceUnavailable:
         set_source_health(response, {"census": OK, "fema": DOWN})
         return {
@@ -101,6 +103,16 @@ async def get_disasters_near(
             for d in decls
         ],
     }
+
+
+def _is_independent_city(county_fips: str | None) -> bool:
+    """FIPS convention: county codes 500+ are reserved for independent cities
+    (e.g. Fairfax city VA 51600 vs Fairfax County VA 51059). Lets us match FEMA's
+    "(City)" rows to a city user and "(County)" rows to a county user."""
+    if not county_fips or len(county_fips) < 5:
+        return False
+    tail = county_fips[-3:]
+    return tail.isdigit() and int(tail) >= 500
 
 
 def _within_window(iso: str | None, cutoff: datetime) -> bool:

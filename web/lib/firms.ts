@@ -5,6 +5,8 @@
 // reads like a typo in the UI ("N detection"). Map the known platform codes to
 // their mission names in one place, shared by the map rail and fire-detail.
 
+import type { FireFeature } from './api/types';
+
 const FIRMS_PLATFORMS: Record<string, string> = {
   N: 'Suomi NPP',
   NPP: 'Suomi NPP',
@@ -41,6 +43,9 @@ export function satelliteTitle(code: string | null | undefined): string {
 export function confidenceLabel(c: string | null): string {
   if (c == null) return '—';
   const v = c.trim().toUpperCase();
+  // A present-but-blank field is "unknown", not a real reading. Guard before
+  // the numeric branch: Number('') is 0 (finite), which would fabricate "Low".
+  if (v === '') return '—';
   if (v === 'L') return 'Low';
   if (v === 'N') return 'Nominal';
   if (v === 'H') return 'High';
@@ -51,4 +56,22 @@ export function confidenceLabel(c: string | null): string {
     return 'Low';
   }
   return '—';
+}
+
+/** Build the /fire-detail URL for a FIRMS satellite detection, passing through
+ *  every satellite-specific param the detail page reads. Shared so the Status
+ *  threat card and the map rail always link to the same-fidelity detail page.
+ *  URLSearchParams handles encoding. */
+export function firmsDetailHref(feature: FireFeature): string {
+  const p = feature.properties;
+  const params = new URLSearchParams();
+  params.set('lat', String(p.lat));
+  params.set('lon', String(p.lon));
+  if (p.brightness != null) params.set('brightness', String(p.brightness));
+  if (p.confidence != null) params.set('confidence', p.confidence);
+  if (p.acq_date != null) params.set('acq_date', p.acq_date);
+  if (p.acq_time != null) params.set('acq_time', p.acq_time);
+  if (p.satellite != null) params.set('satellite', p.satellite);
+  if (p.daynight != null) params.set('daynight', p.daynight);
+  return `/fire-detail?${params.toString()}`;
 }

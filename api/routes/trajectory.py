@@ -81,14 +81,19 @@ async def get_trajectory(
     # on a cold NDVI cache the serial path is ~12-22s per Status load.
     # NDVI anomaly = current - same-month climatology; climatology cache is
     # keyed by month, mirroring the /risk pipeline.
+    #
+    # return_exceptions=True so an unexpected raise from any single upstream
+    # (kbdi/ndvi) degrades to "no signal" instead of 500-ing the route — this
+    # endpoint's contract is null-on-failure, and /risk gathers the same way.
     kbdi_info, ndvi_now, ndvi_clim = await asyncio.gather(
         fetch_kbdi_today(lat, lon),
         get_ndvi_current(lat, lon),
         get_ndvi_climatology(lat, lon, date.today().month),
+        return_exceptions=True,
     )
-    kbdi = float(kbdi_info["kbdi"]) if kbdi_info else None
+    kbdi = float(kbdi_info["kbdi"]) if isinstance(kbdi_info, dict) and "kbdi" in kbdi_info else None
     ndvi_anomaly: float | None = None
-    if ndvi_now is not None and ndvi_clim is not None:
+    if isinstance(ndvi_now, float) and isinstance(ndvi_clim, float):
         ndvi_anomaly = float(ndvi_now - ndvi_clim)
 
     result = compute_trajectory(

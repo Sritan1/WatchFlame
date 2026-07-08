@@ -53,18 +53,32 @@ interface TerrainOpts {
   isAlarming: boolean;
 }
 
-// Persisted across re-creations (palette/band change, route remount) so the
-// camera resumes in place instead of snapping back to the start of the drift.
+// Persisted across route remounts so the camera resumes in place instead of
+// snapping back to the start of the drift.
 const persisted = { t: 0, curOffset: 0 };
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
+/** Terrain draw options derived from the current risk band. */
+function optsForRisk(risk: RiskLevel): TerrainOpts {
+  const isCalm = risk === 'low';
+  const isAlarming = risk === 'high' || risk === 'extreme';
+  return {
+    colors: aePalette(risk),
+    intensity: isCalm ? 0.45 : risk === 'moderate' ? 0.78 : 1.0,
+    speedMult: 1.1, // 0.4 + (pulseSpeed 70 / 100)
+    isAlarming,
+  };
+}
+
 /** The "terrain" draw system: one coherent sculpted heightfield drawn as draped
  *  contour rows + a translucent surface fill, drifting forward autonomously. */
-function makeTerrain(ctx: CanvasRenderingContext2D, opts: TerrainOpts) {
-  const [cCool, cMid, cHot] = opts.colors;
-  const { intensity, speedMult, isAlarming } = opts;
-  const cValley = mix(cCool, { r: 8, g: 12, b: 24 }, 0.55);
+function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
+  // Mutable so a risk-band change can be pushed in via setOpts() without
+  // rebuilding the whole system (see the component's mount effect).
+  let [cCool, cMid, cHot] = initial.colors;
+  let { intensity, speedMult, isAlarming } = initial;
+  let cValley = mix(cCool, { r: 8, g: 12, b: 24 }, 0.55);
 
   const ROWS = 10, COLS = 48;
   const VIEW_DEPTH = 7.6;
@@ -112,6 +126,12 @@ function makeTerrain(ctx: CanvasRenderingContext2D, opts: TerrainOpts) {
       W = w;
       H = h;
       build();
+    },
+    setOpts(next: TerrainOpts) {
+      [cCool, cMid, cHot] = next.colors;
+      cValley = mix(cCool, { r: 8, g: 12, b: 24 }, 0.55);
+      ({ intensity, speedMult, isAlarming } = next);
+      build(); // refresh the cached gradients for the new palette/intensity
     },
     draw(dt: number) {
       t += dt;
@@ -229,6 +249,11 @@ export function RiskBackground({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activeRef = useRef(active);
   const wakeRef = useRef<() => void>(() => {});
+  const setOptsRef = useRef<(o: TerrainOpts) => void>(() => {});
+  // Captures the risk at mount for the initial palette, so the mount effect
+  // doesn't need `risk` as a dependency (which would rebuild the whole system).
+  // Later changes flow through the risk-sync effect via setOpts, not this ref.
+  const riskRef = useRef(risk);
 
   useIsoLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -238,15 +263,12 @@ export function RiskBackground({
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const FRAME_MS = 1000 / 30;
-    const isCalm = risk === 'low';
-    const isAlarming = risk === 'high' || risk === 'extreme';
 
-    const sys = makeTerrain(ctx, {
-      colors: aePalette(risk),
-      intensity: isCalm ? 0.45 : risk === 'moderate' ? 0.78 : 1.0,
-      speedMult: 1.1, // 0.4 + (pulseSpeed 70 / 100)
-      isAlarming,
-    });
+    // Built once on mount; later risk-band changes are pushed in via
+    // sys.setOpts (the risk-sync effect below) so a slider drag that crosses a
+    // band doesn't tear down and re-allocate the whole terrain mid-interaction.
+    const sys = makeTerrain(ctx, optsForRisk(riskRef.current));
+    setOptsRef.current = sys.setOpts;
 
     let W = 0, H = 0, DPR = 1, raf = 0, last = 0;
     let running = false;
@@ -315,14 +337,21 @@ export function RiskBackground({
       window.removeEventListener('resize', resize);
       if (io) io.disconnect();
       wakeRef.current = () => {};
+      setOptsRef.current = () => {};
     };
-  }, [risk]);
+  }, []);
 
   // Pause/resume from the parent without rebuilding the system.
   useEffect(() => {
     activeRef.current = active;
     if (active) wakeRef.current();
   }, [active]);
+
+  // Push palette/intensity changes into the running system instead of
+  // rebuilding it, so dragging the sliders across a band boundary stays smooth.
+  useEffect(() => {
+    setOptsRef.current(optsForRisk(risk));
+  }, [risk]);
 
   // Static ambience — risk-tuned, behind the canvas.
   const [c0, c1, c2] = aePalette(risk);

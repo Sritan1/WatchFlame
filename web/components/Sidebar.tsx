@@ -32,8 +32,6 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // Chrome accent — peach-orange that reads as the brand's signature warmth.
-// `riskColor` prop overrides this so pages can re-tint the rail with their
-// own current risk level if desired.
 const DEFAULT_ACCENT = '#FFA76A';
 
 // ─── Data Feeds widget ──────────────────────────────────────────────────────
@@ -113,19 +111,35 @@ function FeedsPopover({
     const W = 272;
     const left = r.right + 12;
     const flip = left + W > window.innerWidth - 8;
-    if (flip) {
-      setPos({ left: r.left, bottom: Math.round(window.innerHeight - r.top + 12), flip: true });
-    } else {
-      setPos({ left, bottom: Math.round(window.innerHeight - (r.top + r.height)) - 2, flip: false });
-    }
+    const next = flip
+      ? { left: r.left, bottom: Math.round(window.innerHeight - r.top + 12), flip: true }
+      : { left, bottom: Math.round(window.innerHeight - (r.top + r.height)) - 2, flip: false };
+    // Bail out when the anchor hasn't actually moved (it is fixed to the
+    // sidebar, so scrolling the page recomputes the same values) — this avoids
+    // a re-render on every scroll event.
+    setPos((prev) =>
+      prev && prev.left === next.left && prev.bottom === next.bottom && prev.flip === next.flip
+        ? prev
+        : next,
+    );
   }, [anchorRef]);
 
   useLayoutEffect(() => place(), [place]);
   useEffect(() => {
-    const fn = () => place();
+    // Coalesce resize/scroll bursts to at most one layout read per frame
+    // instead of a getBoundingClientRect + setState on every event.
+    let raf = 0;
+    const fn = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        place();
+      });
+    };
     window.addEventListener('resize', fn);
     window.addEventListener('scroll', fn, true);
     return () => {
+      if (raf) window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', fn);
       window.removeEventListener('scroll', fn, true);
     };
@@ -310,7 +324,7 @@ function FeedsPopover({
   );
 }
 
-export function Sidebar({ riskColor }: { riskColor?: string }) {
+export function Sidebar() {
   const { ae } = useAesthetic();
   const pathname = usePathname();
   const loc = useUserLocation();
@@ -367,7 +381,7 @@ export function Sidebar({ riskColor }: { riskColor?: string }) {
     setFeedsClosing(false);
   }, [pathname]);
 
-  const accent = riskColor ?? DEFAULT_ACCENT;
+  const accent = DEFAULT_ACCENT;
   const accentRgb = hexToRgb(accent);
   const bgRgb = hexToRgb(ae.bg);
 

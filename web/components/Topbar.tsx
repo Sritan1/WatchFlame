@@ -6,7 +6,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { LocationsModal } from '@/components/location/LocationsModal';
@@ -14,26 +14,31 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { hexToRgb, RISK_LEVELS } from '@/lib/theme';
 
 const ROUTE_META: Record<string, { group: string; title: string }> = {
-  '/':         { group: 'Operations', title: 'Status' },
-  '/map':      { group: 'Operations', title: 'Live Map' },
-  '/risk':     { group: 'Planning',   title: 'Fire-Weather What-If' },
-  '/safety':   { group: 'Planning',   title: 'Safety' },
-  '/settings': { group: 'Account',    title: 'Settings' },
+  '/':            { group: 'Operations', title: 'Status' },
+  '/map':         { group: 'Operations', title: 'Live Map' },
+  '/fire-detail': { group: 'Operations', title: 'Fire Detail' },
+  '/risk':        { group: 'Planning',   title: 'Fire-Weather What-If' },
+  '/safety':      { group: 'Planning',   title: 'Safety' },
+  '/settings':    { group: 'Account',    title: 'Settings' },
 };
 
 const DEFAULT_ACCENT = '#FFA76A';
 
-export function Topbar({ riskColor }: { riskColor?: string }) {
+export function Topbar() {
   const { ae } = useAesthetic();
   const pathname = usePathname();
   const meta = ROUTE_META[pathname] ?? ROUTE_META['/'];
 
-  const accent = riskColor ?? DEFAULT_ACCENT;
+  const accent = DEFAULT_ACCENT;
   const accentRgb = hexToRgb(accent);
   const bgRgb = hexToRgb(ae.bg);
 
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
   // Mobile-only location entry — the sidebar's "Watching" picker is hidden on
   // mobile, so the Topbar surfaces the same LocationsModal there.
   const [locOpen, setLocOpen] = useState(false);
@@ -58,7 +63,7 @@ export function Topbar({ riskColor }: { riskColor?: string }) {
     try {
       await queryClient.invalidateQueries();
     } finally {
-      setTimeout(() => setRefreshing(false), 400);
+      refreshTimer.current = setTimeout(() => setRefreshing(false), 400);
     }
   };
 

@@ -54,9 +54,18 @@ def _load() -> dict:
     return json.loads(_DATA_PATH.read_text(encoding="utf-8"))
 
 
+def _valid_thresholds(t: object) -> bool:
+    """A usable threshold block has the three bucket boundaries `_bucket` indexes.
+    A truthy-but-partial block (stale/backup JSON) would KeyError into a 500."""
+    return isinstance(t, dict) and all(k in t for k in ("low", "moderate", "extreme"))
+
+
 _DATA = _load()
 _STATES: dict[str, dict] = _DATA.get("states", {}) or {}
-_GLOBAL: dict[str, float] = _DATA.get("global", _GLOBAL_FALLBACK)
+# Guard the loaded global block too: a malformed "global" in the JSON must not
+# be able to KeyError every uncalibrated-location request through _bucket.
+_loaded_global = _DATA.get("global", _GLOBAL_FALLBACK)
+_GLOBAL: dict[str, float] = _loaded_global if _valid_thresholds(_loaded_global) else _GLOBAL_FALLBACK
 
 
 def _bucket(score: float, t: dict[str, float]) -> Level:
@@ -150,10 +159,8 @@ def regional_level(
         state = lookup_state(lat, lon)
     if state and state in _STATES:
         thresholds = _STATES[state].get("thresholds")
-        # _bucket indexes low/moderate/extreme directly; a truthy-but-partial
-        # block (stale/partial JSON) would KeyError into a 500. Require the keys
-        # and otherwise fall back to global, mirroring lookup_state's defensiveness.
-        if thresholds and all(k in thresholds for k in ("low", "moderate", "extreme")):
+        # Require the bucket keys, else fall back to global (see _valid_thresholds).
+        if _valid_thresholds(thresholds):
             return _bucket(score, thresholds), state
     return _bucket(score, _GLOBAL), None
 

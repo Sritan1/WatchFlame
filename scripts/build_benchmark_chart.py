@@ -1,16 +1,24 @@
-"""Generate docs/v4_benchmark.png — fitted V4 vs published fire-weather indices.
+"""Generate docs/v4_benchmark.png — fitted index vs published fire-weather indices.
 
 Reads the held-out test-split Spearman ρ values that scripts/fit_v4_params.py
 persisted to data/fitted_params.json and renders a single horizontal bar chart
 comparing:
 
-    V4 (current)   — the original hand-picked constants
-    Fosberg FFWI   — Fosberg (1978)
-    Hot-Dry-Windy  — Srock et al. (2018)
-    V4 (fitted)    — this project's fitted constants  ← highlighted
+    Fosberg FFWI            — Fosberg (1978)
+    Hot-Dry-Windy           — Srock et al. (2018)
+    Fire weather (fitted)   — this project's fitted constants  ← highlighted
 
-All four ρ values are computed on the SAME held-out fires, so the comparison
+All three ρ values are computed on the SAME held-out fires, so the comparison
 is apples-to-apples. Offline; no API, no recompute.
+
+NOTE: the fitted bar reads `rho_fitted_test`, the fresh fit's held-out score.
+It deliberately does NOT plot a separate "original hand-picked constants" bar:
+once the fit was adopted, `rho_current_test` (spearman on DEFAULT_PARAMS) became
+the fitted constants too, so a "before vs after fitting" chart is no longer
+reproducible — re-running the pipeline would compare the fitted set against
+itself. The before/after improvement is reported in fit_v4_params.py's stdout;
+this chart makes the reproducible claim: the fitted index beats the published
+benchmarks on held-out fires.
 
 Usage:
     python scripts/build_benchmark_chart.py
@@ -39,10 +47,9 @@ def main() -> int:
 
     # Ascending so the fitted bar lands on top as the clear winner.
     bars = [
-        ("Fire weather — original constants", m["rho_current_test"], "#9ca3af"),
         ("Fosberg FFWI (1978)", m["rho_ffwi_test"], "#E8B339"),
         ("Hot-Dry-Windy (2018)", m["rho_hdw_test"], "#4FA8FF"),
-        ("Fire weather — fitted constants", m["rho_fitted_test"], "#F04438"),
+        ("Fire weather — fitted", m["rho_fitted_test"], "#F04438"),
     ]
     bars.sort(key=lambda b: b[1])
     labels = [b[0] for b in bars]
