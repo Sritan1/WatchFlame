@@ -160,14 +160,20 @@ async def _get_token() -> str | None:
                 )
                 resp.raise_for_status()
                 body = resp.json()
+            # Parse inside the guard: a 200 with an unexpected shape (e.g. an
+            # OAuth error object {"error": ...} some gateways return with 200,
+            # or a non-numeric expires_in) must degrade to None like any other
+            # auth failure, not raise KeyError/ValueError up into /trajectory.
+            token = body["access_token"]
+            expires_in = float(body.get("expires_in", 3600))
         except Exception as e:  # noqa: BLE001 - any auth failure must degrade, never crash /risk
             status = getattr(getattr(e, "response", None), "status_code", "n/a")
             print(f"[cdse] token/auth fetch failed ({status}, {type(e).__name__}); returning None")
             return None
 
-        _token_cache["token"] = body["access_token"]
-        _token_cache["expires_at"] = time.time() + float(body.get("expires_in", 3600))
-        return str(_token_cache["token"])
+        _token_cache["token"] = token
+        _token_cache["expires_at"] = time.time() + expires_in
+        return str(token)
 
 
 # ---- Statistical API --------------------------------------------------------

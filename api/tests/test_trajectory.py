@@ -157,11 +157,16 @@ def test_trajectory_handles_null_entries_via_carry_forward():
     )
     result = compute_trajectory(forecast, kbdi=300.0, ndvi_anomaly=0.0)
     assert result is not None
-    # Indices 2 and 3 carry-forward from index 1's value (26.0), so the
-    # now-frame at index 0 is 25.0 and the projected at index 6 is 30.0
-    # — both real numbers, no NaN propagation.
+    # now-frame (index 0) is 25.0 and projected (index 6) is 30.0 — both real
+    # source values, no NaN propagation.
     assert result.now.temperature_c == 25.0
     assert result.projected.temperature_c == 30.0
+    # The behavior this test exists to pin: the nulled indices 2 and 3 must
+    # carry FORWARD the last valid sample (index 1's 26.0), not collapse to the
+    # hard 20.0 fallback. Asserting the intermediate frames directly — index 0
+    # and 6 were never null, so they can't catch a broken walk-back.
+    assert result.frames[2].temperature_c == 26.0
+    assert result.frames[3].temperature_c == 26.0
 
 
 def test_trajectory_identifies_dominant_driver():

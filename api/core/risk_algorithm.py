@@ -122,7 +122,11 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 def saturation_vapor_pressure_hpa(t_c: float) -> float:
     """Tetens / Magnus saturation vapor pressure, hPa. Valid −40 to 50 °C."""
-    return 6.1078 * exp(17.27 * t_c / (t_c + 237.3))
+    # Clamp to physical Earth extremes so an out-of-domain or garbage temperature
+    # (e.g. from a non-/risk caller) can't hit the t_c = -237.3 singularity or
+    # overflow exp(). Normal inputs fall well inside this range, unaffected.
+    t = _clamp(t_c, -90.0, 60.0)
+    return 6.1078 * exp(17.27 * t / (t + 237.3))
 
 
 def vapor_pressure_deficit_hpa(t_c: float, rh_pct: float) -> float:

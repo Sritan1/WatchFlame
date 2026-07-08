@@ -285,8 +285,8 @@ export function StatusScreen() {
   const headlineLines: [string, string] = compositeReady
     ? HEADLINE[compositeBucket]
     : ['Loading', '…'];
-  const subtitle: string = compositeReady && weatherBucket != null
-    ? compositeSubtitle({ weatherBucket, threatBucket })
+  const subtitle: string = compositeReady && weatherBucket != null && envBucket != null
+    ? compositeSubtitle({ envBucket, weatherBucket, ignitionBucket, threatBucket })
     : 'Reading conditions for your area…';
 
   // Confidence breakdown — computes the weakest-link confidence across

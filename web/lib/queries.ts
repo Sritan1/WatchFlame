@@ -35,15 +35,19 @@ export function useRiskFromWeather(
   const tempInt = weather ? Math.round(weather.temperature) : undefined;
   const humidityInt = weather ? Math.round(weather.humidity) : undefined;
   const windInt = weather ? Math.round(weather.wind_speed) : undefined;
+  // season is part of the request (it selects the vegetation multiplier), so it
+  // must be in the key — otherwise a cached score is served across a season
+  // boundary even though the score should change.
+  const season = currentSeason();
   return useQuery({
-    queryKey: ['risk', tempInt, humidityInt, windInt, coords?.lat, coords?.lon],
+    queryKey: ['risk', tempInt, humidityInt, windInt, coords?.lat, coords?.lon, season],
     queryFn: () =>
       api.risk({
         temperature: tempInt!,
         humidity: humidityInt!,
         wind_speed: windInt!,
         days_since_rain: 7,
-        season: currentSeason(),
+        season,
         ...(coords ? { lat: coords.lat, lon: coords.lon } : {}),
       }),
     enabled: !!weather,
@@ -109,6 +113,13 @@ export function useWeather(loc: LatLon | undefined) {
   });
 }
 
+// Health-reporting queries poll on this cadence while their screen is focused.
+// staleTime alone never triggers a refetch, so without an interval a feed that
+// is down when the screen mounts would stop re-reporting; its "feed down" note
+// would then age out of the source-health store (FRESH_MS = 20 min there) and
+// vanish while the feed is still down. Keep every interval below that 20 min.
+const HEALTH_REFETCH_MS = 15 * 60_000;
+
 /** Satellite fire detections around the user. */
 export function useFiresAroundMe(me: LatLon | undefined, radiusMiles = 250) {
   const bbox = me ? bboxAround(me, radiusMiles) : undefined;
@@ -117,6 +128,7 @@ export function useFiresAroundMe(me: LatLon | undefined, radiusMiles = 250) {
     queryFn: () => api.fires({ days: 1, bbox }),
     enabled: !!me,
     staleTime: 10 * 60_000,
+    refetchInterval: 10 * 60_000,
   });
 }
 
@@ -146,10 +158,18 @@ export function useNamedIncidentsNear(
   reportHealth = true,
 ) {
   return useQuery({
-    queryKey: ['incidents-near', point?.lat, point?.lon, radiusMi, limit],
+    // reportHealth is in the key on purpose: it drives a queryFn side effect
+    // (whether a failure marks NIFC/Cal Fire down in the global store), so a
+    // reportHealth:true and a reportHealth:false caller for the same point must
+    // never dedupe into one shared query — otherwise whichever mounts first
+    // silently decides the reporting behavior for both.
+    queryKey: ['incidents-near', point?.lat, point?.lon, radiusMi, limit, reportHealth],
     queryFn: () => api.incidentsNear(point!.lat, point!.lon, radiusMi, limit, reportHealth),
     enabled: !!point,
     staleTime: 5 * 60_000,
+    // Only the health-reporting callers need to keep re-reporting; detail
+    // screens pass reportHealth:false and don't drive the down-note.
+    refetchInterval: reportHealth ? 5 * 60_000 : false,
   });
 }
 
@@ -160,6 +180,7 @@ export function useActiveDisasters(point: LatLon | undefined) {
     queryFn: () => api.disastersNear(point!.lat, point!.lon),
     enabled: !!point,
     staleTime: 15 * 60_000,
+    refetchInterval: HEALTH_REFETCH_MS,
   });
 }
 
@@ -170,6 +191,9 @@ export function useNearbyShelters(me: LatLon | undefined, radiusMi = 50, limit =
     queryFn: () => api.shelters(me!.lat, me!.lon, radiusMi, limit),
     enabled: !!me,
     staleTime: 60 * 60_000,
+    // Re-verify shelter-source health within FRESH_MS even though the data
+    // itself is cached for an hour.
+    refetchInterval: HEALTH_REFETCH_MS,
   });
 }
 

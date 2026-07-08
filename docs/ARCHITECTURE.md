@@ -51,7 +51,7 @@ A separate gradient-boosted classifier (`HistGradientBoostingClassifier`) for a 
 - **Training data:** 32,382 examples. The 4,897 positives are real fire-ignition days (FPA-FOD + Open-Meteo); the negatives are "typical day" rows, drawn both from those same fire locations and from 3,000 non-fire background locations (`scripts/build_ignition_dataset.py`).
 - **Evaluation:** leakage-safe spatial-block cross-validation against a logistic baseline gives **ROC-AUC 0.84** and PR-AUC 0.488 (no-skill baseline 0.151), isotonic-calibrated (Brier 0.163 to 0.100). A separate out-of-time test (train before 2010, test 2010–2015) holds at ROC-AUC 0.83, so a 6-year forward gap barely moves it (`scripts/temporal_validation.py`).
 - **Cross-check:** permutation importance ranks VPD and KBDI on top, the same drivers the rule-based index uses.
-- **Land-cover fix (v2):** the land-cover feature plus the background negatives correct v1's over-flagging of low-fuel cities. A cool, windy spring day in dense-urban Chicago drops from the 76th percentile to the 61st, while dry Phoenix stays high. See the [model card](ignition_model_card.md#addressing-the-over-flag-v2).
+- **Over-flag fix:** the land-cover feature and background negatives, plus a later calibration and look-back correction, bring down the model's early over-flagging of low-fuel cities. A cool, windy spring day in dense-urban Chicago drops from the 76th percentile to about the 39th ("low"), while dry Phoenix stays high. Ranking is unchanged (spatial ROC-AUC 0.84). See the [model card](ignition_model_card.md#addressing-the-over-flag-v2).
 
 ![Ignition model: ROC and reliability](ignition_eval.png)
 

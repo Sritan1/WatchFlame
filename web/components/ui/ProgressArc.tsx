@@ -47,7 +47,9 @@ export function ProgressArc({
           fill="none"
           stroke={color}
           strokeWidth="4"
-          strokeLinecap="round"
+          // A round cap on a zero-length dash still paints a dot (a stray glow at
+          // 0% progress), so use a butt cap until there is something to show.
+          strokeLinecap={dash > 0 ? 'round' : 'butt'}
           strokeDasharray={`${dash} ${arcLen}`}
           style={{
             transition: 'stroke-dasharray 0.5s cubic-bezier(0.2, 0.7, 0.3, 1)',

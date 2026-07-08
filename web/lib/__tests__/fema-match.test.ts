@@ -12,9 +12,16 @@ describe('matchIncidentByFemaTitle', () => {
     expect(matchIncidentByFemaTitle('Park Fire', fires)?.name).toBe('Park Fire');
   });
 
-  it('prefers the longest word-boundary match, not a loose substring', () => {
-    // "Cow Creek" must not collapse onto the unrelated, shorter "Creek Fire".
+  it('prefers the higher-overlap match, not a coincidental short name', () => {
+    // "Cow Creek" (2 shared tokens) must beat the unrelated "Creek Fire" (1).
     expect(matchIncidentByFemaTitle('Cow Creek Fire', fires)?.name).toBe('Cow Creek Fire');
+  });
+
+  it('prefers the most specific match over a broader superset name', () => {
+    // "Canyon Fire" must land on "Canyon Fire", not the superset
+    // "Grand Canyon Complex" (same shared token, but extra noise).
+    const fires2 = [inc('Grand Canyon Complex'), inc('Canyon Fire')];
+    expect(matchIncidentByFemaTitle('Canyon Fire', fires2)?.name).toBe('Canyon Fire');
   });
 
   it('ignores too-short tokens and returns null when nothing matches', () => {

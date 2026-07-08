@@ -79,6 +79,14 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
         # Sparse response — not enough history to compute a stable KBDI.
         print(f"[kbdi] sparse archive response for {lat},{lon} (n={len(temps_raw)}); skipping")
         return None
+    if len(temps_raw) != len(precs_raw):
+        # Misaligned arrays (partial upstream response) would make
+        # compute_kbdi_series raise; degrade to None instead.
+        print(
+            f"[kbdi] misaligned archive arrays for {lat},{lon} "
+            f"(temps={len(temps_raw)}, precs={len(precs_raw)}); skipping"
+        )
+        return None
 
     # Open-Meteo occasionally returns null for missing days; use simple
     # carry-forward / zero-fill so the integrator never sees a None.

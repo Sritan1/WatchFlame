@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from ..core.parse import safe_float
+from ..core.source_health import SourceUnavailable
 
 CALFIRE_URL = "https://incidents.fire.ca.gov/umbraco/api/IncidentApi/List"
 
@@ -27,6 +28,11 @@ _CACHE: dict[str, Any] = {"ts": 0.0, "data": []}
 
 def _ttl() -> int:
     return int(os.getenv("CALFIRE_CACHE_TTL_SECONDS", "300"))  # 5 minutes
+
+
+def _fail_ttl() -> int:
+    # How long a transient upstream failure suppresses re-hitting Cal Fire.
+    return int(os.getenv("CALFIRE_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 @dataclass
@@ -51,6 +57,11 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
     if not force and _CACHE["data"] and now - _CACHE["ts"] < _ttl():
         return [_to_inc(r) for r in _CACHE["data"]]
 
+    # A recent failure? Back off and signal the outage so /incidents/near
+    # reports calfire `down` rather than conflating it with an empty feed.
+    if not force and now - _CACHE.get("fail_ts", 0.0) < _fail_ttl():
+        raise SourceUnavailable("calfire upstream failed (cached)")
+
     headers = {"User-Agent": "wildfire-app/0.2 (portfolio)", "Accept": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -60,24 +71,34 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
                 headers=headers,
             )
             resp.raise_for_status()
+            # A 200 with a non-JSON body (Cloudflare / maintenance interstitial)
+            # raises ValueError here — treat it as an outage, not a crash.
             data = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # /incidents/near already swallows our exceptions via gather().
-        # Same pattern as nifc.py — short-cache empty so the log stays clean
-        # and we briefly back off the Cal Fire endpoint while it's degraded.
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,
+    ) as e:
+        # Real outage. Back off (one probe per _fail_ttl()) and raise so
+        # /incidents/near reports `down` instead of showing an empty list.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
-            f"[calfire] upstream {status} ({type(e).__name__}); returning empty"
+            f"[calfire] upstream {status} ({type(e).__name__}); reporting down"
         )
-        _CACHE["ts"] = now - max(_ttl() - 60, 0)
-        _CACHE["data"] = []
-        return []
+        _CACHE["fail_ts"] = now
+        raise SourceUnavailable(f"calfire upstream {status}") from e
 
     if not isinstance(data, list):
-        return []
+        # Unexpected 200 shape (error wrapper) — a real upstream problem.
+        _CACHE["fail_ts"] = now
+        raise SourceUnavailable("calfire returned a non-list body")
 
     raw_rows: list[dict[str, Any]] = []
     for inc in data:
+        if not isinstance(inc, dict):
+            # A null / non-object element must not abort the whole feed.
+            continue
         try:
             lat = float(inc.get("Latitude"))
             lon = float(inc.get("Longitude"))
@@ -109,6 +130,7 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
 
     _CACHE["ts"] = now
     _CACHE["data"] = raw_rows
+    _CACHE["fail_ts"] = 0.0
     return [_to_inc(r) for r in raw_rows]
 
 

@@ -39,8 +39,15 @@ async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
             f"({type(e).__name__}); returning empty"
         )
         return []
+    # A 200 can still carry an unexpected shape (an error object, not a list).
+    # Iterating a dict would yield its keys and crash on item.get(...).
+    if not isinstance(data, list):
+        print(f"[owm-geocode] non-list payload for {query!r}; returning empty")
+        return []
     out: list[dict[str, Any]] = []
     for item in data:
+        if not isinstance(item, dict):
+            continue
         out.append(
             {
                 "name": item.get("name"),
@@ -80,10 +87,17 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
         )
         raise HTTPException(status_code=503, detail="Weather service unavailable")
 
-    main = data.get("main", {})
-    wind = data.get("wind", {})
-    weather_arr = data.get("weather", [{}])
-    conditions = weather_arr[0].get("description") if weather_arr else None
+    # A 200 with a null/missing `main`/`wind` or a non-dict `weather[0]` (OWM
+    # occasionally returns a bare error object) must degrade, not 500. `.get(k)
+    # or {}` handles both the missing-key and explicit-null cases.
+    if not isinstance(data, dict):
+        print(f"[owm] non-object payload for {lat:.2f},{lon:.2f}; raising 503")
+        raise HTTPException(status_code=503, detail="Weather service unavailable")
+    main = data.get("main") or {}
+    wind = data.get("wind") or {}
+    weather_arr = data.get("weather") or [{}]
+    first = weather_arr[0] if isinstance(weather_arr, list) and weather_arr else {}
+    conditions = first.get("description") if isinstance(first, dict) else None
 
     out = {
         "temperature": main.get("temp"),
