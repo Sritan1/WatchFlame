@@ -19,7 +19,7 @@ import {
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds } from '@/lib/api';
-import type { ThreatDriver } from '@/lib/composite-risk';
+import { THREAT_RADIUS_MI, type ThreatDriver } from '@/lib/composite-risk';
 import { hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, type DistanceUnit } from '@/lib/use-units';
 
@@ -38,6 +38,15 @@ const TIER_PHRASE: Record<RiskLevel, string> = {
   high: 'a high-risk day. Review your plan',
   extreme: 'an extreme-risk day. Be ready to act',
 };
+
+// Distinct categorical dot colors so the three factors are easy to tell apart
+// in the legend. These are just visual keys — NOT risk-tier colors; each
+// factor's actual severity shows on its value card below.
+const FACTOR_DOT = {
+  ignition: '#4FA8FF', // blue
+  weather: '#E8B339', // amber
+  threat: '#F04438', // red
+} as const;
 
 function ordinal(n: number): string {
   const i = Math.round(n);
@@ -88,16 +97,39 @@ export function CompositeExplainerModal({
 
   return (
     <Modal open={open} onClose={onClose} eyebrow="Methodology" title="Score Breakdown" maxWidth={660}>
-      <p style={textBody(ae)}>
-        Your overall level is built from <strong style={{ color: ae.text }}>three things</strong>,
-        combined in <strong style={{ color: ae.text }}>two steps</strong>. First, the{' '}
-        <strong style={{ color: ae.text }}>fire weather</strong>{' '}around you is mixed with how likely a{' '}
-        <strong style={{ color: ae.text }}>fire is to start</strong>{' '}today. Then that is weighed
-        against any <strong style={{ color: ae.text }}>active fire</strong>{' '}burning near you.
+      <p style={{ ...textBody(ae), fontSize: 15 }}>
+        The overall risk comes from three factors, each answering a different question.
       </p>
 
+      {/* Plain-language legend of the three factors. Order reads as cause and
+          effect: could a fire start, how intense if it does, and is one already
+          threatening you. Each dot is tinted to that factor's current tier. Names
+          use the aesthetic's display font/weight (so it tracks the user's chosen
+          look) and are enlarged so the legend stands out; the sizes trim on
+          mobile via .app-factor-* (globals.css). */}
+      <div className="app-factor-legend" style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
+        <FactorLegendRow
+          ae={ae}
+          color={FACTOR_DOT.ignition}
+          name="Ignition Likelihood"
+          question="How much does today look like a day fires usually start?"
+        />
+        <FactorLegendRow
+          ae={ae}
+          color={FACTOR_DOT.weather}
+          name="Fire Weather"
+          question="If a fire started today, how intense could it become?"
+        />
+        <FactorLegendRow
+          ae={ae}
+          color={FACTOR_DOT.threat}
+          name="Active Fire Threat"
+          question="How threatening is the most serious fire near you?"
+        />
+      </div>
+
       {/* Three input cards */}
-      <div className="app-stack" style={{ marginTop: 18, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      <div className="app-stack" style={{ marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
         <ComponentCard
           ae={ae}
           label="Fire weather"
@@ -132,7 +164,7 @@ export function CompositeExplainerModal({
                     driver.incident.acres != null ? `, ${ACRES_FORMAT.format(driver.incident.acres)} ac` : ''
                   }`
                 : `Satellite detection ${formatDistance(driver.distanceMi, distanceUnit, 1)} away`
-              : `No active fires within ${formatDistance(50, distanceUnit, 0)} of your location`
+              : `No active fires within ${formatDistance(THREAT_RADIUS_MI, distanceUnit, 0)} of your location`
           }
         />
       </div>
@@ -140,9 +172,8 @@ export function CompositeExplainerModal({
       {/* Stage 1 — environment */}
       <Section ae={ae} title="Step 1: The environment around you">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
-          This step combines the fire weather with how likely a fire is to start today. If either one
-          is low, your environment stays at moderate or below. It takes both being elevated to push
-          it higher.
+          This step combines the fire weather with ignition likelihood. If either one is low, your
+          environment stays at moderate or below. It takes both being elevated to push it higher.
         </p>
         <EnvMatrixGrid weatherBucket={weatherBucket} ignitionBucket={ignitionBucket} />
         <AxisLabels ae={ae} left="FIRE WEATHER" right="IGNITION LIKELIHOOD" />
@@ -155,7 +186,7 @@ export function CompositeExplainerModal({
       </Section>
 
       {/* Stage 2 — headline */}
-      <Section ae={ae} title="Step 2: Your overall level">
+      <Section ae={ae} title="Step 2: Your overall risk level">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
           Now your environment is weighed against the most serious active fire near you. Your result
           is highlighted in the grid below.
@@ -172,6 +203,64 @@ export function CompositeExplainerModal({
 }
 
 // ─── Subcomponents ────────────────────────────────────────────────────────
+
+function FactorLegendRow({
+  ae,
+  color,
+  name,
+  question,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  color: string;
+  name: string;
+  question: string;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 12 }}>
+      <span
+        aria-hidden
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 99,
+          background: color,
+          boxShadow: `0 0 8px ${color}`,
+          flexShrink: 0,
+          marginTop: 8,
+        }}
+      />
+      {/* minWidth:0 lets a long question wrap inside the flex row instead of
+          forcing horizontal overflow on narrow (mobile) widths. */}
+      <div style={{ minWidth: 0 }}>
+        <div
+          className="app-factor-name"
+          style={{
+            fontFamily: ae.fontDisplay,
+            fontSize: 17,
+            fontWeight: ae.titleWeight,
+            letterSpacing: ae.titleTracking,
+            color: ae.text,
+            lineHeight: 1.2,
+          }}
+        >
+          {name}
+        </div>
+        <div
+          className="app-factor-q"
+          style={{
+            marginTop: 3,
+            fontFamily: ae.fontBody,
+            fontSize: 14.5,
+            lineHeight: 1.5,
+            color: ae.textDim,
+          }}
+        >
+          {question}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ComponentCard({
   ae,

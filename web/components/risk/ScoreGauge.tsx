@@ -13,7 +13,7 @@
 // same note. Don't mix it into the boundary math.
 
 import { useAesthetic } from '@/lib/aesthetic';
-import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
+import { getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 interface Zone {
   level: RiskLevel;
@@ -74,7 +74,7 @@ export function ScoreGauge({
       >
         {segments.map((s, i) => {
           const x = pad + s.from * innerW;
-          const rgb = hexRgb(s.color);
+          const rgb = hexToRgb(s.color);
           return (
             <g key={s.level}>
               <rect
@@ -137,11 +137,4 @@ export function ScoreGauge({
       </svg>
     </div>
   );
-}
-
-function hexRgb(hex: string): string {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-  const n = parseInt(full, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(', ');
 }

@@ -1,9 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
-import { Suspense } from 'react';
 
 import { DisclaimerGate } from '@/components/DisclaimerGate';
-import { SourceHealthDevOverlay } from '@/components/dev/SourceHealthDevOverlay';
 import { AestheticProvider } from '@/lib/aesthetic';
 import { QueryProvider } from '@/lib/query-provider';
 import { SavedLocationsProvider } from '@/lib/use-saved-locations';
@@ -52,13 +50,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <QueryProvider>
           <AestheticProvider>
-            {/* Dev-only: `?health=firms,nifc:down,…` forces source-health
-                indicators on for visual testing. Stripped from prod builds. */}
-            {process.env.NODE_ENV !== 'production' ? (
-              <Suspense fallback={null}>
-                <SourceHealthDevOverlay />
-              </Suspense>
-            ) : null}
             <DisclaimerGate />
             <UnitsProvider>
               <SavedLocationsProvider>{children}</SavedLocationsProvider>

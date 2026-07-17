@@ -12,14 +12,11 @@
 
 import { useState, type ReactNode } from 'react';
 
+import { BackupEstimateCallout } from '@/components/risk/BackupEstimateCallout';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
-import { Icon } from '@/components/Icon';
 import { InputPanel } from '@/components/risk/InputPanel';
 import { useAesthetic } from '@/lib/aesthetic';
-
-const AMBER = '#E8B339';
-const AMBER_RGB = '232, 179, 57';
 
 export type DroughtMode = 'kbdi' | 'days';
 
@@ -102,7 +99,7 @@ export function DroughtPanel({
           color={color}
           glowRgb={glowRgb}
           index={4}
-          caption="Keetch-Byram Drought Index, 0-800. Higher = drier soil + fuels."
+          caption="Keetch-Byram Drought Index, 0-800. Higher means drier soil and fuels."
           onChange={onKbdiChange}
           isLoading={isLoading}
           footer={footer}
@@ -126,82 +123,13 @@ export function DroughtPanel({
       </div>
 
       {/* Mode explainer — only shown in days mode since KBDI is the canonical
-       *  drought input. Mirrors VegetationPanel's backup-estimate callout, and
-       *  is dismissible via the × for the same reason. */}
+       *  drought input. Shares the dismissible backup-estimate callout with
+       *  VegetationPanel. */}
       {mode === 'days' && !dismissed ? (
-        <div
-          style={{
-            marginTop: 14,
-            padding: 12,
-            borderRadius: 10,
-            background: `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.05), rgba(${AMBER_RGB}, 0.02))`,
-            border: `0.5px solid rgba(${AMBER_RGB}, 0.22)`,
-            display: 'flex',
-            gap: 10,
-            alignItems: 'flex-start',
-          }}
-        >
-          <div
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
-              background: `rgba(${AMBER_RGB}, 0.12)`,
-              border: `0.5px solid rgba(${AMBER_RGB}, 0.30)`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="info" size={11} color={AMBER} strokeWidth={1.6} />
-          </div>
-          <span
-            style={{
-              flex: 1,
-              fontFamily: ae.fontBody,
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: ae.textDim,
-            }}
-          >
-            <span style={{ color: AMBER, fontWeight: 600 }}>Backup estimate. </span>
-            Normally Status pulls a full drought index from recent weather data. When that&apos;s
-            unavailable, it estimates dryness from days since rain instead, which is what you&apos;re
-            adjusting here.
-          </span>
-          <button
-            type="button"
-            onClick={() => setDismissed(true)}
-            aria-label="Dismiss"
-            style={{
-              flexShrink: 0,
-              width: 20,
-              height: 20,
-              marginTop: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-              borderRadius: 6,
-              background: 'transparent',
-              border: 'none',
-              color: ae.textMute,
-              cursor: 'pointer',
-              transition: 'color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = ae.text;
-              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = ae.textMute;
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            <Icon name="x" size={12} strokeWidth={1.8} />
-          </button>
-        </div>
+        <BackupEstimateCallout
+          onDismiss={() => setDismissed(true)}
+          body="Normally Status pulls a full drought index from recent weather data. When that's unavailable, it estimates dryness from days since rain instead, which is what you're adjusting here."
+        />
       ) : null}
     </div>
   );

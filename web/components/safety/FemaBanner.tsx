@@ -1,8 +1,8 @@
 'use client';
 
 // Full-width FEMA banner for the Safety screen (24x32 padding, 80px icon box)
-// with three action CTAs: Show on Map, FEMA Page, Apply for Assistance. Only
-// shown when there's an active declaration.
+// with two action CTAs: Show on Map and FEMA Page. Only shown when there's an
+// active declaration.
 
 import { useRouter } from 'next/navigation';
 
@@ -12,10 +12,11 @@ import { useAesthetic } from '@/lib/aesthetic';
 import type { ActiveDisaster } from '@/lib/api';
 import { matchIncidentByFemaTitle } from '@/lib/fema-match';
 import { useNamedIncidentsNear } from '@/lib/queries';
+import { RISK_LEVELS } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 
-const AMBER = '#E8B339';
-const AMBER_RGB = '232, 179, 57';
+const AMBER = RISK_LEVELS.moderate.color;
+const AMBER_RGB = RISK_LEVELS.moderate.glow;
 
 export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
   const { ae } = useAesthetic();
@@ -147,7 +148,7 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
               lineHeight: 1.1,
             }}
           >
-            Federal disaster declaration · individual assistance open
+            Federal disaster declaration active
           </div>
           <div
             style={{
@@ -158,8 +159,8 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
               lineHeight: 1.5,
             }}
           >
-            Designated for {disaster.designated_area}. Households in the impact zone are eligible
-            for housing and other needs assistance.
+            Designated for {disaster.designated_area}. Check FEMA.gov for the assistance that may be
+            available in your area.
           </div>
         </div>
         <div

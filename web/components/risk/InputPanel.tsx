@@ -45,7 +45,11 @@ export function InputPanel({
   footer?: ReactNode;
 }) {
   const { ae } = useAesthetic();
-  const pct = ((value - min) / (max - min)) * 100;
+  // Clamp to the track: a seeded local reading can land outside the slider's
+  // [min,max] (e.g. an 80 km/h wind on the 0-60 dial, or 45 days-since-rain on
+  // the 0-30 dial). Without clamping, pct exceeds 100% and shoves the fill +
+  // thumb off the visible track (clipped by the card's overflow:hidden).
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
   const decimals = step >= 1 ? 0 : Math.max(0, Math.ceil(-Math.log10(step)));
   const display = value.toFixed(decimals);
 

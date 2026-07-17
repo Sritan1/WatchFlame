@@ -514,35 +514,32 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .inc-rail-cta:active { transform: translateY(0) scale(0.992); }
 
 /* ───── Leaflet map markers (rendered via L.divIcon HTML) ───── */
-.fire-marker-wrapper, .user-marker-wrapper { background: transparent !important; border: none !important; }
+.user-marker-wrapper, .inc-node-wrapper { background: transparent !important; border: none !important; }
 
-.fire-marker {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.fire-marker__pulse {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 32px;
-  height: 32px;
+/* ───── Named-incident markers — nucleus (L.divIcon HTML) ─────
+ * Replaces the old glowing core dot. A SEPARATE system from the satellite flame
+ * detections (.sat-flame*), so the two layers stay visually distinct: incidents
+ * are a tight severity-tinted core. Glow is intentionally restrained — a small
+ * shadow, not the old 22px bloom — so a map full of incidents doesn't wash out.
+ * No animation (the rotating ring was repainting each frame and dragging the
+ * map). The hover transform lives on the inner core, never on .inc-node-wrapper
+ * (leaflet positions that root via an inline translate3d, which a transform here
+ * would clobber). */
+.inc-node-box { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+.inc-node-core {
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  opacity: 0.42;
-  animation: ember-pulse-marker 2s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
-  pointer-events: none;
+  background: radial-gradient(circle at 32% 30%, #fff, var(--sev) 62%);
+  /* Restrained halo, tinted by severity via --sev-rgb — enough to lift the core
+   * off the tiles, far short of the old bloom. */
+  box-shadow: 0 0 5px 1px rgba(var(--sev-rgb), 0.45);
+  transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-.fire-marker__core {
-  position: relative;
-  border-radius: 50%;
-  transition: all 0.25s ease;
-}
-.fire-marker[data-selected="true"] .fire-marker__core {
-  transform: scale(1.05);
+.inc-node-box[data-selected="true"] .inc-node-core {
+  width: 16.5px;
+  height: 16.5px;
+  box-shadow: 0 0 7px 1px rgba(var(--sev-rgb), 0.55);
 }
 
 @keyframes ember-pulse-marker {
@@ -578,6 +575,92 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   background: #3B82F6;
   border: 3px solid #fff;
   box-shadow: 0 0 16px rgba(59, 130, 246, 0.8);
+}
+
+/* ───── FIRMS satellite detections — flame glyphs (L.divIcon HTML) ─────
+ * Replaces the old flat CircleMarker dots. A SEPARATE system from the incident
+ * markers (.inc-node*), which are untouched. Tiered for looks + performance:
+ *   base   → ember-tip flame, transform-only sway (cheap) on EVERY detection
+ *   bloom  → + a soft pulsing glow, only on the hottest few (MapImpl bloomKeys)
+ *   sparks → + rising embers, only on the SELECTED one (never more than one)
+ * All animated transforms live on inner elements, never on .sat-flame-wrapper:
+ * leaflet positions that root via an inline translate3d, so a transform here
+ * would clobber the position and make the marker jump to the corner. */
+.sat-flame-wrapper { background: transparent !important; border: none !important; }
+.sat-flame-box { position: relative; width: 100%; height: 100%; }
+.sat-flame-pos {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;                 /* seats the flame BASE on the anchor point */
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.sat-flame {
+  display: block;
+  transform-origin: bottom center;
+  animation: sat-sway 1.9s ease-in-out infinite;
+  filter: drop-shadow(0 0 3px rgba(255, 120, 60, 0.55));
+}
+.sat-core { animation: sat-core-glow 1.3s ease-in-out infinite; }
+
+/* Bloom — hottest few only. Centered behind the flame body. */
+.sat-bloom {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 122, 42, 0.5), rgba(240, 68, 56, 0) 70%);
+  filter: blur(2px);
+  animation: sat-bloom 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Selected — enlarge (from the base) + rising sparks. */
+.sat-flame-box[data-selected="true"] .sat-flame-pos { transform: translateX(-50%) scale(1.28); }
+.sat-embers { position: absolute; left: 50%; top: 3px; width: 2px; height: 2px; pointer-events: none; }
+.sat-embers span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, #FF9D3A 55%, #F04438);
+  box-shadow: 0 0 5px #FF5A2A;
+  animation: sat-rise 2.2s ease-out infinite;
+}
+.sat-embers span:nth-child(1) { --dx: -6px; animation-delay: 0s; }
+.sat-embers span:nth-child(2) { --dx: 5px; animation-delay: 0.7s; }
+.sat-embers span:nth-child(3) { --dx: -1px; animation-delay: 1.3s; }
+
+/* Desktop hover: swell the inner flame, NOT the leaflet-positioned wrapper. */
+.sat-flame-wrapper:hover { cursor: pointer; }
+.sat-flame-wrapper:hover .sat-flame-pos { transform: translateX(-50%) scale(1.18); }
+
+@keyframes sat-sway {
+  0%, 100% { transform: scaleY(1) skewX(0); }
+  25% { transform: scaleY(1.07) skewX(-3.5deg); }
+  50% { transform: scaleY(0.95) skewX(2deg); }
+  75% { transform: scaleY(1.04) skewX(-1.5deg); }
+}
+@keyframes sat-core-glow { 0%, 100% { opacity: 0.68; } 50% { opacity: 1; } }
+@keyframes sat-bloom {
+  0%, 100% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.85; transform: translateX(-50%) scale(1.18); }
+}
+@keyframes sat-rise {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--dx), -22px) scale(0.3); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sat-flame, .sat-core, .sat-bloom, .sat-embers span { animation: none !important; }
+  .sat-embers { display: none; }
 }
 
 /* Leaflet attribution + zoom controls: match dark theme */
@@ -624,10 +707,11 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   filter: brightness(1.15);
   cursor: pointer;
 }
-/* DivIcon-based incident markers (HTML inside a positioned wrapper) need a
- * different hover target — the wrapper is .fire-marker-wrapper. */
-.fire-marker-wrapper { transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1); }
-.fire-marker-wrapper:hover { transform: scale(1.12); cursor: pointer; }
+/* DivIcon incident markers: hover swells the inner core, never the wrapper
+ * (which leaflet positions via an inline transform that a wrapper transform
+ * would clobber, snapping the marker to the corner). */
+.inc-node-wrapper:hover { cursor: pointer; }
+.inc-node-wrapper:hover .inc-node-core { transform: scale(1.18); }
 
 /* ═══════════ Mobile (≤768px) ═══════════════════════════════════════════════
  * Overrides ONLY. This block never matches above 768px, so the desktop layout
@@ -728,6 +812,12 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   /* Let a normally-truncated (nowrap + ellipsis) label wrap to full text — e.g.
    * a long fire name in the Threat Source card. */
   .app-wrap { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+
+  /* Score Breakdown factor legend: keep the enlarged desktop factor names +
+   * questions from feeling oversized on a phone (they still wrap, via minWidth:0
+   * on the text block). */
+  .app-factor-legend .app-factor-name { font-size: 15.5px !important; }
+  .app-factor-legend .app-factor-q { font-size: 13.5px !important; }
 
   /* Map: stack the canvas above the incident rail instead of side-by-side, and
    * let the page scroll (the desktop version is a fixed-height split pane). */

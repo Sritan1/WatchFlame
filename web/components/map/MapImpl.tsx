@@ -6,13 +6,21 @@
 
 import L, { type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AttributionControl, CircleMarker, Circle, MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
+import { useEffect, useMemo, useRef } from 'react';
+import { AttributionControl, Circle, MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
 
 import type { FireFeature, NamedIncident } from '@/lib/api';
+import { FlameGradientDef, satelliteFlameIcon } from '@/components/map/flame-marker';
+import { incidentNucleusIcon } from '@/components/map/incident-marker';
 import { MapTilerLogo } from '@/components/ui/MapTilerLogo';
 import { SourceNote } from '@/components/ui/SourceNote';
-import { useSourceHealth } from '@/lib/source-health';
+import { satKey } from '@/lib/firms';
+import {
+  LEAFLET_ATTRIB_PREFIX,
+  MAP_ATTRIBUTION,
+  MAPTILER_TILE_URL,
+  useTileHealth,
+} from '@/lib/map-tiles';
 import { getRisk, hexToRgb, type RiskLevel } from '@/lib/theme';
 
 /** Two-kind selection: named-incident from NIFC/Cal Fire OR a single
@@ -40,46 +48,6 @@ function incidentRadiusM(inc: NamedIncident): number {
   );
 }
 
-// Streets-v2 is MapTiler's most Google-Maps-like style — bright base, colored
-// road hierarchy, full POI labeling. Swap to `voyager` for a softer
-// near-white palette or `streets-v2-dark` to revert to a dark theme.
-const TILE_URL = (key: string) =>
-  `https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key=${key}`;
-const ATTRIB =
-  '© <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener noreferrer">MapTiler</a> © ' +
-  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
-// Leaflet's default prefix link opens in the same tab; provide our own that
-// opens in a new tab so clicking it never navigates away from the map.
-const LEAFLET_PREFIX =
-  '<a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a>';
-
-function fireIcon(severity: RiskLevel, isSelected: boolean): L.DivIcon {
-  // The reference's marker is a colored core with optional outer pulse rings.
-  // We render the same with two stacked absolute divs; CSS for `.fire-marker`
-  // is in globals.css so animations + glow can use keyframes.
-  const r = getRisk(severity);
-  const isAlarming = severity === 'extreme' || severity === 'high';
-  const coreSize = isSelected ? 22 : 18;
-  const html = `
-    <div class="fire-marker" data-selected="${isSelected}" data-alarming="${isAlarming}">
-      ${isAlarming ? `<div class="fire-marker__pulse" style="background:${r.color};animation-delay:0s"></div>` : ''}
-      ${isAlarming ? `<div class="fire-marker__pulse" style="background:${r.color};animation-delay:1s"></div>` : ''}
-      <div class="fire-marker__core" style="
-        width:${coreSize}px;height:${coreSize}px;
-        background:radial-gradient(circle at 30% 30%, #fff, ${r.color} 60%);
-        box-shadow: 0 0 22px ${r.color}, 0 0 6px #fff;
-        border:${isSelected ? 2 : 1.5}px solid rgba(255,255,255,0.6);
-      "></div>
-    </div>
-  `;
-  return L.divIcon({
-    html,
-    className: 'fire-marker-wrapper',
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-  });
-}
-
 function userIcon(): L.DivIcon {
   const html = `
     <div class="user-marker">
@@ -93,6 +61,36 @@ function userIcon(): L.DivIcon {
     iconSize: [40, 40],
     iconAnchor: [20, 20],
   });
+}
+
+/** Fire energy used to rank detections for the bloom tier. FRP (fire radiative
+ *  power) is the truest measure; brightness (Kelvin, ~300 baseline) is the
+ *  fallback when a source omits FRP. Both land in a roughly comparable 0-100+
+ *  range for active fire. The flame icon itself lives in ./flame-marker. */
+function satIntensity(s: FireFeature): number {
+  const f = s.properties.frp;
+  if (f != null) return f;
+  const b = s.properties.brightness;
+  return b != null ? b - 300 : 0;
+}
+
+/** Custom leaflet panes so the satellite flames layer predictably against the
+ *  incident markers, instead of relying on marker zIndexOffset (which competes
+ *  with leaflet's latitude-derived z and can lose). Panes are separate stacking
+ *  contexts, so their z-index wins outright:
+ *    firms      (550) — non-selected flames: above the perimeter circles
+ *                       (overlayPane 400), below the incident markers (600).
+ *    firms-top  (620) — the selected flame: above the incident markers so its
+ *                       sparks read, still below tooltips (650). */
+function MapPanes() {
+  const map = useMap();
+  useEffect(() => {
+    const firms = map.getPane('firms') ?? map.createPane('firms');
+    firms.style.zIndex = '550';
+    const firmsTop = map.getPane('firms-top') ?? map.createPane('firms-top');
+    firmsTop.style.zIndex = '620';
+  }, [map]);
+  return null;
 }
 
 /** Imperative camera helper — pans/zooms when the selection OR the user's
@@ -150,8 +148,8 @@ export function MapImpl({
   center: [number, number];
   /** Named (tracked) incidents from NIFC + Cal Fire. */
   fires: NamedIncident[];
-  /** Satellite hot-pixel detections from NASA FIRMS. Rendered as small red
-   *  dots (CircleMarker — pixel-sized regardless of zoom). */
+  /** Satellite hot-pixel detections from NASA FIRMS. Rendered as flame glyphs
+   *  (divIcon — fixed pixel size regardless of zoom). */
   satellites: FireFeature[];
   severityOf: (f: NamedIncident) => RiskLevel;
   selection: MapSelection | null;
@@ -163,8 +161,8 @@ export function MapImpl({
     const map = new Map<string, L.DivIcon>();
     for (const f of fires) {
       const sev = severityOf(f);
-      map.set(`${f.id}:false`, fireIcon(sev, false));
-      map.set(`${f.id}:true`, fireIcon(sev, true));
+      map.set(`${f.id}:false`, incidentNucleusIcon(sev, false));
+      map.set(`${f.id}:true`, incidentNucleusIcon(sev, true));
     }
     return map;
   }, [fires, severityOf]);
@@ -172,28 +170,52 @@ export function MapImpl({
   const userMarker = useMemo(() => userIcon(), []);
 
   const selectedIncidentId = selection?.kind === 'incident' ? selection.id : null;
-  const selectedSatKey = selection?.kind === 'fire'
-    ? `${selection.feature.properties.lat.toFixed(5)},${selection.feature.properties.lon.toFixed(5)}`
-    : null;
+  const selectedSatKey = selection?.kind === 'fire' ? satKey(selection.feature) : null;
   const selectedFire = selectedIncidentId ? fires.find((f) => f.id === selectedIncidentId) : null;
   const selectedSeverity = selectedFire ? severityOf(selectedFire) : null;
 
+  // The "hottest few" detections that earn the pulsing bloom. Top ~15% by fire
+  // energy, capped at 6 and floored so a cluster of weak pixels gets none — this
+  // is what bounds the number of expensive (glow) animations regardless of how
+  // many detections come back.
+  const bloomKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (satellites.length === 0) return set;
+    const scored = satellites
+      .map((s) => ({ key: satKey(s), v: satIntensity(s) }))
+      .sort((a, b) => b.v - a.v);
+    const cap = Math.min(6, Math.max(1, Math.ceil(scored.length * 0.15)));
+    for (let i = 0; i < cap && i < scored.length; i++) {
+      if (scored[i].v > 12) set.add(scored[i].key);
+    }
+    return set;
+  }, [satellites]);
+
+  // Non-selected flame icons, memoized per detection so leaflet doesn't rebuild
+  // DOM every render. Selection is handled separately (below) so toggling a
+  // selection doesn't invalidate this whole map.
+  const satIcons = useMemo(() => {
+    const m = new Map<string, L.DivIcon>();
+    for (const s of satellites) {
+      const key = satKey(s);
+      m.set(key, satelliteFlameIcon(bloomKeys.has(key) ? 'bloom' : 'base', false, key));
+    }
+    return m;
+  }, [satellites, bloomKeys]);
+
+  // The single selected detection's icon (adds sparks + enlarges). At most one.
+  const selectedFlameIcon = useMemo(
+    () =>
+      selectedSatKey
+        ? satelliteFlameIcon(bloomKeys.has(selectedSatKey) ? 'bloom' : 'base', true, selectedSatKey)
+        : null,
+    [selectedSatKey, bloomKeys],
+  );
+
   const mapRef = useRef<LeafletMap | null>(null);
 
-  // Tile-load health. MapTiler/OSM tiles fail client-side (quota, key, network)
-  // with no backend signal, so we watch Leaflet's tile events directly. A few
-  // stray tileerrors are normal at the edges, so only flip the note after
-  // several pile up, and clear it as soon as a tile actually loads. We key the
-  // clear off the per-tile `tileload` event, NOT the batch `load` event:
-  // errored tiles count as "done" and fire `load` too, so on a full outage the
-  // batch `load` would immediately reset the error count and hide the note.
-  const [tilesDown, setTilesDown] = useState(false);
-  const tileErrorsRef = useRef(0);
-  // health.maptiler is only ever set by the dev `?health=` override (the
-  // backend has no tile-health signal), so it lets the tile note be tested
-  // without an actual tile outage.
-  const health = useSourceHealth();
-  const showTilesNote = tilesDown || health.maptiler === 'down';
+  // Client-side MapTiler/OSM tile-outage watcher, shared with the mini-map.
+  const { showTilesNote, tileEventHandlers } = useTileHealth();
 
   // Expose imperative zoom controls via global event so the floating buttons
   // (which sit outside MapContainer's tree) can call into the map.
@@ -212,6 +234,7 @@ export function MapImpl({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
+    <FlameGradientDef />
     <MapContainer
       ref={mapRef}
       center={center}
@@ -223,20 +246,12 @@ export function MapImpl({
       attributionControl={false}
       style={{ width: '100%', height: '100%', background: '#0B0E12' }}
     >
-      <AttributionControl prefix={LEAFLET_PREFIX} />
+      <AttributionControl prefix={LEAFLET_ATTRIB_PREFIX} />
+      <MapPanes />
       <TileLayer
-        url={TILE_URL(maptilerKey)}
-        attribution={ATTRIB}
-        eventHandlers={{
-          tileerror: () => {
-            tileErrorsRef.current += 1;
-            if (tileErrorsRef.current >= 4) setTilesDown(true);
-          },
-          tileload: () => {
-            tileErrorsRef.current = 0;
-            setTilesDown(false);
-          },
-        }}
+        url={MAPTILER_TILE_URL(maptilerKey)}
+        attribution={MAP_ATTRIBUTION}
+        eventHandlers={tileEventHandlers}
       />
 
       <Marker position={center} icon={userMarker} />
@@ -288,32 +303,26 @@ export function MapImpl({
         />
       ) : null}
 
-      {/* FIRMS satellite hot-pixel detections — rendered AFTER incident
-       *  circles so they sit on top and remain clickable through the larger
-       *  circles. Each ~375m thermal anomaly from Suomi NPP / NOAA-20 / Aqua
-       *  / Terra in the last 24h. Brightness drives radius (6-12px — bumped
-       *  from 4-8 so the hit target is reliable). */}
+      {/* FIRMS satellite hot-pixel detections — flame glyphs (see
+       *  satelliteFlameIcon). Each is a ~375m thermal anomaly from Suomi NPP /
+       *  NOAA-20 / Aqua / Terra in the last 24h. Custom panes (see MapPanes) do
+       *  the layering: the 'firms' pane sits beneath the named-incident markers
+       *  (the primary layer), and the selected one moves to the 'firms-top' pane
+       *  so its sparks read above everything. Panes beat marker zIndexOffset,
+       *  which competes with leaflet's latitude-derived z and can't be trusted. */}
       {satellites.map((s, i) => {
         const lat = s.properties.lat;
         const lon = s.properties.lon;
-        const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-        const bright = s.properties.brightness ?? 320;
-        // Brightness 300-400K → radius 6-12 px. Mobile uses ~8px markers
-        // for the same FIRMS dots so this matches the visual weight.
-        const radius = 6 + Math.min(6, Math.max(0, (bright - 300) / 16));
+        const key = satKey(s);
         const isSel = selectedSatKey === key;
+        const icon = isSel ? (selectedFlameIcon ?? satIcons.get(key)) : satIcons.get(key);
+        if (!icon) return null;
         return (
-          <CircleMarker
+          <Marker
             key={`firms-${i}-${key}`}
-            center={[lat, lon]}
-            radius={isSel ? radius + 2 : radius}
-            pathOptions={{
-              color: isSel ? '#fff' : '#ff7a3a',
-              weight: isSel ? 1.5 : 1,
-              fillColor: '#ff5a2a',
-              fillOpacity: 0.85,
-              opacity: 1,
-            }}
+            position={[lat, lon]}
+            icon={icon}
+            pane={isSel ? 'firms-top' : 'firms'}
             eventHandlers={{
               click: () => onSelect(isSel ? null : { kind: 'fire', feature: s }),
             }}

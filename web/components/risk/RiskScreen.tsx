@@ -37,8 +37,13 @@ import { lookupStateLocal } from '@/lib/regional-thresholds';
 import { computeRiskLocal } from '@/lib/risk-local';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
-import { useUnits } from '@/lib/use-units';
+import { formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 import { V4_WEIGHTS } from '@/lib/v4-weights';
+
+// Amber accent (the "backup estimate / heads-up" tone), sourced from the theme
+// so it can't drift from the rest of the app.
+const AMBER = RISK_LEVELS.moderate.color;
+const AMBER_RGB = RISK_LEVELS.moderate.glow;
 
 // Defaults match the reference Risk Forecast screenshot so the
 // computed score lands at ~0.33 with FL calibration ("Risk Level: Extreme" —
@@ -181,11 +186,16 @@ export function RiskScreen() {
   // exact symptom Bronson FL hit on a day Open-Meteo was rate-limited.
   // `applyLocal` already skips any field that's null, so partial seeding is
   // safe.
-  const localReady =
-    localTemp != null &&
-    localHumidity != null &&
-    localWind != null &&
-    localRisk.data !== undefined;
+  const localWeatherReady =
+    localTemp != null && localHumidity != null && localWind != null;
+  // Seed as soon as /weather is ready AND /risk has SETTLED (resolved OR errored).
+  // On a /risk error we still want to seed the real temperature/humidity/wind
+  // that /weather DID return (KBDI/NDVI then fall back to defaults inside
+  // applyLocal('auto')), instead of discarding the live weather and dropping
+  // every slider to the hardcoded defaults. While /risk is merely loading we
+  // still wait, so the normal path seeds everything at once (no two-stage flash).
+  const localSeedReady =
+    localWeatherReady && (localRisk.data !== undefined || localRisk.isError);
   const localFailed = localWeather.isError || localRisk.isError;
 
   const applyLocal = useCallback((seedMode: 'auto' | 'reset' = 'auto') => {
@@ -244,10 +254,16 @@ export function RiskScreen() {
     applyLocal('reset');
     userTouchedRef.current = false;
     regionManualRef.current = false;
+    // Once the backend has resolved for these coords, honor its verdict
+    // authoritatively — INCLUDING an explicit null, which means "not in a
+    // fitted state, use the neutral Global cutoffs." Only before it resolves
+    // do we fall back to the client-side bbox/centroid guess.
     setRegion(
-      localRisk.data?.regional_state ?? lookupStateLocal(loc.coords.lat, loc.coords.lon),
+      localFetchComplete
+        ? localRisk.data?.regional_state ?? null
+        : lookupStateLocal(loc.coords.lat, loc.coords.lon),
     );
-  }, [applyLocal, localRisk.data?.regional_state, loc.coords.lat, loc.coords.lon]);
+  }, [applyLocal, localFetchComplete, localRisk.data, loc.coords.lat, loc.coords.lon]);
 
   // Auto-seed: on first load (and whenever the location's local readings
   // change), if the user hasn't manually edited anything, swap the placeholder
@@ -263,9 +279,9 @@ export function RiskScreen() {
   const seededContentRef = useRef<string | null>(null);
   const [appliedLocKey, setAppliedLocKey] = useState<string | null>(null);
   const locKey = `${loc.coords.lat.toFixed(3)},${loc.coords.lon.toFixed(3)}`;
-  const contentKey = `${localTemp}|${localHumidity}|${localWind}|${localKbdi}|${localNdvi}`;
+  const contentKey = `${localTemp}|${localHumidity}|${localWind}|${localKbdi}|${localNdvi}|${localDays}`;
   useEffect(() => {
-    if (!localReady) return;
+    if (!localSeedReady) return;
     const locChanged = seededLocKeyRef.current !== locKey;
     const contentChanged = seededContentRef.current !== contentKey;
     if (!locChanged && !contentChanged) return;
@@ -275,7 +291,7 @@ export function RiskScreen() {
     seededLocKeyRef.current = locKey;
     seededContentRef.current = contentKey;
     setAppliedLocKey(locKey);
-  }, [localReady, locKey, contentKey, applyLocal]);
+  }, [localSeedReady, locKey, contentKey, applyLocal]);
 
   // Calibration region auto-follows the active location — even OFFLINE, since it
   // only needs coordinates (lookupStateLocal mirrors the backend's lookup_state
@@ -288,14 +304,21 @@ export function RiskScreen() {
       regionLocKeyRef.current = locKey;
       regionManualRef.current = false;
       setRegion(
-        localRisk.data?.regional_state ?? lookupStateLocal(loc.coords.lat, loc.coords.lon),
+        localFetchComplete
+          ? localRisk.data?.regional_state ?? null
+          : lookupStateLocal(loc.coords.lat, loc.coords.lon),
       );
       return;
     }
-    if (!regionManualRef.current && localRisk.data?.regional_state != null) {
-      setRegion(localRisk.data.regional_state);
+    // Backend resolved for the current location — apply its state
+    // authoritatively, INCLUDING an explicit null (the location isn't in a
+    // fitted state, so the neutral Global cutoffs apply). Without honoring the
+    // null, a point inside a fitted state's rectangular bbox but actually in a
+    // non-fitted state would stay stuck on that neighbor's harsher curve.
+    if (!regionManualRef.current && localFetchComplete) {
+      setRegion(localRisk.data?.regional_state ?? null);
     }
-  }, [locKey, localRisk.data?.regional_state, loc.coords.lat, loc.coords.lon]);
+  }, [locKey, localFetchComplete, localRisk.data, loc.coords.lat, loc.coords.lon]);
 
   // If local data outright failed, drop the skeletons — show the hardcoded
   // defaults so the user can still play with the calculator (and the
@@ -346,25 +369,39 @@ export function RiskScreen() {
     : dangerToRisk(risk.danger_level);
   const factors = risk.factors;
 
-  // Dominant driver — pick the largest WEIGHTED contribution. Weights mirror
-  // the fitted V4 exponents (api/core/risk_algorithm.py RiskParams).
-  const contrib = {
-    vpd: factors.vpd * V4_WEIGHTS.vpd,
-    wind: factors.wind * V4_WEIGHTS.wind,
-    drought: factors.drought * V4_WEIGHTS.drought,
-  };
-  const dominant: 'vpd' | 'wind' | 'drought' = ((['vpd', 'wind', 'drought'] as const) as ('vpd' | 'wind' | 'drought')[])
-    .reduce<'vpd' | 'wind' | 'drought'>((acc, k) => (contrib[k] > contrib[acc] ? k : acc), 'vpd');
-  const dominantLabel = {
-    vpd: 'Vapor Pressure Deficit',
-    wind: 'Wind',
-    drought: 'Drought',
-  }[dominant];
-  const dominantDescription = {
-    vpd: 'Dry, hot air pulls moisture out of fuels faster than wind alone.',
-    wind: 'Sustained wind drives spread rate and makes containment harder.',
-    drought: 'Soil moisture deficit primes fuels for rapid ignition.',
-  }[dominant];
+  // Dominant driver + the three factor SHARES — both derived from the WEIGHTED
+  // contributions (raw factor × its fitted V4 exponent weight, per
+  // api/core/risk_algorithm.py RiskParams). Sharing one basis keeps the named
+  // driver and the share percentages consistent, and normalizing by the total
+  // makes the shares sum to 100%. Memoized so a slider drag doesn't recompute
+  // the argmax + label lookups on every render — only when a factor changes.
+  const { dominantLabel, dominantDescription, shares } = useMemo(() => {
+    const contrib = {
+      vpd: factors.vpd * V4_WEIGHTS.vpd,
+      wind: factors.wind * V4_WEIGHTS.wind,
+      drought: factors.drought * V4_WEIGHTS.drought,
+    };
+    const total = contrib.vpd + contrib.wind + contrib.drought || 1;
+    const dominant: 'vpd' | 'wind' | 'drought' = (['vpd', 'wind', 'drought'] as const)
+      .reduce<'vpd' | 'wind' | 'drought'>((acc, k) => (contrib[k] > contrib[acc] ? k : acc), 'vpd');
+    return {
+      dominantLabel: {
+        vpd: 'Vapor Pressure Deficit',
+        wind: 'Wind',
+        drought: 'Drought',
+      }[dominant],
+      dominantDescription: {
+        vpd: 'Dry, hot air pulls moisture out of fuels faster than wind alone.',
+        wind: 'Sustained wind drives spread rate and makes containment harder.',
+        drought: 'Soil moisture deficit primes fuels for rapid ignition.',
+      }[dominant],
+      shares: {
+        vpd: contrib.vpd / total,
+        wind: contrib.wind / total,
+        drought: contrib.drought / total,
+      },
+    };
+  }, [factors.vpd, factors.wind, factors.drought]);
 
   // `sr` drives the ambient accent across the inputs grid (slider track, glow
   // ring, section eyebrow). Floor 'low' to 'moderate' so the whole page stays
@@ -385,7 +422,7 @@ export function RiskScreen() {
         {/* ───── HERO ────────────────────────────────────────────────── */}
         <PageSection top={36} bottom={28}>
         <SectionEyebrow
-          color="#E8B339"
+          color={AMBER}
           right={`Calibrated for ${regionDisplay}${region ? ` · Global: ${capitalize(risk.danger_level)}` : ''}`}
         >
           Fire-Weather What-If
@@ -411,21 +448,22 @@ export function RiskScreen() {
             isLoading={inputsLoading}
           />
           <FactorBreakdown
+            isLoading={inputsLoading}
             vpd={factors.vpd}
             wind={factors.wind}
             drought={factors.drought}
             season={factors.season}
             seasonLabel={vegMode === 'season' ? SEASON_LABEL[season] : 'NDVI'}
             caption={{
-              vpd: `${
-                units.temp === 'F'
-                  ? Math.round((temperature * 9) / 5 + 32)
-                  : Math.round(temperature)
-              }°${units.temp} · ${humidity}% RH`,
-              wind: `${
-                units.speed === 'mph' ? Math.round(wind * 0.621371) : Math.round(wind)
-              } ${units.speed}`,
-              drought: `${kbdi} KBDI`,
+              vpd: `${formatTemp(temperature, units.temp)} · ${humidity}% RH`,
+              wind: formatSpeed(wind, units.speed),
+              // Name the drought input that actually drove the factor: KBDI in
+              // kbdi mode, days-since-rain in days mode (where the request omits
+              // kbdi and the score uses the drying proxy).
+              drought:
+                droughtMode === 'days'
+                  ? `${daysSinceRain} ${daysSinceRain === 1 ? 'day' : 'days'} since rain`
+                  : `${kbdi} KBDI`,
             }}
             vegetationDetail={
               vegMode === 'ndvi'
@@ -443,7 +481,15 @@ export function RiskScreen() {
         <PageSection top={0} bottom={0}>
           <FetchErrorBanner
             locLabel={loc.label}
-            onRetry={() => { localWeather.refetch(); localRisk.refetch(); }}
+            onRetry={() => {
+              localWeather.refetch();
+              // Only refetch /risk directly when /weather already succeeded — it
+              // is enabled:!!weather, so refetching it while weather is undefined
+              // fires a request with an undefined temperature (a spurious 422).
+              // When weather failed, its refetch re-enables /risk automatically
+              // once it resolves.
+              if (localWeather.data !== undefined) localRisk.refetch();
+            }}
           />
         </PageSection>
       ) : null}
@@ -455,7 +501,12 @@ export function RiskScreen() {
           right={
             <ResetButton
               onClick={resetToLocal}
-              ready={localReady}
+              // Enabled once seeding is possible (weather settled), which
+              // INCLUDES the /risk-errored case: resetToLocal then re-seeds the
+              // real weather that /weather returned. Gating on the old localReady
+              // (which required /risk data) left the button disabled + "no local
+              // data" even while the sliders showed real seeded weather.
+              ready={localSeedReady}
               loading={localWeather.isLoading || localRisk.isLoading}
               locLabel={loc.label}
             />
@@ -564,7 +615,7 @@ export function RiskScreen() {
           <InsightsRail
             dominantLabel={dominantLabel}
             dominantDescription={dominantDescription}
-            shares={{ vpd: factors.vpd, wind: factors.wind, drought: factors.drought }}
+            shares={shares}
             isLoading={inputsLoading}
           />
         </div>
@@ -578,8 +629,6 @@ export function RiskScreen() {
  *  source. Mirrors mobile's WarningInline in app/(tabs)/risk.tsx: small
  *  triangle icon, bold lead-in + dim continuation, soft amber background. */
 function WarningInline({ bold, rest }: { bold: string; rest: string }) {
-  const AMBER = '#E8B339';
-  const AMBER_RGB = '232, 179, 57';
   const { ae } = useAesthetic();
   return (
     <div
@@ -666,9 +715,6 @@ function ResetButton({
     </button>
   );
 }
-
-const AMBER = '#E8B339';
-const AMBER_RGB = '232, 179, 57';
 
 function FetchErrorBanner({ locLabel, onRetry }: { locLabel: string; onRetry: () => void }) {
   const { ae } = useAesthetic();

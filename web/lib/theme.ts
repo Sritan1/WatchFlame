@@ -22,6 +22,17 @@ export const RISK_LEVELS: Record<RiskLevel, RiskTone> = {
   extreme:  { label: 'Extreme',  color: '#F04438', glow: '240, 68, 56',   bar: 4 },
 };
 
+/** Domain colors for the three fire-weather factors (VPD / wind / drought).
+ *  Single source of truth so the Factor Breakdown bars, the Explainer bullets,
+ *  and the Dominant Driver share strip can't drift apart (they had: VPD was
+ *  orange in one card and red in another). Semantic factor colors — the overlap
+ *  with RISK_LEVELS.high/moderate is incidental, not a risk-tier meaning. */
+export const FACTOR_COLORS: Record<'vpd' | 'wind' | 'drought', { color: string; glow: string }> = {
+  vpd:     { color: '#FF7A3A', glow: '255, 122, 58' },
+  wind:    { color: '#4FA8FF', glow: '79, 168, 255' },
+  drought: { color: '#E8B339', glow: '232, 179, 57' },
+};
+
 export interface Aesthetic {
   id: AestheticId;
   name: string;

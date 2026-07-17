@@ -32,10 +32,10 @@ import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TiltCard } from '@/components/ui/TiltCard';
 import { useAesthetic } from '@/lib/aesthetic';
-import { bucketOf, formatFirmsAge, type ThreatDriver, type WindAlignment } from '@/lib/composite-risk';
+import { bucketOf, formatFirmsAge, THREAT_RADIUS_MI, type ThreatDriver, type WindAlignment } from '@/lib/composite-risk';
 import { confidenceLabel, firmsDetailHref, firmsPlatform } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskTone } from '@/lib/theme';
-import { convertDistance, useUnits } from '@/lib/use-units';
+import { convertDistance, formatDistance, useUnits } from '@/lib/use-units';
 
 // Fixed warm chrome for any live threat (matches the reference Command Center
 // card). Severity is carried by the Threat Level badge, not the card color, so
@@ -47,7 +47,9 @@ function formatStartedDate(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  // Pinned to en-US so the date reads consistently regardless of the visitor's
+  // browser locale (matches the app's other fixed-format numbers).
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function ThreatSourceCard({
@@ -124,7 +126,7 @@ export function ThreatSourceCard({
                   lineHeight: 1.5,
                 }}
               >
-                No active fires within 50 miles of your location.
+                No active fires within {formatDistance(THREAT_RADIUS_MI, units.distance, 0)} of your location.
               </p>
             </div>
           </div>
@@ -157,10 +159,13 @@ export function ThreatSourceCard({
       : 'NASA FIRMS';
 
   // Region: county+state for incidents; satellite platform for FIRMS pixels.
+  // Treat a blank/whitespace `location` the same as missing so it doesn't
+  // short-circuit the county/state fallback and render a stray pin with no text.
   const region =
     driver.kind === 'incident'
-      ? driver.incident.location ??
-        ([driver.incident.county, driver.incident.state].filter(Boolean).join(', ') || null)
+      ? driver.incident.location?.trim()
+        ? driver.incident.location
+        : [driver.incident.county, driver.incident.state].filter(Boolean).join(', ') || null
       : firmsPlatform(driver.feature.properties.satellite);
 
   // Timing line (summary band, right).
@@ -187,10 +192,11 @@ export function ThreatSourceCard({
         ? 'Satellite hotspot, older detection with no recent update.'
         : 'Satellite hotspot, not yet a confirmed incident.';
 
+  const radiusLabel = formatDistance(THREAT_RADIUS_MI, units.distance, 0);
   const footerSource =
     driver.kind === 'incident'
-      ? `${sourceTag} · within 50 mi`
-      : `NASA FIRMS · ${firmsPlatform(driver.feature.properties.satellite) ?? 'VIIRS'} · within 50 mi`;
+      ? `${sourceTag} · within ${radiusLabel}`
+      : `NASA FIRMS · ${firmsPlatform(driver.feature.properties.satellite) ?? 'VIIRS'} · within ${radiusLabel}`;
 
   return (
     <CardShell ae={ae} glow={tone.glow}>
@@ -541,7 +547,7 @@ export function ThreatSourceCard({
                     value={
                       driver.incident.acres != null ? (
                         <>
-                          {driver.incident.acres.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          {driver.incident.acres.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                           <span style={{ fontFamily: ae.fontMono, fontSize: 10, color: ae.textDim, marginLeft: 3 }}>ac</span>
                         </>
                       ) : (
@@ -555,7 +561,7 @@ export function ThreatSourceCard({
                     label="Personnel"
                     value={
                       driver.incident.personnel != null
-                        ? driver.incident.personnel.toLocaleString()
+                        ? driver.incident.personnel.toLocaleString('en-US')
                         : 'Unknown'
                     }
                     last={!driver.incident.cause}

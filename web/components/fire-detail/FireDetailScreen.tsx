@@ -9,9 +9,12 @@
 //                          satellite, daynight
 //
 // The page always renders the same skeleton. If `useNamedIncidentsNear` finds
-// a match within 10 mi, the eyebrow flips to "Active incident", the title to
-// the incident's name, and two extra blocks (Incident facts + Incident
-// details) appear in the appropriate columns.
+// a named incident within FIRMS_TO_INCIDENT_TIEBREAK_MI (the same radius Status
+// uses to treat a FIRMS pixel and a named incident as the same physical fire),
+// the eyebrow flips to "Active incident", the title to the incident's name, and
+// two extra blocks (Incident facts + Incident details) appear in the
+// appropriate columns. Matching Status's radius keeps a detection's identity and
+// its "Threat to You" tier consistent across the two screens.
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -28,10 +31,12 @@ import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import {
   bearingTo,
   distanceMiles,
+  FIRMS_TO_INCIDENT_TIEBREAK_MI,
   firmsAgeHours,
   personalThreatBucket,
 } from '@/lib/composite-risk';
-import { firmsPlatform } from '@/lib/firms';
+import { confidenceLabel, firmsPlatform } from '@/lib/firms';
+import { MINI_MAP_HEIGHT } from '@/lib/map-tiles';
 import {
   useFiresNear,
   useNamedIncidentsNear,
@@ -40,7 +45,13 @@ import {
 } from '@/lib/queries';
 import { getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
-import { formatDistance, formatSpeed, useUnits, type DistanceUnit } from '@/lib/use-units';
+import {
+  convertDistance,
+  formatDistance,
+  formatSpeed,
+  useUnits,
+  type DistanceUnit,
+} from '@/lib/use-units';
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? '';
 const RED = '#F04438';
@@ -55,7 +66,7 @@ const MiniMap = dynamic(
       <div
         style={{
           width: '100%',
-          height: 400,
+          height: MINI_MAP_HEIGHT,
           background: '#0B0E12',
           display: 'flex',
           alignItems: 'center',
@@ -134,7 +145,7 @@ export function FireDetailScreen() {
   // reportHealth:false — detail-screen queries must not drive the global
   // feed-health (a transient failure here was poisoning the Map/sidebar FIRMS
   // + incident status until a manual refresh).
-  const incidents = useNamedIncidentsNear(fireLoc, 10, 5, false);
+  const incidents = useNamedIncidentsNear(fireLoc, FIRMS_TO_INCIDENT_TIEBREAK_MI, 5, false);
 
   const matched: NamedIncident | null = incidents.data?.[0] ?? null;
   const incidentResolved = !incidents.isLoading;
@@ -292,9 +303,37 @@ export function FireDetailScreen() {
   const hasFirmsDetection =
     acqDate != null || acqTime != null || satellite != null || daynight != null;
 
+  // Satellite-only = a FIRMS pixel (opened from a satellite detection) that has
+  // NOT matched a named incident. That's when the mini-map's main marker is the
+  // flame glyph instead of the incident nucleus.
+  const isFirmsDetection = hasBrightness || hasConfidence || hasFirmsDetection;
+  const isSatelliteOnly = isFirmsDetection && !matched;
+  // Withhold the main marker until we KNOW exactly what to draw, rather than
+  // showing one thing then swapping. Two things must settle:
+  //   1. the KIND (flame vs nucleus) — hinges on the incident-match query for a
+  //      FIRMS page; a non-FIRMS page is always the nucleus and needn't wait.
+  //   2. for the NUCLEUS, its severity COLOR — so it never flashes the red
+  //      fallback then flips to the real tint. The flame carries no severity, so
+  //      it never waits on this. If the risk lookup failed, we stop waiting and
+  //      show the red fallback (there's no real colour coming).
+  const markerKindKnown = !isFirmsDetection || incidentResolved;
+  const incidentColorReady = riskLevel != null || fireWeatherFailed;
+  const mainMarkerReady = markerKindKnown && (isSatelliteOnly || incidentColorReady);
+
+  // FIRMS acq_time is "HHMM" but not always zero-padded ("542" = 05:42), so pad
+  // and insert the colon before display (the passes panel does the same). Raw,
+  // it rendered a meaningless "542 UTC" / "0 UTC" for any pre-10:00 detection.
+  const acqTimeLabel = (() => {
+    // Empty string is "missing" (matches the passes panel's truthy check), not
+    // midnight — only a real value like "0" / "542" should format to a time.
+    if (!acqTime) return '—';
+    const p = acqTime.padStart(4, '0');
+    return `${p.slice(0, 2)}:${p.slice(2)} UTC`;
+  })();
+
   const detectionMetaRows = [
     { label: 'Detected', value: acqDate ?? '—' },
-    { label: 'Acquisition time', value: acqTime ? `${acqTime} UTC` : '—' },
+    { label: 'Acquisition time', value: acqTimeLabel },
     { label: 'Satellite', value: firmsPlatform(satellite) ?? satellite ?? '—' },
     { label: 'Day / night', value: daynight === 'D' ? 'Day' : daynight === 'N' ? 'Night' : '—' },
     { label: 'Latitude', value: fireLat.toFixed(4) },
@@ -311,7 +350,7 @@ export function FireDetailScreen() {
         title={matched ? matched.name : 'Fire Detection'}
         description={
           incidentResolved
-            ? buildDescription(matched, distFromMe, bearingFromMe, units.distance)
+            ? buildDescription(matched, distFromMe, bearingFromMe, units.distance, incidents.isError)
             : undefined
         }
         loading={!incidentResolved}
@@ -350,12 +389,15 @@ export function FireDetailScreen() {
                   center={[fireLat, fireLon]}
                   nearby={nearbyOthers}
                   maptilerKey={MAPTILER_KEY}
+                  flame={isSatelliteOnly}
+                  mainMarkerReady={mainMarkerReady}
+                  incidentSeverity={riskLevel ?? 'extreme'}
                 />
               ) : (
                 <div
                   style={{
                     width: '100%',
-                    height: 400,
+                    height: MINI_MAP_HEIGHT,
                     background: '#0B0E12',
                     display: 'flex',
                     alignItems: 'center',
@@ -390,7 +432,9 @@ export function FireDetailScreen() {
             >
               {nearby.data
                 ? `${nearby.data.features.length} thermal detections in the surrounding ${formatDistance(8, units.distance, 0)} over the last 7 days. Larger cluster = larger active fire footprint.`
-                : 'Loading nearby detections…'}
+                : nearby.isError
+                  ? 'Nearby detections could not be loaded right now.'
+                  : 'Loading nearby detections…'}
             </p>
           </IncPanel>
 
@@ -533,6 +577,7 @@ export function FireDetailScreen() {
             threatGlow={threatTone?.glow ?? '255,255,255'}
             riskLoading={fireWeatherLoading}
             riskError={fireWeatherFailed}
+            threatLoading={incidents.isLoading}
           />
 
           {/* Incident facts — matched only (2x2 mini grid) */}
@@ -665,18 +710,22 @@ function Hero({
           >
             ID
           </span>
-          <span
-            style={{
-              fontFamily: ae.fontMono,
-              fontSize: 11.5,
-              fontWeight: 500,
-              letterSpacing: '0.06em',
-              color: ae.text,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {idLabel}
-          </span>
+          {loading ? (
+            <Skeleton width={96} height={12} rounded="sm" />
+          ) : (
+            <span
+              style={{
+                fontFamily: ae.fontMono,
+                fontSize: 11.5,
+                fontWeight: 500,
+                letterSpacing: '0.06em',
+                color: ae.text,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {idLabel}
+            </span>
+          )}
         </div>
       </div>
 
@@ -752,16 +801,22 @@ function buildDescription(
   distFromMe: number | null,
   bearing: string | null,
   distanceUnit: DistanceUnit,
+  incidentErrored = false,
 ): string {
   const lead =
     distFromMe != null && bearing
       ? `${formatDistance(distFromMe, distanceUnit, 1)} ${bearing} of your location.`
       : 'Active thermal anomaly detected by NASA satellite.';
+  // matched → describe the incident. No match: distinguish a genuine "nothing
+  // within range" from an incident-lookup that FAILED (isError), so we never
+  // assert "no named incident" when we simply could not check.
   const tail = matched
     ? `Reported by ${matched.agency ?? 'the responsible agency'}${
         matched.started ? ` on ${formatDate(matched.started)}` : ''
       }.`
-    : `All metrics below are computed from real-time data. No named-incident match was found within ${formatDistance(10, distanceUnit, 0)}.`;
+    : incidentErrored
+      ? 'All metrics below are computed from real-time data. We could not check for a matching named incident right now.'
+      : `All metrics below are computed from real-time data. No named-incident match was found within ${formatDistance(FIRMS_TO_INCIDENT_TIEBREAK_MI, distanceUnit, 0)}.`;
   return `${lead} ${tail}`;
 }
 
@@ -953,6 +1008,7 @@ function AssessmentSplit({
   threatGlow,
   riskLoading,
   riskError = false,
+  threatLoading = false,
 }: {
   ae: Ae;
   riskLevel: RiskLevel | null;
@@ -965,6 +1021,11 @@ function AssessmentSplit({
   /** Local /weather or /risk errored — the Risk Level cell shows an explicit
    *  "Unavailable" instead of a bare "—" (which reads as unknown, not failed). */
   riskError?: boolean;
+  /** The nearby-incident match (which supplies the fire's size + containment)
+   *  is still loading. Without this the Threat cell computes a firm tier from a
+   *  null size (max size multiplier) and then visibly jumps once the match
+   *  lands, so skeleton it until the incident query settles. */
+  threatLoading?: boolean;
 }) {
   return (
     <IncPanel ae={ae} padding={0}>
@@ -994,7 +1055,7 @@ function AssessmentSplit({
           level={threatLevel}
           tone={threatTone}
           glow={threatGlow}
-          loading={false}
+          loading={threatLoading}
         />
       </div>
     </IncPanel>
@@ -1194,12 +1255,7 @@ function DistanceViz({
   const ratio = distMi != null ? Math.min(distMi / 120, 0.95) : 0;
   const xPct = 6 + ratio * 88;
 
-  const displayValue =
-    distMi != null
-      ? unit === 'km'
-        ? (distMi * 1.60934).toFixed(1)
-        : distMi.toFixed(1)
-      : '—';
+  const displayValue = distMi != null ? convertDistance(distMi, unit).toFixed(1) : '—';
 
   return (
     <div>
@@ -1401,16 +1457,18 @@ function ThermalScale({ ae, kelvin }: { ae: Ae; kelvin: number | null }) {
 }
 
 function ConfidenceBlock({ ae, value }: { ae: Ae; value: string | null }) {
-  // FIRMS confidence is either a single letter (L/N/H) or a percentage string.
-  // The mobile/web flow always normalizes to L/N/H — anything else falls back
-  // to dash. Lower-case the matched description.
+  // FIRMS confidence is either a categorical letter (L/N/H, VIIRS) or a numeric
+  // 0-100 score (MODIS). Parse via the shared confidenceLabel so this panel
+  // stays in sync with the map rail if FIRMS_SOURCE ever switches sensors (its
+  // own L/N/H-only lookup used to render "—" for a numeric reading the rail
+  // showed as "High"). The segmented bars keep the L/N/H presentation.
   const states = [
     { k: 'L', label: 'Low' },
     { k: 'N', label: 'Nominal' },
     { k: 'H', label: 'High' },
   ] as const;
-  const upper = (value ?? '').trim().toUpperCase();
-  const active = states.find((s) => s.k === upper) ?? null;
+  const label = confidenceLabel(value);
+  const active = states.find((s) => s.label === label) ?? null;
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 18 }}>

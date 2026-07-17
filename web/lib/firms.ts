@@ -58,6 +58,19 @@ export function confidenceLabel(c: string | null): string {
   return '—';
 }
 
+/** Stable identity for a FIRMS satellite pixel, shared by the map rail's card
+ *  selection AND the map markers so both point at the exact same detection.
+ *  Keyed on coordinates PLUS the acquisition date/time: a persistent fire is
+ *  detected on multiple overpasses at the same reported pixel center, so
+ *  coordinates alone collide (duplicate React keys + one click highlighting two
+ *  cards/markers). The rounding matches the coordinate precision Leaflet renders
+ *  at. Keep this the single source of truth — the rail and MapImpl both call it,
+ *  and a one-sided change would silently de-link their selections. */
+export function satKey(f: FireFeature): string {
+  const p = f.properties;
+  return `${p.lat.toFixed(5)},${p.lon.toFixed(5)}@${p.acq_date ?? ''}T${p.acq_time ?? ''}`;
+}
+
 /** Build the /fire-detail URL for a FIRMS satellite detection, passing through
  *  every satellite-specific param the detail page reads. Shared so the Status
  *  threat card and the map rail always link to the same-fidelity detail page.

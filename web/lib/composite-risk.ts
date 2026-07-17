@@ -103,7 +103,7 @@ const TAPER_START_MI = 46;
  *  (name, acres, containment) and is the authoritative record for the same
  *  physical fire. Sized generously since FIRMS pixels are ~375m resolution
  *  and a single fire can spawn pixels spread across that footprint. */
-const FIRMS_TO_INCIDENT_TIEBREAK_MI = 3;
+export const FIRMS_TO_INCIDENT_TIEBREAK_MI = 3;
 
 /** Bucket edges for both inputs and the composite output. */
 const BUCKET_EDGES = { low: 0.25, moderate: 0.5, high: 0.75 } as const;

@@ -125,8 +125,16 @@ export function MapScreen() {
     const intentKey = title ?? '';
     if (lastIntentRef.current === intentKey) return;
     const match = title ? matchIncidentByFemaTitle(title, fires) : null;
-    if (match) setSelection({ kind: 'incident', id: match.id });
-    lastIntentRef.current = intentKey;
+    if (match) {
+      setSelection({ kind: 'incident', id: match.id });
+      lastIntentRef.current = intentKey;
+    } else if (!title) {
+      // No title to match on — nothing to retry, so mark this intent handled.
+      lastIntentRef.current = intentKey;
+    }
+    // A title with no match yet: leave the ref unset so a later `fires` update
+    // (e.g. GPS resolves and the incident feed refetches nearer the disaster)
+    // gets another chance instead of latching on the empty first result.
   }, [fires, searchParams]);
 
   const counts: Record<FireFilter, number> = useMemo(() => {
@@ -476,8 +484,9 @@ function MissingKeyPlaceholder() {
           >
             NEXT_PUBLIC_MAPTILER_KEY
           </code>{' '}
-          to <code style={{ fontFamily: ae.fontMono, fontSize: 12 }}>web/.env.local</code> and
-          restart the dev server. Free keys are at{' '}
+          to{' '}
+          <code style={{ fontFamily: ae.fontMono, fontSize: 12 }}>web/.env.local</code>{' '}
+          and restart the dev server. Free keys are at{' '}
           <a
             href="https://www.maptiler.com/cloud/"
             target="_blank"

@@ -17,7 +17,6 @@ import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
-import { useSourceHealth } from '@/lib/source-health';
 
 // Tone palette — orange/grey/green, deliberately desaturated vs the
 // risk-level palette so trajectory reads as direction (a vector), not
@@ -50,9 +49,6 @@ export function TrajectoryChip({
   onOpen: () => void;
 }) {
   const { ae } = useAesthetic();
-  // health.trajectory is only ever set by the dev `?health=` override, so the
-  // "Forecast unavailable" state can be seen without a real forecast outage.
-  const forcedDown = useSourceHealth().trajectory === 'down';
 
   // No forecast to show — either the /trajectory query errored (HTTP/network)
   // or the backend returned null because Open-Meteo's forecast feed was
@@ -60,7 +56,7 @@ export function TrajectoryChip({
   // "Forecast unavailable" chip (slate, not a risk tier) rather than letting
   // the chip silently vanish. Clicking opens the phase-space modal, which
   // explains it. The composite tier from /risk stays valid regardless.
-  if (isError || trajectory === null || forcedDown) {
+  if (isError || trajectory === null) {
     const SLATE = '148, 163, 184';
     return (
       <button
