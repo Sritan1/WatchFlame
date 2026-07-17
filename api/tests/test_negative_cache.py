@@ -158,7 +158,11 @@ def test_firms_negative_cache_bounds_upstream_calls(monkeypatch):
     bbox = "-121,37,-120,38"
     with pytest.raises(SourceUnavailable):
         asyncio.run(firms.fetch_fires_geojson(days=1, bbox=bbox))
+    after_first = len(calls)
     with pytest.raises(SourceUnavailable):
         asyncio.run(firms.fetch_fires_geojson(days=1, bbox=bbox))
 
-    assert len(calls) == 1
+    # The first call probes each configured source once (all fail → down); the
+    # second is served from the negative cache and adds NO upstream calls.
+    assert after_first == len(firms._sources())
+    assert len(calls) == after_first

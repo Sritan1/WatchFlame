@@ -85,7 +85,12 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
             resp = await client.get(WFIGS_URL, params=params)
             resp.raise_for_status()
             payload = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+    ) as e:
         # Real outage. Record a short-lived failure marker so we probe at most
         # once per _fail_ttl() instead of hammering WFIGS, and raise so
         # /incidents/near reports `down` (an empty list would read as "no fires
@@ -149,6 +154,9 @@ def _iso_from_arcgis(v: Any) -> str | None:
         ms = int(v)
         from datetime import datetime, timezone
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
-    except (TypeError, ValueError):
-        # Already a string?
-        return str(v) if v else None
+    except (TypeError, ValueError, OSError, OverflowError):
+        # OSError/OverflowError: an out-of-range epoch makes fromtimestamp raise
+        # (notably on Windows) — must not abort the whole feed parse. Fall back
+        # to the raw value only if it's already a non-empty string (e.g. a
+        # pre-formatted ISO date); a bad numeric epoch degrades to None.
+        return str(v) if isinstance(v, str) and v else None

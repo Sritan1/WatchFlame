@@ -67,7 +67,12 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
             resp = await client.get(ARCHIVE_URL, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+    ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[kbdi] upstream {status} for {lat},{lon} ({type(e).__name__}); returning None")
         return None
@@ -165,7 +170,12 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
             resp = await client.get(FORECAST_URL, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+    ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[recent_precip] upstream {status} for {lat},{lon} "
