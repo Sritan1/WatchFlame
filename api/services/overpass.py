@@ -127,7 +127,13 @@ async def fetch_shelters(
 
     Returns up to ~hundreds of nodes; the route handler will sort by distance
     and trim. Caching is by (rounded lat, rounded lon, rounded radius).
-    Outside US returns []."""
+    Outside US returns [].
+
+    Resilience: if the cache is stale and a refresh fails, the last good result
+    is served (stale) rather than raising — these "potential" shelters are static
+    infrastructure, so an hours-old list is fine and far better than a false
+    "Mapped shelters down" every time the flaky public Overpass mirror hiccups.
+    Only a cold cache (never fetched) + a failing upstream reports `down`."""
     if not in_us(lat, lon):
         return []
 
@@ -138,10 +144,14 @@ async def fetch_shelters(
     if cached and now - cached[0] < _ttl():
         return [_to_shelter(r) for r in cached[1]]
 
-    # Recent failure for this area? Back off and signal the outage so /shelters
-    # reports shelters_osm `down` instead of a misleading empty candidate list.
+    # Cache is stale or missing. Inside a recent-failure backoff window, don't
+    # re-hit the flaky upstream: serve the last good (stale) result if we have
+    # one — these are static "potential" shelters, so hours-old data is fine —
+    # and only signal the outage when there's nothing cached to fall back on.
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
+        if cached is not None:
+            return [_to_shelter(r) for r in cached[1]]
         raise SourceUnavailable("overpass failed (cached)")
 
     query = f"""
@@ -167,16 +177,29 @@ out body 600;
             resp = await client.post(OVERPASS_URL, data={"data": query}, headers=headers)
             resp.raise_for_status()
             payload = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # Overpass public mirrors throttle to 429 / 504 under load. Record a
-        # short-lived failure marker so we back off the mirror, and raise so
-        # /shelters reports `down` rather than an empty (misleading) list.
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+    ) as e:
+        # Refresh failed (public Overpass mirrors throttle to 429 / 504 under
+        # load). Record the failure so we back off to one probe per _fail_ttl(),
+        # then PREFER the last good result over a false "down": these "potential"
+        # shelters barely change, so a stale list beats an empty one. Only raise
+        # — so /shelters reports shelters_osm `down` — when there's NOTHING cached.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
+        _FAIL_CACHE[cache_key] = now
+        if cached is not None:
+            print(
+                f"[overpass] upstream {status} for {lat:.2f},{lon:.2f} "
+                f"({type(e).__name__}); serving stale cache ({len(cached[1])} rows)"
+            )
+            return [_to_shelter(r) for r in cached[1]]
         print(
             f"[overpass] upstream {status} for {lat:.2f},{lon:.2f} "
-            f"({type(e).__name__}); reporting down"
+            f"({type(e).__name__}); no cache, reporting down"
         )
-        _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable(f"overpass upstream {status}") from e
 
     raw_rows: list[dict[str, Any]] = []

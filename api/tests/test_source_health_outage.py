@@ -142,6 +142,8 @@ def test_calfire_skips_non_dict_rows(monkeypatch):
 # --- overpass (per-key cache, POST) ------------------------------------------
 
 def test_overpass_outage_raises_and_backs_off(monkeypatch):
+    """COLD cache (never fetched) + a failing upstream still reports down, and
+    backs off to a single probe within the fail-TTL window."""
     overpass._CACHE.clear()
     overpass._FAIL_CACHE.clear()
     calls: list = []
@@ -153,6 +155,50 @@ def test_overpass_outage_raises_and_backs_off(monkeypatch):
         asyncio.run(overpass.fetch_shelters(38.0, -120.0))
 
     assert len(calls) == 1
+
+
+def test_overpass_serves_stale_cache_on_failure(monkeypatch):
+    """WARM cache (fetched successfully once) + a later failing upstream serves
+    the last good result instead of raising, so /shelters reports shelters_osm
+    OK (no false 'Mapped shelters down') — these 'potential' shelters are static,
+    so a stale list is fine. A backoff-window call also serves stale without
+    re-hitting the upstream."""
+    overpass._CACHE.clear()
+    overpass._FAIL_CACHE.clear()
+    calls: list = []
+    mode = {"fail": False}
+    payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 1,
+                "lat": 38.0,
+                "lon": -120.0,
+                "tags": {"amenity": "community_centre", "name": "Test Center"},
+            }
+        ]
+    }
+    _patch(monkeypatch, overpass, calls, mode, payload)
+
+    # 1) First fetch succeeds and warms the cache.
+    first = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
+    assert [s.name for s in first] == ["Test Center"]
+
+    # Make any cache entry look stale so the next call tries to refresh, then
+    # take the upstream down.
+    monkeypatch.setattr(overpass, "_ttl", lambda: 0)
+    mode["fail"] = True
+
+    # 2) Refresh fails, but the warm cache is served (no raise → route = OK).
+    stale = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
+    assert [s.name for s in stale] == ["Test Center"]
+
+    # 3) A further call inside the backoff window also serves stale WITHOUT
+    #    re-hitting the flaky upstream.
+    calls_before = len(calls)
+    stale2 = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
+    assert [s.name for s in stale2] == ["Test Center"]
+    assert len(calls) == calls_before
 
 
 # --- nces (per-key cache) ----------------------------------------------------

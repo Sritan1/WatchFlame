@@ -20,34 +20,53 @@ def _api_key() -> str:
 
 
 async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Look up city candidates by name via OpenWeatherMap's free Geocoding API.
+    """Look up US city candidates by name via OpenWeatherMap's free Geocoding API.
 
-    Returns an empty list on upstream failure — the frontend "no results"
-    state handles this cleanly. Logs a one-liner so failures stay visible.
+    The search is scoped to the United States (this is a US wildfire app): OWM's
+    geocoder restricts to a country when the query ends in ",<country code>", so
+    we append ",US" — which also makes it return US matches (up to `limit`)
+    rather than foreign cities that share the name (e.g. "London" returns
+    London KY/OH/... instead of London GB). Results are additionally filtered to
+    country == "US" as a guarantee.
+
+    Returns the matching cities, or an empty list when the query genuinely has
+    no US match (a successful lookup with zero results). Raises HTTPException(503)
+    on an upstream failure or an unexpected non-list payload, so the caller can
+    tell "the search service is down" apart from "no city by that name" — the
+    frontend shows a distinct "search unavailable" state instead of a misleading
+    "No matches". Mirrors fetch_current_weather's 503-on-outage contract. Logs a
+    one-liner so failures stay visible.
     """
     url = "https://api.openweathermap.org/geo/1.0/direct"
-    params = {"q": query, "limit": int(limit), "appid": _api_key()}
+    q = query.strip()
+    if not q.lower().endswith(",us"):
+        q = f"{q},US"
+    params = {"q": q, "limit": int(limit), "appid": _api_key()}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError, ValueError) as e:
+        # ValueError covers a non-JSON 200 body (resp.json() decode failure).
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[owm-geocode] upstream {status} for {query!r} "
-            f"({type(e).__name__}); returning empty"
+            f"({type(e).__name__}); reporting unavailable"
         )
-        return []
+        raise HTTPException(status_code=503, detail="Geocoding service unavailable") from e
     # A 200 can still carry an unexpected shape (an error object, not a list).
-    # Iterating a dict would yield its keys and crash on item.get(...).
+    # That's a real upstream problem, not a genuine empty result — surface it as
+    # an outage rather than silently returning "no matches".
     if not isinstance(data, list):
-        print(f"[owm-geocode] non-list payload for {query!r}; returning empty")
-        return []
+        print(f"[owm-geocode] non-list payload for {query!r}; reporting unavailable")
+        raise HTTPException(status_code=503, detail="Geocoding service unavailable")
     out: list[dict[str, Any]] = []
     for item in data:
         if not isinstance(item, dict):
             continue
+        if item.get("country") != "US":
+            continue  # US-only search (guarantee alongside the ",US" query)
         out.append(
             {
                 "name": item.get("name"),
@@ -79,7 +98,12 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; raise 503, not 500
+    ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[owm] upstream {status} for {lat:.2f},{lon:.2f} "
