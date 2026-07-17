@@ -29,14 +29,11 @@ web/.env.local
 # match web/app/ (the Next.js App Router dir).
 /app/
 
-# Data (raw downloads + caches — all too large for git; >100 MB hits GitHub's hard limit)
-data/raw/
-data/*.csv
-data/*.zip
-data/*.sqlite
-data/*.db
-data/*.json
-data/*.log
+# Data (raw downloads + caches — all too large / regenerable for git; >100 MB
+# hits GitHub's hard limit). Ignore everything under data/, nested caches
+# included, keeping only the .gitkeep placeholder. Every dataset + cache here
+# is rebuildable from the scripts, so none of it is ever committed.
+data/*
 !data/.gitkeep
 
 # Runtime caches (NDVI per-location JSON files, etc.)

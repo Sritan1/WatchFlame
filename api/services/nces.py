@@ -89,7 +89,12 @@ async def fetch_schools(
             resp = await client.get(NCES_FEATURESERVER, params=params)
             resp.raise_for_status()
             payload = resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+    ) as e:
         # ArcGIS endpoints occasionally 5xx during heavy ingest windows. Record a
         # short-lived failure marker to back off, and raise so /shelters reports
         # `down` rather than a misleading empty list.
