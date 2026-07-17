@@ -24,12 +24,20 @@ export interface SavedLocation {
 const STORAGE_KEY = 'ember:saved-locations';
 const STORAGE_ACTIVE_KEY = 'ember:active-location';
 
+/** Cap on saved locations. Each one is a place the user actively watches (home,
+ *  family, a cabin, work), so real use sits well under this. The cap keeps the
+ *  picker list scannable and localStorage bounded rather than being a technical
+ *  limit — the data itself is tiny. */
+export const MAX_SAVED_LOCATIONS = 10;
+
 interface SavedLocationsState {
   items: SavedLocation[];
   /** null = use device GPS. */
   activeId: string | null;
   setActive: (id: string | null) => void;
-  add: (loc: Omit<SavedLocation, 'id'>) => string;
+  /** Returns the id of the saved (or matched-existing) location, or null when
+   *  the list is already at MAX_SAVED_LOCATIONS and this is a genuinely new one. */
+  add: (loc: Omit<SavedLocation, 'id'>) => string | null;
   remove: (id: string) => void;
 }
 
@@ -94,7 +102,21 @@ export function SavedLocationsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const add = useCallback(
-    (loc: Omit<SavedLocation, 'id'>): string => {
+    (loc: Omit<SavedLocation, 'id'>): string | null => {
+      // Dedupe on COORDINATES (~11 m), not label: re-saving the exact same
+      // geocoder result reuses the existing row, but two distinct places that
+      // happen to render the same "name, state, country" label (they resolve to
+      // different coordinates) must stay separate — a label-only match silently
+      // merged them and pointed the picker at the wrong point. Return the
+      // existing id so the caller can still make it the active location.
+      const existing = items.find(
+        (i) => Math.abs(i.lat - loc.lat) < 1e-4 && Math.abs(i.lon - loc.lon) < 1e-4,
+      );
+      if (existing) return existing.id;
+      // Re-saving an existing location above is always allowed (it doesn't grow
+      // the list); a genuinely new one past the cap is rejected with null so the
+      // caller can surface the limit instead of silently doing nothing.
+      if (items.length >= MAX_SAVED_LOCATIONS) return null;
       const id = newId();
       persistItems([...items, { ...loc, id }]);
       return id;

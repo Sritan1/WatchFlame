@@ -9,11 +9,6 @@
 // The store starts empty (everything assumed ok) and only fills in after a
 // real backend response arrives. The mock api never sets the header, so the
 // mock-driven dev build shows no false "down" notes.
-//
-// Dev-only override: setSourceHealthOverrides() (driven by a `?health=` URL
-// param in development) forces sources "down" so every indicator can be seen
-// without breaking a real upstream. Overrides win over real reports and are
-// stripped from production builds.
 
 import { useSyncExternalStore } from 'react';
 
@@ -24,10 +19,7 @@ export type SourceHealth = Record<string, SourceStatus>;
 // arrived so a stale `down` can age out (see FRESH_MS).
 type Entry = { status: SourceStatus; ts: number };
 let realState: Record<string, Entry> = {};
-// Dev overrides (win over realState). Always {} in production — the setter is a
-// no-op there (see setSourceHealthOverrides), so this stays empty.
-let overrides: SourceHealth = {};
-// Merged, referentially-stable snapshot handed to useSyncExternalStore.
+// Referentially-stable snapshot handed to useSyncExternalStore.
 let snapshot: SourceHealth = {};
 const listeners = new Set<() => void>();
 
@@ -84,7 +76,7 @@ function pruneStaleDowns(): void {
 function merged(): SourceHealth {
   const out: SourceHealth = {};
   for (const k in realState) out[k] = realState[k].status;
-  return { ...out, ...overrides };
+  return out;
 }
 
 function rebuild(): void {
@@ -117,30 +109,6 @@ export function reportSourceHealth(partial: SourceHealth): void {
   }
   if (touched) rebuild();
   ensurePruneTimer(); // (re)arm if a `down` is now present
-}
-
-/** Dev-only: force a set of sources "down" (or "ok"). Replaces any prior
- *  overrides. These win over real header reports so a forced state survives
- *  the next refetch. No-op in production: NODE_ENV is statically inlined, so
- *  the body below is dead-code-eliminated from prod builds, keeping the
- *  "overrides always {} in production" invariant literally true. */
-export function setSourceHealthOverrides(map: SourceHealth): void {
-  if (process.env.NODE_ENV === 'production') return;
-  overrides = { ...map };
-  rebuild();
-}
-
-/** Parse a `?health=firms,nifc:down,calfire:ok` value into a health map.
- *  A bare key defaults to "down" (the case worth testing). */
-export function parseHealthParam(value: string): SourceHealth {
-  const out: SourceHealth = {};
-  for (const part of value.split(',')) {
-    const [rawKey, rawStatus] = part.split(':');
-    const key = rawKey?.trim();
-    if (!key) continue;
-    out[key] = rawStatus?.trim() === 'ok' ? 'ok' : 'down';
-  }
-  return out;
 }
 
 function subscribe(l: () => void): () => void {

@@ -4,6 +4,7 @@
 // Explains the difference between satellite detections vs named incidents,
 // and what each field on an incident card means.
 
+import { FlameGlyph, IncidentGlyph } from '@/components/map/marker-glyphs';
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
@@ -18,6 +19,39 @@ export function FireFieldsExplainerModal({
   const { ae } = useAesthetic();
   return (
     <Modal open={open} onClose={onClose} eyebrow="Live Map" title="What you&apos;re looking at" maxWidth={620}>
+      {/* Visual key — which marker is which, before the words. */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          padding: '16px 18px',
+          marginBottom: 20,
+          borderRadius: ae.radius,
+          border: `0.5px solid ${ae.lineStrong}`,
+          background: 'rgba(255, 255, 255, 0.02)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: ae.fontMono,
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: '0.16em',
+            textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            color: ae.textMute,
+          }}
+        >
+          Map key
+        </div>
+        <KeyRow ae={ae} label="Satellite detection" desc="A NASA FIRMS heat pixel">
+          <FlameGlyph height={28} />
+        </KeyRow>
+        <KeyRow ae={ae} label="Named incident" desc="A fire crews have named and are managing">
+          <IncidentGlyph severity="extreme" size={16} />
+        </KeyRow>
+      </div>
+
       <p style={textBody(ae)}>
         The Live Map shows two different kinds of fire data: satellite detections and named
         incidents. They often point to the same fire, but they are not the same thing.
@@ -75,6 +109,34 @@ export function FireFieldsExplainerModal({
 }
 
 const linkStyle: React.CSSProperties = { color: RISK_LEVELS.low.color, textDecoration: 'none' };
+
+function KeyRow({
+  ae,
+  label,
+  desc,
+  children,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  label: string;
+  desc: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ width: 44, height: 40, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+        {children}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <span style={{ fontFamily: ae.fontDisplay, fontSize: 14, fontWeight: 600, color: ae.text }}>
+          {label}
+        </span>
+        <span style={{ fontFamily: ae.fontBody, fontSize: 13, color: ae.textDim, marginLeft: 6, lineHeight: 1.55 }}>
+          · {desc}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function Section({ ae, title, children }: { ae: ReturnType<typeof useAesthetic>['ae']; title: string; children: React.ReactNode }) {
   return (

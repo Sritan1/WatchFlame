@@ -19,16 +19,7 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
-import { RISK_LEVELS } from '@/lib/theme';
-
-// Domain colors for the three share columns. Red reads as heat (VPD), blue
-// reads as wind, amber reads as soil dryness (drought). Lets the user scan
-// the strip without reading labels.
-const SHARE_COLORS = {
-  vpd: '#F04438',
-  wind: '#4DA3FF',
-  drought: '#E8B339',
-} as const;
+import { FACTOR_COLORS, RISK_LEVELS } from '@/lib/theme';
 
 export function InsightsRail({
   dominantLabel,
@@ -38,8 +29,9 @@ export function InsightsRail({
 }: {
   dominantLabel: string;
   dominantDescription: string;
-  /** Raw 0-1 factor values straight from the /risk response — each one's
-   *  own share of its individual factor, not weighted contributions. */
+  /** Each factor's WEIGHTED share of the score (raw factor × its V4 exponent
+   *  weight, normalized to sum to 1). Same basis as the dominant-driver pick,
+   *  so the named driver is always the largest share and the three add to 100%. */
   shares: { vpd: number; wind: number; drought: number };
   /** When true, replace the inner content (driver name + description +
    *  3 share columns) with skeleton placeholders. The full chrome (border,
@@ -160,9 +152,9 @@ export function InsightsRail({
             </>
           ) : (
             <>
-              <ShareColumn label="VPD share" pct={shares.vpd} color={SHARE_COLORS.vpd} />
-              <ShareColumn label="Wind share" pct={shares.wind} color={SHARE_COLORS.wind} />
-              <ShareColumn label="Drought" pct={shares.drought} color={SHARE_COLORS.drought} />
+              <ShareColumn label="VPD share" pct={shares.vpd} color={FACTOR_COLORS.vpd.color} />
+              <ShareColumn label="Wind share" pct={shares.wind} color={FACTOR_COLORS.wind.color} />
+              <ShareColumn label="Drought" pct={shares.drought} color={FACTOR_COLORS.drought.color} />
             </>
           )}
         </div>

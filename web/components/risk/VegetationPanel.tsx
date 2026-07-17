@@ -6,17 +6,14 @@
 
 import { useState, type ReactNode } from 'react';
 
+import { BackupEstimateCallout } from '@/components/risk/BackupEstimateCallout';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GlassSegmented } from '@/components/ui/GlassSegmented';
-import { Icon } from '@/components/Icon';
 import { InputPanel } from '@/components/risk/InputPanel';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { Season } from '@/lib/api';
 import { SEASON_MULT } from '@/lib/v4-weights';
-
-const AMBER = '#E8B339';
-const AMBER_RGB = '232, 179, 57';
 
 export type VegMode = 'season' | 'ndvi';
 
@@ -187,79 +184,13 @@ export function VegetationPanel({
       )}
       </div>
 
-      {/* Backup-estimate callout — only in season mode, dismissible via the × */}
+      {/* Backup-estimate callout — only in season mode, dismissible via the ×.
+       *  Shares the component with DroughtPanel. */}
       {mode === 'season' && !dismissed ? (
-        <div
-          style={{
-            marginTop: 14,
-            padding: 12,
-            borderRadius: 10,
-            background: `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.05), rgba(${AMBER_RGB}, 0.02))`,
-            border: `0.5px solid rgba(${AMBER_RGB}, 0.22)`,
-            display: 'flex',
-            gap: 10,
-            alignItems: 'flex-start',
-          }}
-        >
-          <div
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
-              background: `rgba(${AMBER_RGB}, 0.12)`,
-              border: `0.5px solid rgba(${AMBER_RGB}, 0.30)`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="info" size={11} color={AMBER} strokeWidth={1.6} />
-          </div>
-          <span
-            style={{
-              flex: 1,
-              fontFamily: ae.fontBody,
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: ae.textDim,
-            }}
-          >
-            <span style={{ color: AMBER, fontWeight: 600 }}>Backup estimate. </span>
-            Normally Status measures how dry the plants are from satellite imagery. When clouds block the view, it estimates from the time of year instead, which is what you&apos;re adjusting here.
-          </span>
-          <button
-            type="button"
-            onClick={() => setDismissed(true)}
-            aria-label="Dismiss"
-            style={{
-              flexShrink: 0,
-              width: 20,
-              height: 20,
-              marginTop: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-              borderRadius: 6,
-              background: 'transparent',
-              border: 'none',
-              color: ae.textMute,
-              cursor: 'pointer',
-              transition: 'color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = ae.text;
-              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = ae.textMute;
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            <Icon name="x" size={12} strokeWidth={1.8} />
-          </button>
-        </div>
+        <BackupEstimateCallout
+          onDismiss={() => setDismissed(true)}
+          body="Normally Status measures how dry the plants are from satellite imagery. When clouds block the view, it estimates from the time of year instead, which is what you're adjusting here."
+        />
       ) : null}
     </div>
   );

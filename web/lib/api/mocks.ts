@@ -95,13 +95,16 @@ const MOCK_FIRES: FireCollection = {
   })),
 };
 
-// temp=27 + humidity=42 + wind=14 + season=spring + drought=7d yields a
-// mid-range fire-weather score → MODERATE-ish, matching the reference
-// "Smoke Advisory" hero. Tweak inputs for a different default screenshot state.
+// DEMO DEFAULT — mild "now" weather (24/50/10 → fire-weather score ~0.20 = LOW
+// for CA). Paired with the moderate ignition + the rising MOCK_TRAJECTORY below,
+// this makes the phase-space "on track to move from HIGH → EXTREME" tier-crossing
+// callout appear at the Berkeley default location, while every score stays in the
+// real observed range. The Status orb still reads HIGH — the nearby extreme
+// Tilden Ridge fire drives it; only the weather reading is calm.
 const MOCK_WEATHER: WeatherResponse = {
-  temperature: 27,
-  humidity: 42,
-  wind_speed: 14,
+  temperature: 24,
+  humidity: 50,
+  wind_speed: 10,
   wind_deg: 225,
   conditions: 'Smoke / hazy',
   location: { lat: BERKELEY.lat, lon: BERKELEY.lon, name: 'Berkeley, California' },
@@ -285,51 +288,57 @@ function computeMockRisk(req: RiskRequest): RiskResponse {
   };
 }
 
-// Mock trajectory — defaults to a 'rising' scenario consistent with
-// Berkeley's mock weather (slowly heating + drying through the afternoon).
-// Toggle MOCK_TRAJECTORY_TIER below if you need a different demo state.
+// DEMO DEFAULT — a believable afternoon rise (fire-weather ~0.20 → ~0.42, all
+// within the real observed range; CA's max is ~0.45). Anchored to the LOW "now"
+// score, the +6h projects to EXTREME for CA, which (with the mild weather +
+// moderate ignition) makes the combined tier cross HIGH → EXTREME, so the
+// phase-space "on track to move from X → Y" callout appears at the default
+// location. NOTE: the crossing relies on a FITTED state (Berkeley → CA); a
+// non-fitted GPS location uses the global 0.8 scale and would need a larger
+// (unrealistic) rise to cross.
 const MOCK_TRAJECTORY: TrajectoryResponse = {
   tier: 'rising',
-  delta_pct: 18.4,
+  delta_pct: 110.0,
   horizon_hours: 6,
   now: {
     label: 'now',
     iso_time: '2026-05-30T12:00',
     temperature_c: 24.0,
-    humidity_pct: 45.0,
-    wind_kph: 12.0,
+    humidity_pct: 50.0,
+    wind_kph: 10.0,
     precipitation_mm: 0.0,
-    v4_score: 0.34,
+    v4_score: 0.20,
   },
   projected: {
     label: '+6 hr',
     iso_time: '2026-05-30T18:00',
-    temperature_c: 30.0,
-    humidity_pct: 25.0,
-    wind_kph: 22.0,
+    temperature_c: 33.0,
+    humidity_pct: 22.0,
+    wind_kph: 28.0,
     precipitation_mm: 0.0,
-    v4_score: 0.40,
+    v4_score: 0.42,
   },
   dominant_driver: 'vpd',
   // Hour-by-hour series (now .. +6 hr) — a smooth rising afternoon. frames[0]
   // matches `now`, frames[6] matches `projected`.
   frames: [
-    { label: 'now',   iso_time: '2026-05-30T12:00', temperature_c: 24.0, humidity_pct: 45.0, wind_kph: 12.0, precipitation_mm: 0.0, v4_score: 0.34 },
-    { label: '+1 hr', iso_time: '2026-05-30T13:00', temperature_c: 25.0, humidity_pct: 42.0, wind_kph: 13.5, precipitation_mm: 0.0, v4_score: 0.35 },
-    { label: '+2 hr', iso_time: '2026-05-30T14:00', temperature_c: 26.0, humidity_pct: 39.0, wind_kph: 15.0, precipitation_mm: 0.0, v4_score: 0.36 },
-    { label: '+3 hr', iso_time: '2026-05-30T15:00', temperature_c: 27.0, humidity_pct: 36.0, wind_kph: 16.5, precipitation_mm: 0.0, v4_score: 0.37 },
-    { label: '+4 hr', iso_time: '2026-05-30T16:00', temperature_c: 28.0, humidity_pct: 32.0, wind_kph: 18.0, precipitation_mm: 0.0, v4_score: 0.38 },
-    { label: '+5 hr', iso_time: '2026-05-30T17:00', temperature_c: 29.0, humidity_pct: 28.0, wind_kph: 20.0, precipitation_mm: 0.0, v4_score: 0.39 },
-    { label: '+6 hr', iso_time: '2026-05-30T18:00', temperature_c: 30.0, humidity_pct: 25.0, wind_kph: 22.0, precipitation_mm: 0.0, v4_score: 0.40 },
+    { label: 'now',   iso_time: '2026-05-30T12:00', temperature_c: 24.0, humidity_pct: 50.0, wind_kph: 10.0, precipitation_mm: 0.0, v4_score: 0.20 },
+    { label: '+1 hr', iso_time: '2026-05-30T13:00', temperature_c: 25.5, humidity_pct: 45.0, wind_kph: 13.0, precipitation_mm: 0.0, v4_score: 0.235 },
+    { label: '+2 hr', iso_time: '2026-05-30T14:00', temperature_c: 27.0, humidity_pct: 40.0, wind_kph: 16.0, precipitation_mm: 0.0, v4_score: 0.27 },
+    { label: '+3 hr', iso_time: '2026-05-30T15:00', temperature_c: 28.5, humidity_pct: 35.0, wind_kph: 19.0, precipitation_mm: 0.0, v4_score: 0.31 },
+    { label: '+4 hr', iso_time: '2026-05-30T16:00', temperature_c: 30.0, humidity_pct: 30.0, wind_kph: 22.0, precipitation_mm: 0.0, v4_score: 0.35 },
+    { label: '+5 hr', iso_time: '2026-05-30T17:00', temperature_c: 31.5, humidity_pct: 26.0, wind_kph: 25.0, precipitation_mm: 0.0, v4_score: 0.385 },
+    { label: '+6 hr', iso_time: '2026-05-30T18:00', temperature_c: 33.0, humidity_pct: 22.0, wind_kph: 28.0, precipitation_mm: 0.0, v4_score: 0.42 },
   ],
 };
 
-// Mock ignition signal — a 'high' demo consistent with Berkeley's hot/dry
-// mock conditions. The percentile is the headline; level drives the card tone.
+// DEMO DEFAULT — 'moderate' ignition. With the mild "now" weather (LOW) this keeps
+// the environment axis low enough that the rising trajectory crosses the combined
+// tier (see MOCK_WEATHER / MOCK_TRAJECTORY), so the phase-space callout appears.
 const MOCK_IGNITION: IgnitionResponse = {
-  percentile: 81.0,
-  probability: 0.33,
-  level: 'high',
+  percentile: 55.0,
+  probability: 0.18,
+  level: 'moderate',
   as_of: '2026-05-30',
 };
 

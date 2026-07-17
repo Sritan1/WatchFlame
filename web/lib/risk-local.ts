@@ -34,9 +34,13 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/** Tetens / Magnus saturation vapor pressure (hPa). Matches the backend. */
+/** Tetens / Magnus saturation vapor pressure (hPa). Matches the backend,
+ *  including the [-90, 60] °C domain clamp — so an out-of-domain temperature
+ *  can't hit the t = -237.3 singularity or overflow exp(). Normal calculator
+ *  inputs fall well inside this range, unaffected. */
 export function saturationVaporPressureHpa(tC: number): number {
-  return 6.1078 * Math.exp((17.27 * tC) / (tC + 237.3));
+  const t = clamp(tC, -90, 60);
+  return 6.1078 * Math.exp((17.27 * t) / (t + 237.3));
 }
 
 export interface V4Factors {
