@@ -31,7 +31,9 @@ IMAGESERVER = (
 )
 IDENTIFY_URL = f"{IMAGESERVER}/identify"
 
-_NET_ERRORS = (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError)
+# Includes ValueError so a 200 with a non-JSON body (resp.json() decode failure)
+# degrades to None like a network error, instead of escaping the handler.
+_NET_ERRORS = (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError, ValueError)
 
 # In-process cache of raw NLCD codes (land cover is static → no TTL). Caching
 # codes (not categories) means a mapping change in categorize() needs no re-query.

@@ -471,14 +471,93 @@ def test_geocode_passthrough(monkeypatch):
     assert r.json()[0]["name"] == "fresno"
 
 
-def test_geocode_empty_on_failure(monkeypatch):
-    """owm-geocode now returns [] on upstream failure rather than raising."""
+def test_geocode_empty_when_no_matches(monkeypatch):
+    """A successful lookup with zero results returns 200 [] — the frontend
+    shows "No matches" only for a genuine empty result, not an outage."""
     async def stub(q, limit=5):
         return []
     monkeypatch.setattr("api.routes.geocode.geocode_city", stub)
     r = client.get("/geocode?q=anything")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_geocode_upstream_outage_returns_503(monkeypatch):
+    """A real upstream failure surfaces as 503 (distinct from an empty result)
+    so the frontend can show "search unavailable" instead of "No matches"."""
+    async def stub(q, limit=5):
+        raise HTTPException(status_code=503, detail="Geocoding service unavailable")
+    monkeypatch.setattr("api.routes.geocode.geocode_city", stub)
+    r = client.get("/geocode?q=anything")
+    assert r.status_code == 503
+
+
+def test_geocode_city_raises_on_upstream_error(monkeypatch):
+    """geocode_city itself raises HTTPException(503) when the OWM call fails,
+    rather than swallowing the outage as an empty "no matches" list."""
+    import asyncio
+
+    import httpx as _httpx
+
+    from api.services import owm
+
+    monkeypatch.setenv("OPENWEATHERMAP_API_KEY", "test-key")
+
+    class _FailingClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, *a, **k):
+            raise _httpx.ConnectError("simulated owm-geocode outage")
+
+    monkeypatch.setattr(owm.httpx, "AsyncClient", lambda *a, **k: _FailingClient())
+
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(owm.geocode_city("fresno"))
+    assert ei.value.status_code == 503
+
+
+def test_geocode_city_scopes_to_us(monkeypatch):
+    """The search is US-only: geocode_city appends ',US' to the query (so OWM
+    returns US matches) AND filters out any non-US result as a guarantee."""
+    import asyncio
+
+    from api.services import owm
+
+    monkeypatch.setenv("OPENWEATHERMAP_API_KEY", "test-key")
+    captured: dict = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            # Mixed-country payload; only the US entry should survive the filter.
+            return [
+                {"name": "London", "state": "England", "country": "GB", "lat": 51.5, "lon": -0.1},
+                {"name": "London", "state": "Kentucky", "country": "US", "lat": 37.1, "lon": -84.1},
+            ]
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, params=None):
+            captured["params"] = params
+            return _Resp()
+
+    monkeypatch.setattr(owm.httpx, "AsyncClient", lambda *a, **k: _Client())
+
+    out = asyncio.run(owm.geocode_city("London"))
+    assert captured["params"]["q"].endswith(",US")  # query scoped to the US
+    assert [c["country"] for c in out] == ["US"]  # non-US result filtered out
+    assert out[0]["state"] == "Kentucky"
 
 
 def test_geocode_validates_query_length():

@@ -100,6 +100,12 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
         return None
     if any(row.get(c) is None for c in _CORE):
         return None
+    # KBDI is a model feature the training set always carried (100% coverage), so
+    # a None here (a window too sparse for the integrator) would reach the trees
+    # as an unseen NaN and be routed arbitrarily. Degrade to null (hide the chip)
+    # rather than emit an untrustworthy score.
+    if row.get("kbdi") is None:
+        return None
     feat = dict(row)
     # Parity with training: clip days_since_rain to the common ceiling so the
     # serve-time value can't exceed what a negative example could express.
@@ -123,12 +129,19 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
-    """Fetch a 365-day daily window (parity vars) for the location."""
+    """Fetch the daily window (parity vars) for the location.
+
+    Matches training EXACTLY so the served features are computed over the same
+    span: openmeteo.fetch_window(days=WINDOW_DAYS) pulls start = end - WINDOW_DAYS
+    (WINDOW_DAYS + 1 inclusive days) at 3-decimal coords, so we mirror both here.
+    Otherwise the served KBDI / mean-annual-precip would come from a different
+    window length + grid cell than every training row.
+    """
     end = date.today() - timedelta(days=ARCHIVE_LAG_DAYS)
-    start = end - timedelta(days=WINDOW_DAYS - 1)
+    start = end - timedelta(days=WINDOW_DAYS)
     params = {
-        "latitude": round(lat, 2),
-        "longitude": round(lon, 2),
+        "latitude": round(lat, 3),
+        "longitude": round(lon, 3),
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "daily": "temperature_2m_max,wind_speed_10m_max,precipitation_sum",
@@ -139,12 +152,24 @@ async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(ARCHIVE_URL, params=params)
             resp.raise_for_status()
-            return resp.json()
-    except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+            data = resp.json()
+    except (
+        httpx.HTTPStatusError,
+        httpx.TimeoutException,
+        httpx.TransportError,
+        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+    ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[ignition] upstream {status} for {lat},{lon} "
               f"({type(e).__name__}); returning None")
         return None
+    # A 200 whose body isn't a JSON object (a list, or an error page proxied as a
+    # 200) would crash the dict access downstream; degrade to None so the
+    # graceful-null path handles it like any other failure.
+    if not isinstance(data, dict):
+        print(f"[ignition] non-object body for {lat},{lon}; returning None")
+        return None
+    return data
 
 
 async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None:
@@ -162,7 +187,9 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
 
     raw = await _fetch_window(lat, lon)
     result: dict[str, Any] | None = None
-    times = (raw or {}).get("daily", {}).get("time", []) if raw else []
+    # raw is a dict or None (see _fetch_window); `daily` can still be null on an
+    # odd/sparse response, so guard it before indexing `time` — never crash here.
+    times = (raw.get("daily") or {}).get("time", []) if isinstance(raw, dict) else []
     try:
         target = date.fromisoformat(times[-1]) if times else None  # latest archived day
     except (TypeError, ValueError):
