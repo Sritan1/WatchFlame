@@ -9,9 +9,10 @@ import { useState } from 'react';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/Icon';
 import { IndexBadge } from '@/components/ui/IndexBadge';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { ExplainerModal } from '@/components/risk/ExplainerModal';
 import { useAesthetic } from '@/lib/aesthetic';
-import { RISK_LEVELS } from '@/lib/theme';
+import { FACTOR_COLORS, RISK_LEVELS } from '@/lib/theme';
 import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 
 interface FactorRow {
@@ -31,6 +32,7 @@ export function FactorBreakdown({
   seasonLabel,
   caption,
   vegetationDetail,
+  isLoading = false,
 }: {
   vpd: number;
   wind: number;
@@ -45,14 +47,19 @@ export function FactorBreakdown({
    *  (drier than 3-yr norm)" or "Calendar season — Sentinel-2 unavailable".
    *  Optional: falls back to the existing minimal display when absent. */
   vegetationDetail?: string;
+  /** Inputs are re-seeding (e.g. a location switch). Mask the live values with
+   *  skeletons so the panel doesn't paint the PREVIOUS location's numbers next
+   *  to the rest of the hero (which is already skeletoning). The static labels
+   *  + layout stay, so the panel height doesn't jump. */
+  isLoading?: boolean;
 }) {
   const { ae } = useAesthetic();
   const [explainerOpen, setExplainerOpen] = useState(false);
 
   const rows: FactorRow[] = [
-    { label: 'Vapor Pressure Deficit', weight: V4_WEIGHT_PCT.vpd,     factor: vpd,     color: '#FF7A3A', glowRgb: '255, 122, 58', caption: caption.vpd },
-    { label: 'Wind',                   weight: V4_WEIGHT_PCT.wind,    factor: wind,    color: '#4FA8FF', glowRgb: '79, 168, 255', caption: caption.wind },
-    { label: 'Drought',                weight: V4_WEIGHT_PCT.drought, factor: drought, color: '#E8B339', glowRgb: '232, 179, 57', caption: caption.drought },
+    { label: 'Vapor Pressure Deficit', weight: V4_WEIGHT_PCT.vpd,     factor: vpd,     color: FACTOR_COLORS.vpd.color,     glowRgb: FACTOR_COLORS.vpd.glow,     caption: caption.vpd },
+    { label: 'Wind',                   weight: V4_WEIGHT_PCT.wind,    factor: wind,    color: FACTOR_COLORS.wind.color,    glowRgb: FACTOR_COLORS.wind.glow,    caption: caption.wind },
+    { label: 'Drought',                weight: V4_WEIGHT_PCT.drought, factor: drought, color: FACTOR_COLORS.drought.color, glowRgb: FACTOR_COLORS.drought.glow, caption: caption.drought },
   ];
 
   return (
@@ -118,22 +125,26 @@ export function FactorBreakdown({
                   {f.label}
                 </span>
               </div>
-              <span
-                style={{
-                  fontFamily: ae.fontMono,
-                  fontSize: 11,
-                  color: ae.textDim,
-                  letterSpacing: '0.04em',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {f.weight}% · {f.factor.toFixed(2)}
-              </span>
+              {isLoading ? (
+                <Skeleton width={58} height={11} rounded="sm" />
+              ) : (
+                <span
+                  style={{
+                    fontFamily: ae.fontMono,
+                    fontSize: 11,
+                    color: ae.textDim,
+                    letterSpacing: '0.04em',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {f.weight}% · {f.factor.toFixed(2)}
+                </span>
+              )}
             </div>
             <div style={{ height: 6, borderRadius: 99, background: ae.line, overflow: 'hidden' }}>
               <div
                 style={{
-                  width: `${f.factor * 100}%`,
+                  width: isLoading ? '0%' : `${f.factor * 100}%`,
                   height: '100%',
                   borderRadius: 99,
                   background: `linear-gradient(90deg, rgba(${f.glowRgb}, 0.5), ${f.color})`,
@@ -142,16 +153,21 @@ export function FactorBreakdown({
                 }}
               />
             </div>
-            <div
-              style={{
-                marginTop: 6,
-                fontFamily: ae.fontMono,
-                fontSize: 10.5,
-                color: ae.textMute,
-                letterSpacing: '0.04em',
-              }}
-            >
-              {f.caption}
+            <div style={{ marginTop: 6 }}>
+              {isLoading ? (
+                <Skeleton width={110} height={10} rounded="sm" />
+              ) : (
+                <div
+                  style={{
+                    fontFamily: ae.fontMono,
+                    fontSize: 10.5,
+                    color: ae.textMute,
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {f.caption}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -202,19 +218,23 @@ export function FactorBreakdown({
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div
-                  style={{
-                    fontFamily: ae.fontDisplay,
-                    fontSize: 28,
-                    fontWeight: 800,
-                    color: RISK_LEVELS.low.color,
-                    letterSpacing: '-0.02em',
-                    fontVariantNumeric: 'tabular-nums',
-                    lineHeight: 1,
-                  }}
-                >
-                  ×{season.toFixed(2)}
-                </div>
+                {isLoading ? (
+                  <Skeleton width={62} height={28} rounded="sm" />
+                ) : (
+                  <div
+                    style={{
+                      fontFamily: ae.fontDisplay,
+                      fontSize: 28,
+                      fontWeight: 800,
+                      color: RISK_LEVELS.low.color,
+                      letterSpacing: '-0.02em',
+                      fontVariantNumeric: 'tabular-nums',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×{season.toFixed(2)}
+                  </div>
+                )}
                 <div
                   style={{
                     marginTop: 4,
@@ -229,7 +249,11 @@ export function FactorBreakdown({
                 </div>
               </div>
             </div>
-            {vegetationDetail ? (
+            {isLoading ? (
+              <div style={{ marginTop: 10 }}>
+                <Skeleton width={'80%'} height={12} rounded="sm" />
+              </div>
+            ) : vegetationDetail ? (
               <div
                 style={{
                   marginTop: 10,

@@ -22,15 +22,22 @@
 // anchored to the orb's Status score (multiplicative, preserves % deltas), and
 // the "Now" tile shows the Status (OpenWeatherMap) temp/RH/wind.
 
-import { useCallback, useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react';
 
 import { DataErrorState } from '@/components/ui/DataErrorState';
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { RegionalThresholds, TrajectoryResponse, TrajectoryTier } from '@/lib/api';
 import { formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
-import { bucketOf, compositeFromBuckets, normalizeWeather } from '@/lib/composite-risk';
-import { type RiskLevel } from '@/lib/theme';
+import { bucketOf, compositeFromBuckets, envFromBuckets, normalizeWeather } from '@/lib/composite-risk';
+import { hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 const TIER_TONE: Record<TrajectoryTier, { color: string; rgb: string; label: string }> = {
   rising:  { color: '#FF7A3A', rgb: '255, 122, 58',  label: 'Rising' },
@@ -67,6 +74,20 @@ const SOFTNESS = 0.046;
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+/** Fire-weather score ON THE CURVE at a horizontal fraction (0..1) of the plot.
+ *  The curve maps node index i to x-fraction i/horizon, so the fractional index
+ *  at `frac` is frac*horizon; we linearly interpolate between the two nearest
+ *  nodes. Used by the hover readout so it reflects the line directly above/below
+ *  the cursor (not the cursor's own vertical position). */
+function scoreAtFrac(scores: number[], frac: number, horizon: number): number {
+  if (scores.length === 0) return 0;
+  if (scores.length === 1) return clamp01(scores[0]);
+  const fi = Math.max(0, Math.min(scores.length - 1, clamp01(frac) * horizon));
+  const i0 = Math.floor(fi);
+  const i1 = Math.min(scores.length - 1, i0 + 1);
+  const t = fi - i0;
+  return clamp01(scores[i0] * (1 - t) + scores[i1] * t);
 }
 function mix(a: RGB, b: RGB, t: number): RGB {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -145,6 +166,7 @@ export function PhaseSpaceModal({
   open,
   onClose,
   weatherBucket,
+  ignitionBucket,
   threatBucket,
   trajectory,
   regionalThresholds,
@@ -156,6 +178,9 @@ export function PhaseSpaceModal({
   open: boolean;
   onClose: () => void;
   weatherBucket: RiskLevel | null;
+  /** ML ignition-likelihood tier; null while loading or unavailable. Folded
+   *  into the environment axis so this modal's tier math matches the headline. */
+  ignitionBucket: RiskLevel | null;
   threatBucket: RiskLevel | null;
   trajectory: TrajectoryResponse | null | undefined;
   regionalThresholds: RegionalThresholds | null;
@@ -184,7 +209,11 @@ export function PhaseSpaceModal({
     () => frames.map((f) => clamp01(f.v4_score * anchorScale)),
     [frames, anchorScale],
   );
-  const anchoredNow = anchoredScores[0] ?? currentWeatherScore ?? null;
+  // Prefer the authoritative Status score (the anchor target). anchoredScores[0]
+  // already equals it in the normal case; preferring it directly keeps "Now"
+  // matching the page even when the forecast now-score is too small to anchor
+  // against (anchorScale falls back to 1, which would otherwise leave this ~0).
+  const anchoredNow = currentWeatherScore ?? anchoredScores[0] ?? null;
   const anchoredProjected =
     anchoredScores.length > 0 ? anchoredScores[anchoredScores.length - 1] : null;
 
@@ -193,13 +222,17 @@ export function PhaseSpaceModal({
     return bucketOf(normalizeWeather(anchoredProjected, regionalThresholds));
   }, [anchoredProjected, regionalThresholds]);
 
+  // Fold ignition into the environment axis (Stage 1 of the headline) BEFORE the
+  // W×T matrix, exactly like StatusScreen's headline, so this modal's "your level"
+  // and tier-crossing callout match the orb. Ignition is a "today" signal, held
+  // constant across the 6 hr fire-weather horizon (only weather is projected).
   const currentComposite = useMemo(
-    () => compositeFromBuckets(weatherBucket, threatBucket),
-    [weatherBucket, threatBucket],
+    () => compositeFromBuckets(envFromBuckets(weatherBucket, ignitionBucket), threatBucket),
+    [weatherBucket, ignitionBucket, threatBucket],
   );
   const projectedComposite = useMemo(
-    () => compositeFromBuckets(projectedWeatherBucket, threatBucket),
-    [projectedWeatherBucket, threatBucket],
+    () => compositeFromBuckets(envFromBuckets(projectedWeatherBucket, ignitionBucket), threatBucket),
+    [projectedWeatherBucket, ignitionBucket, threatBucket],
   );
 
   return (
@@ -253,7 +286,23 @@ export function PhaseSpaceModal({
           projectedComposite={projectedComposite}
           currentConditions={currentConditions}
         />
-      ) : error ? null : (
+      ) : error ? null : trajectory === undefined ? (
+        // undefined = the forecast query hasn't resolved yet (e.g. the location
+        // changed while the modal is open). Distinct from null (below), which is
+        // the backend's "no forecast available" answer. Without this split, a
+        // brief re-load flashed the definitive "not available" copy.
+        <p
+          style={{
+            marginTop: 16,
+            fontFamily: ae.fontBody,
+            fontSize: 12.5,
+            color: ae.textMute,
+            lineHeight: 1.5,
+          }}
+        >
+          Loading the forecast trend…
+        </p>
+      ) : (
         <p
           style={{
             marginTop: 16,
@@ -564,19 +613,37 @@ function TrajectoryPlot({
     const mo = mouseRef.current;
     if (!mo) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const { bounds: b } = dataRef.current;
-    const score = clamp01(1 - mo.y / H);
-    const hourF = clamp01(mo.x / W) * horizon;
+    const { bounds: b, anchoredScores: scores, tone: tn } = dataRef.current;
+    const frac = clamp01(mo.x / W);
+    const hourF = frac * horizon;
+    // Snap the readout to the CURVE's fire-weather at the hovered TIME (x), not
+    // the cursor's own vertical position — so the tooltip reflects the line
+    // directly above/below the cursor. Only a vertical guide is drawn now.
+    const score = scoreAtFrac(scores, frac, horizon);
+    const snapY = (1 - clamp01(score)) * H;
+
     ctx.strokeStyle = 'rgba(255,255,255,0.28)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 4]);
     ctx.beginPath();
     ctx.moveTo(mo.x, 0);
     ctx.lineTo(mo.x, H);
-    ctx.moveTo(0, mo.y);
-    ctx.lineTo(W, mo.y);
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Marker dot sitting ON the curve at the hovered time (the "modern" snap).
+    if (scores.length >= 2) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(mo.x, snapY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${tn?.rgb ?? '255, 255, 255'}, 0.9)`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(mo.x, snapY, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     let tier = 'LOW';
     if (score >= b.extreme) tier = 'EXTREME';
     else if (score >= b.moderate) tier = 'HIGH';
@@ -585,10 +652,15 @@ function TrajectoryPlot({
     ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
     const cw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
     const ch = 34;
-    let bx = mo.x + 12;
-    let by = mo.y + 12;
-    if (bx + cw > W) bx = mo.x - cw - 12;
-    if (by + ch > H) by = mo.y - ch - 12;
+    // Anchor the tooltip to the curve point (the dot). Flip sides near an edge,
+    // then hard-clamp fully on-canvas so it never spills off-plot on narrow
+    // (mobile) widths.
+    let bx = mo.x + 14;
+    if (bx + cw > W) bx = mo.x - cw - 14;
+    bx = Math.max(4, Math.min(bx, W - cw - 4));
+    let by = snapY + 14;
+    if (by + ch > H) by = snapY - ch - 14;
+    by = Math.max(4, Math.min(by, H - ch - 4));
     roundRect(ctx, bx, by, cw, ch, 6);
     ctx.fillStyle = 'rgba(8,10,11,0.92)';
     ctx.strokeStyle = 'rgba(255,255,255,0.14)';
@@ -646,12 +718,26 @@ function TrajectoryPlot({
     };
   }, [redraw]);
 
-  const onMove = (e: ReactMouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  const setPointer = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    mouseRef.current = { x: clientX - rect.left, y: clientY - rect.top };
     paint();
   };
+  const onMove = (e: ReactMouseEvent<HTMLCanvasElement>) => setPointer(e.clientX, e.clientY);
   const onLeave = () => {
+    mouseRef.current = null;
+    paint();
+  };
+  // Touch: a tap/horizontal-drag scrubs the readout on mobile. `touch-action:
+  // pan-y` (on the canvas style) lets a vertical drag still scroll the modal, so
+  // this only claims the horizontal gesture along the time axis.
+  const onTouch = (e: ReactTouchEvent<HTMLCanvasElement>) => {
+    const t = e.touches[0];
+    if (t) setPointer(t.clientX, t.clientY);
+  };
+  const onTouchEnd = () => {
     mouseRef.current = null;
     paint();
   };
@@ -762,7 +848,10 @@ function TrajectoryPlot({
           ref={canvasRef}
           onMouseMove={onMove}
           onMouseLeave={onLeave}
-          style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair' }}
+          onTouchStart={onTouch}
+          onTouchMove={onTouch}
+          onTouchEnd={onTouchEnd}
+          style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair', touchAction: 'pan-y' }}
         />
       </div>
 
@@ -916,7 +1005,7 @@ function TrajectorySummary({
             lineHeight: 1.55,
           }}
         >
-          Your level is on track to change from{' '}
+          Your overall risk is on track to move from{' '}
           <strong style={{ color: ae.text, fontFamily: ae.fontMono, letterSpacing: '0.06em' }}>
             {TIER_SHORT[currentComposite]}
           </strong>{' '}
@@ -924,7 +1013,8 @@ function TrajectorySummary({
           <strong style={{ color: ae.text, fontFamily: ae.fontMono, letterSpacing: '0.06em' }}>
             {TIER_SHORT[projectedComposite]}
           </strong>{' '}
-          over the next {horizon} hours, right around the hour the line crosses into the next band.
+          over the next {horizon} hours. This is your combined risk from fire weather, ignition, and
+          any nearby fire, so it does not always track the fire-weather line above.
         </div>
       ) : null}
 
@@ -938,6 +1028,7 @@ function TrajectorySummary({
           humidityPct={currentConditions.humidityPct}
           windKph={currentConditions.windKph}
           v4Score={anchoredNow}
+          overallLevel={currentComposite}
         />
         <FrameTile
           ae={ae}
@@ -946,6 +1037,7 @@ function TrajectorySummary({
           humidityPct={trajectory.projected.humidity_pct}
           windKph={trajectory.projected.wind_kph}
           v4Score={anchoredProjected}
+          overallLevel={projectedComposite}
         />
       </div>
 
@@ -973,6 +1065,7 @@ function FrameTile({
   humidityPct,
   windKph,
   v4Score,
+  overallLevel,
 }: {
   ae: Ae;
   label: string;
@@ -980,6 +1073,9 @@ function FrameTile({
   humidityPct: number | null;
   windKph: number | null;
   v4Score: number | null;
+  /** Combined headline level for this snapshot (Now = current, +horizon =
+   *  projected). Null while inputs are loading. Shown as a compact tier pill. */
+  overallLevel: RiskLevel | null;
 }) {
   const units = useUnits();
   return (
@@ -995,9 +1091,9 @@ function FrameTile({
         style={{
           fontFamily: ae.fontMono,
           fontSize: 10,
-          fontWeight: 700,
+          fontWeight: 800,
           letterSpacing: '0.18em',
-          color: ae.textMute,
+          color: ae.text,
           textTransform: 'uppercase',
         }}
       >
@@ -1016,13 +1112,64 @@ function FrameTile({
         }}
       >
         <span style={{ color: ae.textMute }}>Temp</span>
-        <span style={{ color: ae.text }}>{tempC != null ? formatTemp(tempC, units.temp, 0) : '—'}</span>
+        <span style={{ color: ae.text, textAlign: 'right' }}>{tempC != null ? formatTemp(tempC, units.temp, 0) : '—'}</span>
         <span style={{ color: ae.textMute }}>RH</span>
-        <span style={{ color: ae.text }}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</span>
+        <span style={{ color: ae.text, textAlign: 'right' }}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</span>
         <span style={{ color: ae.textMute }}>Wind</span>
-        <span style={{ color: ae.text }}>{windKph != null ? formatSpeed(windKph, units.speed, 0) : '—'}</span>
+        <span style={{ color: ae.text, textAlign: 'right' }}>{windKph != null ? formatSpeed(windKph, units.speed, 0) : '—'}</span>
         <span style={{ color: ae.textMute }}>Fire-weather score</span>
-        <span style={{ color: ae.text, fontWeight: 700 }}>{v4Score != null ? v4Score.toFixed(2) : '—'}</span>
+        <span style={{ color: ae.text, fontWeight: 700, textAlign: 'right' }}>{v4Score != null ? v4Score.toFixed(2) : '—'}</span>
+      </div>
+
+      {/* Overall combined level for this snapshot — divided off from the raw
+          weather inputs above so it reads as the conclusion, not another input.
+          Compact tier code + flexWrap keep it safe on narrow (mobile) tiles. */}
+      <div
+        style={{
+          marginTop: 10,
+          paddingTop: 9,
+          borderTop: `0.5px solid ${ae.line}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          fontFamily: ae.fontMono,
+          fontSize: 11,
+        }}
+      >
+        <span style={{ color: ae.textMute }}>Overall Risk</span>
+        {overallLevel ? (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              marginLeft: 'auto',
+              gap: 6,
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '0.12em',
+              padding: '3px 9px',
+              borderRadius: 99,
+              whiteSpace: 'nowrap',
+              color: RISK_LEVELS[overallLevel].color,
+              background: `rgba(${hexToRgb(RISK_LEVELS[overallLevel].color)}, 0.14)`,
+              border: `0.5px solid rgba(${hexToRgb(RISK_LEVELS[overallLevel].color)}, 0.40)`,
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 99,
+                background: RISK_LEVELS[overallLevel].color,
+                flexShrink: 0,
+              }}
+            />
+            {TIER_SHORT[overallLevel]}
+          </span>
+        ) : (
+          <span style={{ color: ae.textMute, marginLeft: 'auto' }}>—</span>
+        )}
       </div>
     </div>
   );

@@ -7,10 +7,10 @@
 // the page's cool/amber "risk" identity (warms as the what-if score climbs).
 //
 // Kept to the reference's perf budget: a single canvas, ~30fps throttle, DPR≤1.5,
-// a static paint under prefers-reduced-motion, pause when the tab is hidden / a
-// modal is open (via the `active` prop, like the Status + Safety backdrops) AND
-// when scrolled fully out of view (IntersectionObserver). Pinned `fixed` behind
-// the page content; the solid cards scroll over it and it shows through the gaps.
+// a static paint under prefers-reduced-motion, and pause when the tab is hidden /
+// a modal is open (via the `active` prop, like the Status + Safety backdrops).
+// Pinned `fixed` behind the page content; the solid cards scroll over it and it
+// shows through the gaps.
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
@@ -250,6 +250,9 @@ export function RiskBackground({
   const activeRef = useRef(active);
   const wakeRef = useRef<() => void>(() => {});
   const setOptsRef = useRef<(o: TerrainOpts) => void>(() => {});
+  // Forces a single static repaint (used when the risk band changes while the
+  // rAF loop isn't running — reduced-motion / paused).
+  const repaintRef = useRef<() => void>(() => {});
   // Captures the risk at mount for the initial palette, so the mount effect
   // doesn't need `risk` as a dependency (which would rebuild the whole system).
   // Later changes flow through the risk-sync effect via setOpts, not this ref.
@@ -261,7 +264,8 @@ export function RiskBackground({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let reduced = motionQuery.matches;
     const FRAME_MS = 1000 / 30;
 
     // Built once on mount; later risk-band changes are pushed in via
@@ -272,7 +276,6 @@ export function RiskBackground({
 
     let W = 0, H = 0, DPR = 1, raf = 0, last = 0;
     let running = false;
-    let intersecting = true;
 
     const resize = () => {
       DPR = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -290,8 +293,8 @@ export function RiskBackground({
     };
 
     const frame = (now: number) => {
-      // Paused (inactive / off-screen) → stop the chain and freeze in place.
-      if (!activeRef.current || !intersecting) { running = false; return; }
+      // Paused (inactive) → stop the chain and freeze in place.
+      if (!activeRef.current) { running = false; return; }
       raf = requestAnimationFrame(frame);
       const elapsed = now - last;
       if (elapsed < FRAME_MS) return;
@@ -301,7 +304,7 @@ export function RiskBackground({
 
     const start = () => {
       if (running || reduced) return;
-      if (!activeRef.current || !intersecting) return;
+      if (!activeRef.current) return;
       running = true;
       last = performance.now();
       raf = requestAnimationFrame(frame);
@@ -310,23 +313,29 @@ export function RiskBackground({
       running = false;
       cancelAnimationFrame(raf);
     };
+    // Draw a single static frame with the current palette. Used to refresh the
+    // backdrop when the risk band changes while the rAF loop is NOT running
+    // (prefers-reduced-motion, or paused) — without it the terrain would stay
+    // frozen at its mount-time color and contradict the score. No-op while
+    // running, since the loop already repaints every frame.
+    const repaint = () => {
+      if (!running) render(0);
+    };
     wakeRef.current = start;
+    repaintRef.current = repaint;
 
     resize();
     window.addEventListener('resize', resize);
 
-    let io: IntersectionObserver | null = null;
-    if ('IntersectionObserver' in window) {
-      io = new IntersectionObserver(
-        (entries) => {
-          intersecting = !!(entries[0] && entries[0].isIntersecting);
-          if (intersecting) start();
-          else stop();
-        },
-        { threshold: 0 },
-      );
-      io.observe(canvas);
-    }
+    // React to a live prefers-reduced-motion change (OS setting toggled while
+    // the page is open): stop + freeze when it turns on, resume when it turns
+    // off. Without this, `reduced` would stay stuck at its mount-time value.
+    const onMotionChange = (e: MediaQueryListEvent) => {
+      reduced = e.matches;
+      if (reduced) stop();
+      else start();
+    };
+    motionQuery.addEventListener('change', onMotionChange);
 
     // Draw the current (possibly resumed) frame synchronously before paint.
     render(0);
@@ -335,9 +344,10 @@ export function RiskBackground({
     return () => {
       stop();
       window.removeEventListener('resize', resize);
-      if (io) io.disconnect();
+      motionQuery.removeEventListener('change', onMotionChange);
       wakeRef.current = () => {};
       setOptsRef.current = () => {};
+      repaintRef.current = () => {};
     };
   }, []);
 
@@ -349,8 +359,11 @@ export function RiskBackground({
 
   // Push palette/intensity changes into the running system instead of
   // rebuilding it, so dragging the sliders across a band boundary stays smooth.
+  // Then force a static repaint so the new palette shows even when the rAF loop
+  // isn't running (prefers-reduced-motion / paused); it's a no-op while running.
   useEffect(() => {
     setOptsRef.current(optsForRisk(risk));
+    repaintRef.current();
   }, [risk]);
 
   // Static ambience — risk-tuned, behind the canvas.

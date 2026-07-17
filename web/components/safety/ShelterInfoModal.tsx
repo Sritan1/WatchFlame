@@ -8,7 +8,8 @@ import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
 
-const AMBER = '#E8B339';
+const AMBER = RISK_LEVELS.moderate.color;
+const AMBER_RGB = RISK_LEVELS.moderate.glow;
 
 export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { ae } = useAesthetic();
@@ -49,8 +50,8 @@ export function ShelterInfoModal({ open, onClose }: { open: boolean; onClose: ()
           marginTop: 18,
           padding: 14,
           borderRadius: 12,
-          background: 'rgba(232, 179, 57, 0.05)',
-          border: `0.5px solid rgba(232, 179, 57, 0.28)`,
+          background: `rgba(${AMBER_RGB}, 0.05)`,
+          border: `0.5px solid rgba(${AMBER_RGB}, 0.28)`,
           display: 'flex',
           gap: 12,
           alignItems: 'flex-start',

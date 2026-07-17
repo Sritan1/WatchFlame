@@ -15,24 +15,24 @@ import { cardinal8 } from '@/components/ui/CompassRose';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
 import { bearingTo } from '@/lib/composite-risk';
+import { gmapsDirectionsUrl } from '@/lib/maps';
+import { RISK_LEVELS } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
+// Live status tones reuse the shared risk palette (theme.ts) so they never
+// drift from the app's green/amber/red source of truth.
 const LIVE_TONES: Record<string, { color: string; rgb: string; label: string }> = {
-  OPEN: { color: '#3FB68B', rgb: '63, 182, 139', label: 'Open now' },
-  STANDBY: { color: '#E8B339', rgb: '232, 179, 57', label: 'Standby' },
-  FULL: { color: '#F04438', rgb: '240, 68, 56', label: 'At capacity' },
+  OPEN: { color: RISK_LEVELS.low.color, rgb: RISK_LEVELS.low.glow, label: 'Open now' },
+  STANDBY: { color: RISK_LEVELS.moderate.color, rgb: RISK_LEVELS.moderate.glow, label: 'Standby' },
+  FULL: { color: RISK_LEVELS.extreme.color, rgb: RISK_LEVELS.extreme.glow, label: 'At capacity' },
 };
 const POTENTIAL_TONE = { color: '#9ca3af', rgb: '156, 163, 175', label: 'Potential site' };
 
 export function shelterTone(s: Shelter): { color: string; rgb: string; label: string } {
   if (s.activated) return LIVE_TONES[s.status ?? 'OPEN'] ?? LIVE_TONES.OPEN;
   return POTENTIAL_TONE;
-}
-
-function gmapsDirectionsUrl(origin: LatLon, dest: LatLon): string {
-  return `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lon}&destination=${dest.lat},${dest.lon}&travelmode=driving`;
 }
 
 function timeAgo(iso: string | null | undefined): string | null {
@@ -185,10 +185,20 @@ export function ShelterDetailTile({
 
   // LIVE — verified, operational.
   const hasCap = shelter.capacity != null && shelter.capacity > 0;
+  // NSS headcounts are frequently missing. Only show an occupancy count/bar
+  // when we actually have one — otherwise a null headcount would render a
+  // fabricated "0 / N · 0%" that reads as empty and contradicts a FULL badge.
+  const hasOcc = shelter.occupancy != null;
   const occ = shelter.occupancy ?? 0;
-  const pct = hasCap ? Math.max(0, Math.min(1, occ / shelter.capacity!)) : 0;
   const status = shelter.status ?? 'OPEN';
-  const barColor = status === 'FULL' || pct >= 0.9 ? '#F04438' : pct >= 0.7 ? '#E8B339' : '#3FB68B';
+  const pct = hasCap && hasOcc ? Math.max(0, Math.min(1, occ / shelter.capacity!)) : 0;
+  const showOccBar = hasOcc && status !== 'STANDBY';
+  const barColor =
+    status === 'FULL' || pct >= 0.9
+      ? RISK_LEVELS.extreme.color
+      : pct >= 0.7
+        ? RISK_LEVELS.moderate.color
+        : RISK_LEVELS.low.color;
   const freshness = freshnessLabel(shelter);
 
   return (
@@ -233,25 +243,27 @@ export function ShelterDetailTile({
               marginBottom: 5,
             }}
           >
-            <span>{status === 'STANDBY' ? 'Capacity' : 'Occupancy'}</span>
+            <span>{showOccBar ? 'Occupancy' : 'Capacity'}</span>
             <span style={{ color: ae.textDim, fontVariantNumeric: 'tabular-nums' }}>
-              {status === 'STANDBY'
-                ? `${shelter.capacity}`
-                : `${occ} / ${shelter.capacity} · ${Math.round(pct * 100)}%`}
+              {showOccBar
+                ? `${occ} / ${shelter.capacity} · ${Math.round(pct * 100)}%`
+                : `${shelter.capacity}`}
             </span>
           </div>
-          <div style={{ height: 6, borderRadius: 99, background: ae.line, overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${(status === 'STANDBY' ? 0 : pct) * 100}%`,
-                height: '100%',
-                borderRadius: 99,
-                background: `linear-gradient(90deg, rgba(${t.rgb}, 0.5), ${barColor})`,
-                boxShadow: `0 0 8px ${barColor}`,
-                transition: 'width 0.4s ease',
-              }}
-            />
-          </div>
+          {showOccBar ? (
+            <div style={{ height: 6, borderRadius: 99, background: ae.line, overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${pct * 100}%`,
+                  height: '100%',
+                  borderRadius: 99,
+                  background: `linear-gradient(90deg, rgba(${t.rgb}, 0.5), ${barColor})`,
+                  boxShadow: `0 0 8px ${barColor}`,
+                  transition: 'width 0.4s ease',
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
 

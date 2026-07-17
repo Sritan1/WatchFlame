@@ -13,7 +13,7 @@ import { api } from '@/lib/api';
 import type { GeocodeHit } from '@/lib/api';
 import { useDebounced } from '@/lib/queries';
 import { RISK_LEVELS } from '@/lib/theme';
-import { useSavedLocations } from '@/lib/use-saved-locations';
+import { useSavedLocations, MAX_SAVED_LOCATIONS } from '@/lib/use-saved-locations';
 
 const GREEN = RISK_LEVELS.low.color;
 const GREEN_RGB = RISK_LEVELS.low.glow;
@@ -36,9 +36,25 @@ export function LocationsModal({
     staleTime: 5 * 60_000,
   });
 
+  // The results area must reflect the CURRENT input, not the previous debounced
+  // query. `search` lags behind by the 350ms debounce, so during that window
+  // (or any in-flight fetch) show "Searching…" and HIDE the stale results /
+  // "No matches" / error. Otherwise a corrected typo ("Pariss" -> "Paris")
+  // would keep showing "No matches." for the word the user just fixed, and the
+  // "type 3 characters" hint could render next to a full stale result list.
+  const q = query.trim();
+  const searchInFlight = q.length >= 3 && (query !== debouncedQ || search.isFetching);
+  const resultsFresh = q.length >= 3 && query === debouncedQ && !search.isFetching;
+
+  const atLimit = items.length >= MAX_SAVED_LOCATIONS;
+
   const onAdd = (hit: GeocodeHit) => {
     const label = [hit.name, hit.state, hit.country].filter(Boolean).join(', ');
     const id = add({ label, lat: hit.lat, lon: hit.lon });
+    // null = at the cap and this is a new city. The search UI is hidden at the
+    // limit so this is a safety net; bail without setActive(null), which would
+    // otherwise switch the picker back to GPS.
+    if (id === null) return;
     setActive(id);
     setQuery('');
     onClose();
@@ -124,6 +140,25 @@ export function LocationsModal({
       {/* Search */}
       <div style={{ marginTop: 20 }}>
         <SectionHeader ae={ae}>Add a city</SectionHeader>
+        {atLimit ? (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '12px 14px',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: `0.5px dashed ${ae.line}`,
+              borderRadius: ae.radius,
+              fontFamily: ae.fontBody,
+              fontSize: 12.5,
+              lineHeight: 1.5,
+              color: ae.textDim,
+            }}
+          >
+            You&apos;ve saved the maximum of {MAX_SAVED_LOCATIONS} locations. Remove one to add
+            another.
+          </div>
+        ) : (
+          <>
         <div
           style={{
             marginTop: 6,
@@ -171,31 +206,31 @@ export function LocationsModal({
           ) : null}
         </div>
 
-        {query.trim().length > 0 && query.trim().length < 3 ? (
+        {q.length > 0 && q.length < 3 ? (
           <p style={{ marginTop: 10, fontFamily: ae.fontMono, fontSize: 11, color: ae.textMute }}>
             Type at least 3 characters to search.
           </p>
         ) : null}
 
-        {search.isFetching ? (
+        {searchInFlight ? (
           <p style={{ marginTop: 10, fontFamily: ae.fontMono, fontSize: 11, color: ae.textDim }}>
             Searching…
           </p>
         ) : null}
 
-        {search.isError ? (
+        {resultsFresh && search.isError ? (
           <p style={{ marginTop: 10, fontFamily: ae.fontMono, fontSize: 11, color: RISK_LEVELS.extreme.color }}>
             Couldn&apos;t search for cities right now.
           </p>
         ) : null}
 
-        {search.data && search.data.length === 0 && debouncedQ.trim().length >= 3 ? (
+        {resultsFresh && search.data && search.data.length === 0 ? (
           <p style={{ marginTop: 10, fontFamily: ae.fontMono, fontSize: 11, color: ae.textMute }}>
             No matches.
           </p>
         ) : null}
 
-        {search.data && search.data.length > 0 ? (
+        {resultsFresh && search.data && search.data.length > 0 ? (
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {search.data.map((hit, i) => {
               const label = [hit.name, hit.state, hit.country].filter(Boolean).join(', ');
@@ -249,6 +284,8 @@ export function LocationsModal({
             })}
           </div>
         ) : null}
+          </>
+        )}
       </div>
     </Modal>
   );

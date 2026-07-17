@@ -14,7 +14,7 @@
 // Everything preserves the underlying data; only the presentation is elevated.
 // Loading + failed/unavailable states are handled per card.
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { IgnitionInfoModal } from '@/components/status/IgnitionInfoModal';
@@ -227,6 +227,7 @@ function HsRiskGauge({
   loading: boolean;
   emptyText: string;
 }) {
+  const gaugeId = useId();
   const size = 200;
   const cx = 100;
   const cy = 106;
@@ -251,14 +252,17 @@ function HsRiskGauge({
     );
   }
 
-  let prev = 0;
-  const segs = zones.map((z) => {
-    const p = prev;
-    prev = z.to;
-    return { d: hsArc(cx, cy, r, deg(p), deg(z.to)), c: z.color };
-  });
+  // Each zone arc runs from the previous zone's `to` (0 for the first) to its
+  // own — derived from the index rather than a mutable accumulator (matches the
+  // zone-meter pattern below and avoids reassigning across the render).
+  const segs = zones.map((z, i) => ({
+    d: hsArc(cx, cy, r, deg(i === 0 ? 0 : zones[i - 1].to), deg(z.to)),
+    c: z.color,
+  }));
   const activeArc = hsArc(cx, cy, r, A0, scoreDeg);
-  const gid = `hs-g-${palette.color.replace(/[^a-z0-9]/gi, '')}`;
+  // Per-instance gradient id (colons stripped for url() safety) so the two
+  // gauges on the page never resolve each other's gradient via a shared id.
+  const gid = `hs-g-${gaugeId.replace(/:/g, '')}`;
 
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
@@ -730,6 +734,11 @@ function HsAICore({
 
 // ── HsDistribution — predictive density curve with TODAY marker ──────────────
 function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; tone: RiskTone; highlight: string }) {
+  // Per-instance gradient ids (colons stripped for url() safety) so a second
+  // distribution on the page can't collapse to this one's fills via shared ids.
+  const gp = useId().replace(/:/g, '');
+  const areaId = `hs-dist-area-${gp}`;
+  const cumId = `hs-dist-cum-${gp}`;
   const W = 560;
   const H = 188;
   const base = 150;
@@ -760,11 +769,11 @@ function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; ton
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} aria-hidden>
       <defs>
-        <linearGradient id="hs-dist-area" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={areaId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={`rgba(${tone.glow}, 0.10)`} />
           <stop offset="100%" stopColor={`rgba(${tone.glow}, 0)`} />
         </linearGradient>
-        <linearGradient id="hs-dist-cum" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={cumId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={`rgba(${tone.glow}, 0.42)`} />
           <stop offset="100%" stopColor={`rgba(${tone.glow}, 0.04)`} />
         </linearGradient>
@@ -778,8 +787,8 @@ function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; ton
         </g>
       ))}
       <line x1={x0} y1={base} x2={x1} y2={base} stroke={ae.lineStrong} strokeWidth="0.5" />
-      <path d={areaPath} fill="url(#hs-dist-area)" />
-      <path d={cumPath} fill="url(#hs-dist-cum)" />
+      <path d={areaPath} fill={`url(#${areaId})`} />
+      <path d={cumPath} fill={`url(#${cumId})`} />
       <path
         d={linePath}
         fill="none"

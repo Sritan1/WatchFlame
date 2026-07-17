@@ -185,6 +185,15 @@ export function LocalKbdiCard({
                 background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
+            {/* Gauge tier-label row skeleton — the loaded KbdiBar draws a row of
+             *  band labels under the bar, so without this the card grows a row
+             *  taller when the data lands. */}
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ height: 9, width: 44, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 9, width: 38, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 9, width: 56, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 9, width: 60, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+            </div>
             {/* Caption skeleton — mirrors the two-line description footprint
              *  (incl. its top divider) so the text doesn't flash in fully
              *  while the number + bar are still loading. */}
