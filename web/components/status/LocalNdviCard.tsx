@@ -175,6 +175,30 @@ export function LocalNdviCard({
                 background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
+            {/* Gauge tier-label row skeleton — the loaded NdviGauge draws a row
+             *  of labels under the bar, so without this the card grows a row
+             *  taller when the data lands. */}
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 9, width: 72, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+            </div>
+            {/* Caption skeleton — mirrors the two-line description footprint
+             *  (incl. its top divider) so the text doesn't flash in fully while
+             *  the number + gauge are still loading. Matches LocalKbdiCard. */}
+            <div
+              style={{
+                margin: '20px 0 0',
+                paddingTop: 16,
+                borderTop: `0.5px solid ${ae.line}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 7,
+              }}
+            >
+              <div style={{ height: 10, width: '100%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <div style={{ height: 10, width: '62%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
+            </div>
           </>
         ) : (
           <>

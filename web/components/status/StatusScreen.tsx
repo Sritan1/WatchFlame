@@ -7,7 +7,7 @@
 // Cards beyond these (Active Incident, Regional Risk Index, Closest Fires list,
 // FEMA banner) live on Map / Safety in mobile; mobile Status doesn't show them.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 import { Icon } from '@/components/Icon';
 import { CalibrationModal } from '@/components/status/CalibrationModal';
@@ -45,6 +45,7 @@ import {
   envFromBuckets,
   findThreatDriver,
   normalizeWeather,
+  THREAT_RADIUS_MI,
   tierArcFraction,
   type ThreatDriver,
 } from '@/lib/composite-risk';
@@ -60,12 +61,6 @@ import {
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { formatDistance, formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
-
-// THREAT_RADIUS_MI from composite-risk is 50; we render it here as a label
-// for the breakdown card caption. Kept as a constant in miles since that's
-// the unit composite-risk uses internally — the call site converts to the
-// user's preferred unit via formatDistance.
-const THREAT_RADIUS_MI = 50;
 
 // Composite-bucket-driven hero copy. The bucket is computed from the full
 // composite (fire weather + active-fire threat) — see `compositeSubtitle`
@@ -135,7 +130,11 @@ export function StatusScreen() {
   const weather = useWeather(loc.coords);
   const risk = useRiskFromWeather(weather.data, loc.coords);
   const fires = useFiresAroundMe(loc.coords);
-  const incidents = useNamedIncidentsNear(loc.coords);
+  // Fetch named incidents out to the full threat radius (not the 30 mi query
+  // default) so the composite threat driver sees every fire inside the 50 mi
+  // window it scores — otherwise a fire 30-50 mi away shows on Safety (which
+  // requests THREAT_RADIUS_MI) but is invisible here, a false "no active fires".
+  const incidents = useNamedIncidentsNear(loc.coords, THREAT_RADIUS_MI);
   const units = useUnits();
   const [calibOpen, setCalibOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
@@ -209,6 +208,15 @@ export function StatusScreen() {
     risk.data !== undefined &&
     fires.data !== undefined &&
     incidents.data !== undefined;
+
+  // Narrower readiness for the two Score Breakdown cards, so each shows as soon
+  // as ITS OWN inputs are ready instead of waiting on the whole composite (risk
+  // is chained behind weather, so it lands last). Threat needs fires + incidents
+  // (identity) + weather (wind alignment, so no tier flash when wind lands);
+  // fire weather needs weather + risk. Neither needs the other's data.
+  const threatReady =
+    weather.data !== undefined && fires.data !== undefined && incidents.data !== undefined;
+  const fireWeatherReady = weather.data !== undefined && risk.data !== undefined;
 
   // Component buckets — feed both the matrix-derived headline tier AND
   // the breakdown row below the hero. For weather, prefer the backend's
@@ -575,7 +583,7 @@ export function StatusScreen() {
                 ? 'Fuses temperature, humidity, wind, drought, and vegetation into a 0-1 likelihood.'
                 : 'Global thresholds. Fuses temperature, humidity, wind, drought, and vegetation into a 0-1 likelihood.',
               emptyText: '—',
-              isLoading: !compositeReady,
+              isLoading: !fireWeatherReady,
               howCalculatedHref: '/risk',
               // "Calibrated for <state>" lives HERE (next to the fire-weather
               // score it describes) instead of by the composite headline, where
@@ -604,7 +612,7 @@ export function StatusScreen() {
                 ? `Worst-case among fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}. Accounts for size, containment, distance, and wind alignment.`
                 : 'No active fires within range. Score is zero until a fire is detected near you.',
               emptyText: 'None',
-              isLoading: !compositeReady,
+              isLoading: !threatReady,
             }}
             ignition={{
               data: ignition.data,
@@ -622,18 +630,22 @@ export function StatusScreen() {
           <SectionEyebrow
             color={isAlarming ? r.color : undefined}
             right={
-              threatDriver?.kind === 'incident'
-                ? `${threatDriver.incident.source === 'calfire' ? 'CAL FIRE' : 'NIFC WFIGS'} · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
-                : threatDriver?.kind === 'firms'
-                  ? `NASA FIRMS · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
-                  : `No active fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
+              // Until the threat feeds resolve, don't assert "No active fires"
+              // (that reads as a false all-clear over the loading card below).
+              !threatReady
+                ? `Checking within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
+                : threatDriver?.kind === 'incident'
+                  ? `${threatDriver.incident.source === 'calfire' ? 'CAL FIRE' : 'NIFC WFIGS'} · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
+                  : threatDriver?.kind === 'firms'
+                    ? `NASA FIRMS · within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
+                    : `No active fires within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
             }
           >
             Threat Source
           </SectionEyebrow>
         </div>
         <div className="ember-fade-up" style={{ animationDelay: '120ms' }}>
-          <ThreatSourceCard driver={threatDriver} isLoading={!compositeReady} />
+          <ThreatSourceCard driver={threatDriver} isLoading={!threatReady} />
         </div>
       </PageSection>
 
@@ -691,11 +703,11 @@ export function StatusScreen() {
             kbdi={risk.data?.kbdi ?? null}
             regionalLevel={risk.data?.regional_level ?? null}
             regionalState={risk.data?.regional_state ?? null}
-            isLoading={risk.isLoading}
+            isLoading={weather.isLoading || risk.isLoading}
           />
           <LocalNdviCard
             ndviAnomaly={risk.data?.ndvi_anomaly ?? null}
-            isLoading={risk.isLoading}
+            isLoading={weather.isLoading || risk.isLoading}
           />
         </div>
       </PageSection>
@@ -735,6 +747,7 @@ export function StatusScreen() {
         open={phaseSpaceOpen}
         onClose={() => setPhaseSpaceOpen(false)}
         weatherBucket={weatherBucket}
+        ignitionBucket={ignitionBucket}
         threatBucket={threatBucket}
         trajectory={trajectory.data}
         error={trajectory.isError}
@@ -890,10 +903,12 @@ function ConditionsCard({
             gap: 12,
           }}
         >
-          {/* Wind */}
+          {/* Wind — the dial shows the direction, so hide it (rather than draw a
+              fabricated 180° needle) when the direction is unknown, mirroring how
+              the Thermometer below hides when temperature is missing. */}
           <CondTile
             label="Wind"
-            decoration={<WindDial angle={(windDeg ?? 0) + 180} color={accentColor} size={56} />}
+            decoration={windDeg != null ? <WindDial angle={windDeg + 180} color={accentColor} size={56} /> : undefined}
           >
             {wind != null ? (
               <>
@@ -1020,12 +1035,15 @@ function Thermometer({
   temperatureC: number;
   visible: boolean;
 }) {
+  // Per-instance gradient id (colons stripped for url() safety) so a second
+  // Thermometer on the page can't collapse to this one's fill via a shared id.
+  const fillId = `thermo-fill-${useId().replace(/:/g, '')}`;
   if (!visible) return null;
   const tFrac = Math.max(0, Math.min(1, temperatureC / 50));
   return (
     <svg width="48" height="72" viewBox="0 0 56 78" aria-hidden>
       <defs>
-        <linearGradient id="thermo-fill" x1="0" y1="1" x2="0" y2="0">
+        <linearGradient id={fillId} x1="0" y1="1" x2="0" y2="0">
           <stop offset="0%" stopColor={accentColor} stopOpacity="0.85" />
           <stop offset="100%" stopColor={accentColor} stopOpacity="0.20" />
         </linearGradient>
@@ -1046,7 +1064,7 @@ function Thermometer({
         width="8"
         height={48 * tFrac}
         rx="4"
-        fill="url(#thermo-fill)"
+        fill={`url(#${fillId})`}
         style={{ filter: `drop-shadow(0 0 4px ${accentColor})` }}
       />
       <circle cx="28" cy="62" r="11" fill={accentColor} style={{ filter: `drop-shadow(0 0 6px ${accentColor})` }} />
@@ -1229,15 +1247,18 @@ function HumidityDial({
   const r = c - 8;
   const circ = 2 * Math.PI * r;
   const dash = circ * (value / 100);
+  // Per-instance halo id (colons stripped for url() safety) — keying on `size`
+  // alone would collide if two same-size dials ever shared a page.
+  const haloId = `hd-halo-${useId().replace(/:/g, '')}`;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
       <defs>
-        <radialGradient id={`hd-halo-${size}`} cx="50%" cy="50%" r="50%">
+        <radialGradient id={haloId} cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor={color} stopOpacity="0.20" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </radialGradient>
       </defs>
-      <circle cx={c} cy={c} r={c - 2} fill={`url(#hd-halo-${size})`} />
+      <circle cx={c} cy={c} r={c - 2} fill={`url(#${haloId})`} />
       <circle cx={c} cy={c} r={r} fill="none" stroke={ae.line} strokeWidth="3" />
       <circle
         cx={c}

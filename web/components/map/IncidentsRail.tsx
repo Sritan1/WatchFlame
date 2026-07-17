@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { FireFeature, LatLon, NamedIncident } from '@/lib/api';
 import { bearingTo, distanceMiles, firmsAgeHours } from '@/lib/composite-risk';
-import { confidenceLabel, firmsDetailHref, satelliteTitle } from '@/lib/firms';
+import { confidenceLabel, firmsDetailHref, satKey, satelliteTitle } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/source-health';
 import { formatDistance, useUnits } from '@/lib/use-units';
@@ -118,27 +118,35 @@ export function IncidentsRail({
   // Source-aware subtitle — always describes the ACTIVE feed honestly, so
   // "0 reported" reads in context next to the satellite hotspots that ARE on
   // the map (the old single "No active incidents within range" was the bug).
+  // Order matters: a genuine error wins, then a cold load ("Loading…"), then the
+  // source-health note. The health store is GLOBAL, source-keyed, and persists a
+  // `down` for ~20 min (it is not location-scoped), so checking the note before
+  // the loading state would flash a stale "feed down" from a previous
+  // location/visit while THIS query is still loading. Loading-before-note keeps
+  // the subtitle honest until the current fetch resolves and refreshes health.
   const railSubtitle = (() => {
     if (tab === 'incidents') {
       if (incidentsError) return 'Incident feed unavailable';
+      if (isLoading && fires.length === 0) return 'Loading incidents…';
       const note = incidentFeedNote(health);
       if (note) return note;
-      if (isLoading && fires.length === 0) return 'Loading incidents…';
       if (fires.length === 0) return 'No active incidents reported within range';
       return `Within ${formatDistance(radiusMi, units.distance, 0)} of ${locationLabel} · sorted by distance`;
     }
     if (satellitesError) return 'Satellite feed unavailable';
+    if (satellitesLoading && satellites.length === 0) return 'Loading detections…';
     const note = firmsNote(health);
     if (note) return note;
-    if (satellitesLoading && satellites.length === 0) return 'Loading detections…';
     if (satellites.length === 0) return 'No satellite detections within range';
     return 'NASA FIRMS · last 24h · may include controlled burns';
   })();
 
   // Auto-scroll the selected card into view inside the rail — for either feed.
   // Fires on selection OR tab change (so when a map-click flips the tab, the
-  // just-revealed card scrolls into focus). `block: 'nearest'` makes it a
-  // no-op when the card is already visible.
+  // just-revealed card scrolls into focus). Also re-runs when the list data
+  // arrives: a selection set while the target feed is still loading finds no
+  // card on the first pass, so depend on fires/satellites to retry once the
+  // card mounts. `block: 'nearest'` makes it a no-op when already visible.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -152,7 +160,7 @@ export function IncidentsRail({
     if (!sel) return;
     const el = container.querySelector<HTMLElement>(sel);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selection, tab]);
+  }, [selection, tab, fires, satellites]);
 
   return (
     <aside
@@ -406,6 +414,17 @@ export function IncidentsRail({
                 onViewSibling={() => onTabChange('hotspots')}
               />
             ) : null}
+            {/* Both incident feeds degraded to an empty 200 (health=down, not an
+                isError). Without this the list body would be blank whitespace
+                under the "Unavailable" tab — show the feed-down panel instead. */}
+            {!incidentsError && !isLoading && fires.length === 0 && incidentsFullyDown ? (
+              <DataErrorState
+                compact
+                title="Incident feed unavailable"
+                message="Couldn't load NIFC and Cal Fire incidents right now. Satellite detections (if any) still show on the map and the Satellite detections tab. Try again."
+                onRetry={onRetry}
+              />
+            ) : null}
             {fires.map((f, i) => {
               const sev = severityOf(f);
               const fr = getRisk(sev, accent);
@@ -447,6 +466,16 @@ export function IncidentsRail({
                 syncedAt={satellitesUpdatedAt}
                 siblingCount={fires.length}
                 onViewSibling={() => onTabChange('incidents')}
+              />
+            ) : null}
+            {/* FIRMS degraded to an empty 200 (health=down, not an isError) —
+                show the feed-down panel instead of a blank list body. */}
+            {!satellitesError && !satellitesLoading && satellites.length === 0 && firmsDown ? (
+              <DataErrorState
+                compact
+                title="Satellite feed unavailable"
+                message="Couldn't load NASA FIRMS detections right now. Named incidents (if any) still show on the Active incidents reported tab. Try again."
+                onRetry={onRetry}
               />
             ) : null}
             {satList.map((s, i) => {
@@ -852,12 +881,6 @@ function Stat({
 
 // ─── Dual-feed tabs ────────────────────────────────────────────────────────
 
-/** Stable key for a FIRMS satellite pixel — matches MapImpl's marker key so
- *  the rail's selection and the map's selection point at the same dot. */
-function satKey(f: FireFeature): string {
-  return `${f.properties.lat.toFixed(5)},${f.properties.lon.toFixed(5)}`;
-}
-
 /** Two co-equal feed tabs (Reported incidents / Satellite hotspots), each
  *  showing its own live count. Per-feed loading shows a count skeleton and
  *  per-feed error shows a neutral "—" + amber dot — so neither feed's state
@@ -951,11 +974,13 @@ function RailTabButton({
         color: 'inherit',
       }}
     >
-      {error ? (
+      {error && !loading ? (
         // Feed down — no count to show. Drop the giant em-dash and let
         // "Unavailable" be the prominent text instead. minHeight matches a
         // normal tab's two rows so paired tabs stay aligned when only one is
-        // down. The amber dot carries the warning tone.
+        // down. The amber dot carries the warning tone. Gated on !loading so a
+        // stale global-health `down` can't show "Unavailable" over a cold load
+        // (the count skeleton wins until this fetch settles).
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 53 }}>
           <span
             aria-hidden

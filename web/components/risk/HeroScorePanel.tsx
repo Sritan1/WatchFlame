@@ -19,7 +19,7 @@ import { Modal } from '@/components/ui/Modal';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { GridPattern } from '@/components/ui/GridPattern';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { ScoreGauge } from '@/components/risk/ScoreGauge';
+import { GLOBAL_THRESHOLDS, ScoreGauge } from '@/components/risk/ScoreGauge';
 import {
   FITTED_STATES,
   StatePickerModal,
@@ -29,12 +29,12 @@ import type { RegionalThresholds } from '@/lib/api';
 import { CALIBRATION_INFO } from '@/lib/regional-thresholds';
 import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
-const AMBER = '#E8B339';
+const AMBER = RISK_LEVELS.moderate.color;
 
 /** null = Global (no state calibration). Otherwise 2-letter US state code. */
 export type RegionCode = string | null;
 
-function regionName(code: RegionCode): string {
+export function regionName(code: RegionCode): string {
   if (code == null) return 'Global';
   return FITTED_STATES.find((s) => s.code === code)?.name ?? code;
 }
@@ -72,11 +72,13 @@ export function HeroScorePanel({
   // V4 backend bucketing: LOW < thresholds.low (50th pct), MOD < moderate
   // (75th), HIGH < extreme (97th), EXTREME ≥ extreme. The `high` field
   // (90th pct) is informational only — don't use it as a band boundary.
-  // Defaults are the V4 global cutoffs from api/core/risk_algorithm.py.
+  // Defaults are the V4 global cutoffs (shared GLOBAL_THRESHOLDS, from
+  // api/core/risk_algorithm.py._bucket) used when the user isn't in a fitted
+  // state and no per-state thresholds are supplied.
   const th = {
-    low: thresholds?.low ?? 0.3,
-    moderate: thresholds?.moderate ?? 0.6,
-    extreme: thresholds?.extreme ?? 0.8,
+    low: thresholds?.low ?? GLOBAL_THRESHOLDS.low,
+    moderate: thresholds?.moderate ?? GLOBAL_THRESHOLDS.moderate,
+    extreme: thresholds?.extreme ?? GLOBAL_THRESHOLDS.extreme,
   };
 
   return (
@@ -447,7 +449,3 @@ export function HeroScorePanel({
     </div>
   );
 }
-
-// Suppress unused-imports lint when this file is re-rendered; `regionName`
-// stays exported for tests / other consumers if needed.
-export { regionName };

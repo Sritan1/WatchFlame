@@ -18,34 +18,17 @@ import { GlassSegmented } from '@/components/ui/GlassSegmented';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { LatLon, Shelter } from '@/lib/api';
-import { bearingTo } from '@/lib/composite-risk';
-import { getRisk, type RiskLevel } from '@/lib/theme';
+import { bearingTo, THREAT_RADIUS_MI } from '@/lib/composite-risk';
+import { resolveEvacDestination } from '@/lib/evac';
+import { gmapsDirectionsUrl } from '@/lib/maps';
+import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
 export type EvacMode = 'away' | 'shelter';
 
-const EVAC_DISTANCE_MI = 50;
-
-/** Compute a destination lat/lon `distMi` from origin in `bearingDeg` direction. */
-function destPoint(origin: LatLon, bearingDeg: number, distMi: number): LatLon {
-  const R = 3958.8; // Earth radius in miles
-  const δ = distMi / R;
-  const θ = (bearingDeg * Math.PI) / 180;
-  const φ1 = (origin.lat * Math.PI) / 180;
-  const λ1 = (origin.lon * Math.PI) / 180;
-  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
-  const λ2 =
-    λ1 +
-    Math.atan2(
-      Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
-      Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2),
-    );
-  return { lat: (φ2 * 180) / Math.PI, lon: (λ2 * 180) / Math.PI };
-}
-
-function gmapsDirectionsUrl(origin: LatLon, dest: LatLon): string {
-  return `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lon}&destination=${dest.lat},${dest.lon}&travelmode=driving`;
-}
+// Route the user to the edge of the threat zone — the same "edge of relevance"
+// radius the proximity meter and the threat model use, so they never disagree.
+const EVAC_DISTANCE_MI = THREAT_RADIUS_MI;
 
 export function EvacuationCard({
   origin,
@@ -57,6 +40,8 @@ export function EvacuationCard({
   shelters,
   fireLoading,
   sheltersLoading,
+  sheltersError,
+  onSheltersRetry,
 }: {
   origin: LatLon;
   /** Bearing FROM user TO nearest fire (deg, 0=N). Null while loading. */
@@ -74,6 +59,11 @@ export function EvacuationCard({
   fireLoading?: boolean;
   /** Shelters query is in flight — show skeletons in 'shelter' mode. */
   sheltersLoading?: boolean;
+  /** Shelters query errored — shelter mode shows a distinct "unavailable"
+   *  empty state (with retry) rather than a bare "none nearby". */
+  sheltersError?: boolean;
+  /** Retry the shelters query from the shelter-mode error state. */
+  onSheltersRetry?: () => void;
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
@@ -105,35 +95,99 @@ export function EvacuationCard({
     !(fireLoading ?? false) &&
     (fireBearingDeg == null || fireDistanceMi == null);
 
+  // "Shelter" mode with no shelter to route to (query resolved OR errored, not
+  // loading). Distinct from the loading state so we show a real empty/error
+  // panel instead of silently falling back to the away-from-fire compass and a
+  // "Get Directions" button that points nowhere.
+  const noShelter =
+    mode === 'shelter' && !(sheltersLoading ?? false) && !nearestShelter;
+
   // Opposite of fire bearing — where to run to. Default to 0 when fire data
   // hasn't arrived; the skeleton hides this anyway.
   const escapeBearing = fireBearingDeg != null ? (fireBearingDeg + 180) % 360 : 0;
   const fireCardinal = fireBearingDeg != null ? cardinal8(fireBearingDeg) : '';
 
-  const dest = useMemo(() => {
-    if (mode === 'shelter' && nearestShelter) {
-      return { lat: nearestShelter.lat, lon: nearestShelter.lon };
-    }
-    return destPoint(origin, escapeBearing, EVAC_DISTANCE_MI);
-  }, [mode, nearestShelter, origin, escapeBearing]);
+  // Away-from-fire destination, resolved to avoid open water near a coast:
+  // straight-away point → ±60° → nearest shelter in that arc → direction-only.
+  // (Only meaningful in away mode with a fire; cheap + memoized either way.)
+  const awayRes = useMemo(
+    () => resolveEvacDestination(origin, escapeBearing, EVAC_DISTANCE_MI, shelters),
+    [origin, escapeBearing, shelters],
+  );
+  // If every straight-line point is water AND shelters are still loading, hold
+  // the CTA/note in a transient "finding a route" state — a shelter may still
+  // resolve, so don't flash the direction-only verdict.
+  const awayResolving =
+    mode === 'away' && awayRes.kind === 'direction' && (sheltersLoading ?? false);
 
-  const headingCardinal = mode === 'shelter' && nearestShelter
-    ? cardinalOf(bearingTo(origin, { lat: nearestShelter.lat, lon: nearestShelter.lon }))
-    : cardinalOf(escapeBearing);
+  const inShelterMode = mode === 'shelter' && nearestShelter != null;
 
-  const headingBearing = mode === 'shelter' && nearestShelter
-    ? bearingTo(origin, { lat: nearestShelter.lat, lon: nearestShelter.lon })
-    : escapeBearing;
+  // Heading drives the compass + "Head [cardinal]". It follows the ACTUAL chosen
+  // direction (shelter bearing, or the resolved away bearing) so it never
+  // contradicts where "Get Directions" sends you — same as shelter mode already.
+  const headingBearing = inShelterMode
+    ? bearingTo(origin, { lat: nearestShelter!.lat, lon: nearestShelter!.lon })
+    : awayRes.bearing;
+  const headingCardinal = cardinalOf(headingBearing);
+  const headingLabel = cardinal8(headingBearing);
 
-  const headingLabel = mode === 'shelter' && nearestShelter
-    ? cardinal8(bearingTo(origin, { lat: nearestShelter.lat, lon: nearestShelter.lon }))
-    : cardinal8(escapeBearing);
+  // CTA destination (null = no drive-to point → the button is hidden).
+  const dest: LatLon | null = inShelterMode
+    ? { lat: nearestShelter!.lat, lon: nearestShelter!.lon }
+    : awayRes.kind === 'direction'
+      ? null
+      : awayRes.dest;
 
-  const subtext = mode === 'shelter' && nearestShelter
-    ? `${formatDistance(nearestShelter.distance_mi, units.distance, 1)} ${headingLabel} away`
-    : fireDistanceMi != null
-      ? `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
+  const ctaLabel =
+    mode === 'away' && awayRes.kind === 'shelter' ? 'Directions to shelter' : 'Get Directions';
+
+  // A small fallback chip under the heading so a coastal adjustment is always
+  // visible (the primary/direct route shows none). Neutral tone — this is
+  // informational, not an alarm.
+  const fallbackChip: string | null =
+    mode !== 'away' || awayResolving
+      ? null
+      : awayRes.kind === 'rotated'
+        ? 'Adjusted for the coast'
+        : awayRes.kind === 'shelter'
+          ? 'Routing to nearest shelter'
+          : awayRes.kind === 'direction'
+            ? 'Direction only, no route'
+            : null;
+
+  // Routing note — every distance goes through formatDistance (mi/km follows the
+  // Units preference).
+  const fireNote =
+    fireDistanceMi != null
+      ? `Fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
       : '';
+  let subtext = '';
+  if (inShelterMode) {
+    subtext = `${formatDistance(nearestShelter!.distance_mi, units.distance, 1)} ${headingLabel} away`;
+  } else if (fireBearingDeg != null && fireDistanceMi != null) {
+    subtext = awayResolving
+      ? `Finding a route away from the fire · ${fireNote}`
+      : awayRes.kind === 'primary'
+        ? `Routing ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} away · ${fireNote}`
+        : awayRes.kind === 'rotated'
+          ? `Open land is ${headingLabel} · ${fireNote}`
+          : awayRes.kind === 'shelter'
+            ? `Nearest shelter, ${formatDistance(awayRes.shelter.distance_mi, units.distance, 1)} ${headingLabel} · ${fireNote}`
+            : `Head inland away from the fire · ${fireNote}`;
+  }
+
+  // Footer caveat for away mode (shelter mode keeps its own, below).
+  const awayFooter = awayResolving
+    ? 'Suggestion only. Finding a drive-to point away from the fire. Always follow official guidance.'
+    : awayRes.kind === 'primary'
+      ? `Suggestion only. Targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`
+      : awayRes.kind === 'rotated'
+        ? 'Suggestion only. A point straight away from the fire lands over water, so this targets the nearest open land in that general direction. Google Maps figures out actual roads. Always follow official guidance.'
+        : awayRes.kind === 'shelter'
+          ? 'Suggestion only. The area straight away from the fire is over water, so this routes to the nearest shelter that is still away from the fire. Always follow official guidance.'
+          : sheltersError
+            ? 'The area away from the fire is over water and nearby shelters could not be loaded, so no drive-to point is shown. Head inland, away from the fire, and follow official evacuation routes.'
+            : 'There is open water in every direction away from the fire near you, so no drive-to point is shown. Head inland, away from the fire, and follow official evacuation routes.';
 
   return (
     <div
@@ -248,6 +302,8 @@ export function EvacuationCard({
               hasShelters={nearestShelter != null}
               onFindShelter={() => onModeChange('shelter')}
             />
+          ) : noShelter ? (
+            <NoShelterPanel ae={ae} error={sheltersError ?? false} onRetry={onSheltersRetry} />
           ) : (
             <>
               <div
@@ -286,17 +342,44 @@ export function EvacuationCard({
                 <div
                   style={{
                     fontFamily: ae.fontDisplay,
-                    fontSize: 56,
+                    fontSize: 48,
                     fontWeight: ae.titleWeight,
                     letterSpacing: '-0.04em',
                     color: ae.text,
-                    lineHeight: 0.9,
-                    whiteSpace: 'nowrap',
+                    lineHeight: 0.95,
+                    // Wrap instead of clipping: the card sits in a narrow 1fr
+                    // grid column on laptop, so a 2-letter cardinal ("Head NW")
+                    // can exceed the text column. It fits on one line at typical
+                    // widths and gracefully wraps on smaller ones.
+                    overflowWrap: 'break-word',
                     textShadow: `0 0 34px rgba(${r.glow}, 0.26)`,
                   }}
                 >
                   Head {headingLabel}
                 </div>
+                {fallbackChip ? (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '3px 10px',
+                      borderRadius: 99,
+                      border: `0.5px solid ${ae.line}`,
+                      background: 'rgba(255,255,255,0.04)',
+                      fontFamily: ae.fontMono,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: '0.08em',
+                      color: ae.textMute,
+                      textTransform: ae.chipUpper ? 'uppercase' : 'none',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {fallbackChip}
+                  </div>
+                ) : null}
                 <div
                   style={{
                     marginTop: 12,
@@ -341,20 +424,22 @@ export function EvacuationCard({
             }}
           >
             {mode === 'shelter'
-              ? 'Distances are straight-line. Google Maps figures out actual roads. Always follow official guidance.'
+              ? noShelter
+                ? 'Shelters open and close quickly during an emergency. Always confirm with official sources before you go.'
+                : 'Distances are straight-line. Google Maps figures out actual roads. Always follow official guidance.'
               : noFire
                 ? 'No evacuation route needed right now. Conditions can change, so check back if a fire develops nearby.'
-                : `Suggestion only. Targets a point ${formatDistance(EVAC_DISTANCE_MI, units.distance, 0)} opposite the nearest fire. Google Maps figures out actual roads. Always follow official guidance.`}
+                : awayFooter}
           </p>
         </div>
 
-        {/* CTA — skeleton while loading; hidden in the all-clear (no-fire)
-            state since there's no destination to route to. */}
-        {!noFire ? (
+        {/* CTA — skeleton while loading; hidden when there's no destination to
+            route to (the no-fire all-clear, or shelter mode with no shelter). */}
+        {!noFire && !noShelter ? (
           <div style={{ marginTop: 18 }}>
-            {isBodyLoading ? (
+            {isBodyLoading || awayResolving ? (
               <Skeleton width={'100%'} height={44} rounded="md" />
-            ) : (
+            ) : dest ? (
               <Button
                 variant="primary"
                 icon="external"
@@ -363,9 +448,9 @@ export function EvacuationCard({
                 style={{ height: 56, fontSize: 18, fontWeight: 700, borderRadius: 14 }}
                 onClick={() => window.open(gmapsDirectionsUrl(origin, dest), '_blank', 'noopener,noreferrer')}
               >
-                Get Directions
+                {ctaLabel}
               </Button>
-            )}
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -387,8 +472,8 @@ function NoFirePanel({
   hasShelters: boolean;
   onFindShelter: () => void;
 }) {
-  const C = '#3FB68B';
-  const RGB = '63, 182, 139';
+  const C = RISK_LEVELS.low.color;
+  const RGB = RISK_LEVELS.low.glow;
   return (
     <>
       <div
@@ -467,6 +552,101 @@ function NoFirePanel({
             }}
           >
             Find a nearby shelter →
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/** Empty / error state for "Nearest Shelter" mode when there's no shelter to
+ *  route to. Mirrors NoFirePanel's ring + text rhythm so the card height stays
+ *  stable, and stacks cleanly on mobile via the parent's `app-flex-col`. Uses a
+ *  neutral grey tone (no shelter is not an alarm state). */
+function NoShelterPanel({
+  ae,
+  error,
+  onRetry,
+}: {
+  ae: ReturnType<typeof useAesthetic>['ae'];
+  error: boolean;
+  onRetry?: () => void;
+}) {
+  const C = '#9ca3af';
+  const RGB = '156, 163, 175';
+  const title = error ? 'Shelter info unavailable' : 'No open shelters nearby';
+  const body = error
+    ? 'We could not load nearby shelters right now. Check the Red Cross shelter map or your local emergency services for the closest one.'
+    : 'No open shelters are listed near you right now. Check the Red Cross shelter map or your local emergency services for the closest one.';
+  return (
+    <>
+      <div
+        style={{
+          position: 'relative',
+          width: 130,
+          height: 130,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: `1.5px solid rgba(${RGB}, 0.30)`,
+            boxShadow: `0 0 30px rgba(${RGB}, 0.12), inset 0 0 26px rgba(${RGB}, 0.06)`,
+          }}
+        />
+        <Icon name="pin" size={40} color={C} strokeWidth={1.6} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: ae.fontDisplay,
+            fontSize: 30,
+            fontWeight: ae.titleWeight,
+            letterSpacing: '-0.02em',
+            color: ae.text,
+            lineHeight: 1.05,
+          }}
+        >
+          {title}
+        </div>
+        <p
+          style={{
+            margin: '10px 0 0',
+            maxWidth: 340,
+            fontFamily: ae.fontBody,
+            fontSize: 13.5,
+            color: ae.textDim,
+            lineHeight: 1.5,
+          }}
+        >
+          {body}
+        </p>
+        {error && onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            style={{
+              marginTop: 12,
+              padding: 0,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: C,
+              fontFamily: ae.fontMono,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+            }}
+          >
+            Try again →
           </button>
         ) : null}
       </div>

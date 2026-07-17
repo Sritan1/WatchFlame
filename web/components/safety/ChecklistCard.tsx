@@ -1,8 +1,8 @@
 'use client';
 
-// "Immediate Preparation" — 6 prep actions with custom checkboxes, numeric
-// index, time pill, and a ProgressArc header showing X/6 complete + remaining
-// minutes. Matte-glass surface + roomy rows per the reference design.
+// "Immediate Preparation" — 6 prep actions with custom checkboxes, a numeric
+// index, and a ProgressArc header showing X/6 complete. Matte-glass surface +
+// roomy rows per the reference design.
 
 import { useMemo, useState } from 'react';
 
@@ -15,19 +15,16 @@ import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 interface ChecklistItem {
   id: string;
   label: string;
-  time: string;
-  /** Minutes used for "X min remaining" math. */
-  minutes: number;
   desc: string;
 }
 
 const CHECKLIST: ChecklistItem[] = [
-  { id: 'gobag',   label: "Pack emergency 'Go Bag'",          time: '20 min', minutes: 20, desc: 'IDs, meds, water, charger, flashlight, paper map.' },
-  { id: 'devices', label: 'Charge all mobile devices',         time: '5 min',  minutes: 5,  desc: 'Phones, radios, battery packs to 100%.' },
-  { id: 'windows', label: 'Close all windows and doors',       time: '10 min', minutes: 10, desc: 'Including pet doors, attic vents, garage.' },
-  { id: 'gutters', label: 'Clear leaves from gutters',         time: '30 min', minutes: 30, desc: 'Remove combustible debris within 5 ft of home.' },
-  { id: 'pets',    label: 'Confirm pets and family contacts',  time: '10 min', minutes: 10, desc: 'Carriers ready, emergency contacts saved, kids briefed.' },
-  { id: 'meds',    label: 'Gather essential medications',      time: '5 min',  minutes: 5,  desc: '7-day supply of prescriptions and basics.' },
+  { id: 'gobag',   label: "Pack emergency 'Go Bag'",          desc: 'IDs, meds, water, charger, flashlight, paper map.' },
+  { id: 'devices', label: 'Charge all mobile devices',         desc: 'Phones, radios, battery packs to 100%.' },
+  { id: 'windows', label: 'Close all windows and doors',       desc: 'Including pet doors, attic vents, garage.' },
+  { id: 'gutters', label: 'Clear leaves from gutters',         desc: 'Remove combustible debris within 5 ft of home.' },
+  { id: 'pets',    label: 'Confirm pets and family contacts',  desc: 'Carriers ready, emergency contacts saved, kids briefed.' },
+  { id: 'meds',    label: 'Gather essential medications',      desc: '7-day supply of prescriptions and basics.' },
 ];
 
 // Completion ticks read green (done = good), independent of the page's
@@ -40,10 +37,6 @@ export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const done = useMemo(() => CHECKLIST.filter((c) => checked[c.id]).length, [checked]);
-  const remainingMin = useMemo(
-    () => CHECKLIST.filter((c) => !checked[c.id]).reduce((sum, c) => sum + c.minutes, 0),
-    [checked],
-  );
 
   const toggle = (id: string) => setChecked((s) => ({ ...s, [id]: !s[id] }));
 
@@ -94,7 +87,7 @@ export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {
               letterSpacing: '0.02em',
             }}
           >
-            {done}/{CHECKLIST.length} complete · ~{remainingMin} min remaining
+            {done}/{CHECKLIST.length} complete
           </div>
         </div>
         <div style={{ flexShrink: 0, paddingTop: 4 }}>
@@ -177,27 +170,10 @@ export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {
                       fontWeight: 600,
                       color: isChecked ? ae.textMute : ae.text,
                       letterSpacing: '-0.01em',
-                      textDecoration: isChecked ? 'line-through' : 'none',
                       transition: 'color .25s ease',
                     }}
                   >
                     {it.label}
-                  </span>
-                  <span
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 7,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '0.5px solid rgba(255,255,255,0.10)',
-                      fontFamily: ae.fontMono,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: ae.textMute,
-                      letterSpacing: '0.06em',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {it.time}
                   </span>
                 </div>
                 <div

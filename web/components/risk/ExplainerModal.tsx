@@ -5,7 +5,7 @@
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
-import { RISK_LEVELS } from '@/lib/theme';
+import { FACTOR_COLORS, RISK_LEVELS } from '@/lib/theme';
 import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 
 export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -28,19 +28,19 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
       <Section title="The three base factors" ae={ae}>
         <Bullet
           ae={ae}
-          color="#FF7A3A"
+          color={FACTOR_COLORS.vpd.color}
           k={`Vapor Pressure Deficit · ${V4_WEIGHT_PCT.vpd}% weight`}
           v="Hot, dry air pulls moisture out of plants and fuels. The hotter and drier it gets, the more ready they are to burn."
         />
         <Bullet
           ae={ae}
-          color="#4FA8FF"
+          color={FACTOR_COLORS.wind.color}
           k={`Wind · ${V4_WEIGHT_PCT.wind}% weight`}
           v="Faster wind spreads fire and makes it harder to contain. It matters almost as much as how dry the air is."
         />
         <Bullet
           ae={ae}
-          color="#E8B339"
+          color={FACTOR_COLORS.drought.color}
           k={`Drought (KBDI) · ${V4_WEIGHT_PCT.drought}% weight`}
           v="How much moisture the soil has lost since the last good rain. Drier soil keeps fuels dry for longer."
         />
