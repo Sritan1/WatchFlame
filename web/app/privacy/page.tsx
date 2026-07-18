@@ -9,11 +9,12 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalLayout title="Privacy Policy" lastUpdated="June 17, 2026">
+    <LegalLayout title="Privacy Policy" lastUpdated="July 17, 2026">
       <p>
         Ember Watch is built to need as little of your data as possible. It has{' '}
-        <strong>no user accounts</strong>, sets <strong>no advertising or tracking cookies</strong>,
-        and runs <strong>no third-party analytics</strong>. This policy explains the limited data the
+        <strong>no user accounts</strong>{' '}and sets <strong>no advertising or tracking cookies</strong>.
+        It uses one <strong>privacy-friendly, cookieless analytics service</strong>{' '}to count aggregate
+        visits, described under Cookies &amp; tracking below. This policy explains the limited data the
         Service does handle.
       </p>
 
@@ -25,7 +26,7 @@ export default function PrivacyPage() {
       </p>
       <ul>
         <li>Coordinates are used transiently to query public data providers and are cached only
-          briefly, keyed by a <strong>coarse, rounded coordinate</strong>{' '}(not by you).</li>
+          briefly, keyed by a <strong>rounded, reduced-precision coordinate</strong>{' '}(not by you).</li>
         <li>They are <strong>never tied to an account or identity</strong>{' '}(there are none), and are{' '}
           <strong>never sold, rented, or shared</strong>{' '}for advertising.</li>
         <li><strong>Saved locations</strong>{' '}are stored only in your own browser&apos;s local storage, on your
@@ -49,8 +50,24 @@ export default function PrivacyPage() {
 
       <h2>Cookies &amp; tracking</h2>
       <p>
-        We do not use advertising cookies, cross-site trackers, or analytics. Your preferences (units,
-        theme, saved locations) live in your browser&apos;s local storage on your device.
+        We use <strong>no advertising cookies and no cross-site trackers</strong>. Your preferences
+        (units, theme, saved locations) live in your browser&apos;s local storage on your device.
+      </p>
+      <p>
+        To understand how many people visit and which pages they use, we use{' '}
+        <strong>Vercel Web Analytics</strong>, a privacy-friendly service built into our host. It{' '}
+        <strong>does not use cookies</strong>{' '}and <strong>does not collect personal data</strong>. It
+        counts aggregate visits and page views, and a visitor is identified only by a temporary hash
+        that resets each day, so it cannot follow you across days or across other websites. For more
+        detail, see{' '}
+        <a
+          href="https://vercel.com/docs/analytics/privacy-policy"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Vercel&apos;s analytics privacy documentation
+        </a>
+        .
       </p>
 
       <h2>Data retention</h2>
@@ -58,8 +75,8 @@ export default function PrivacyPage() {
         We keep as little as possible, for as short a time as possible:
       </p>
       <ul>
-        <li><strong>Coordinates</strong>{' '}are held only in a temporary cache, keyed by a coarse
-          rounded value, and expire automatically. They are never saved to a database.</li>
+        <li><strong>Coordinates</strong>{' '}are held only in a temporary cache, keyed by a rounded,
+          reduced-precision value, and expire automatically. They are never saved to a database.</li>
         <li><strong>Request logs</strong>{' '}(IP, timestamp, URL) are retained only for the short window our
           hosting providers keep standard logs, typically a few weeks, and are then deleted
           automatically.</li>
@@ -69,8 +86,8 @@ export default function PrivacyPage() {
 
       <h2>Your privacy rights (GDPR &amp; CCPA)</h2>
       <p>
-        Because the Service has no accounts and holds coordinates only transiently, keyed by a coarse
-        rounded value rather than by you, we generally hold no information that identifies you, so most
+        Because the Service has no accounts and holds coordinates only transiently, keyed by a rounded,
+        reduced-precision value rather than by you, we generally hold no information that identifies you, so most
         data requests have nothing for us to act on. Where applicable, you still have the rights below.
       </p>
       <ul>

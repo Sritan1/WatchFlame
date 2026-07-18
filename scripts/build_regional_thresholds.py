@@ -52,6 +52,15 @@ CALIBRATED_STATES = [
 
 FIRES_PER_STATE = 100
 SAMPLE_POOL_PER_STATE = 5_000  # rows pulled from SQLite before stratification
+# Even split across the four size buckets, not the natural mix, and it's on
+# purpose. Very-large fires are under 1-2% of records but they burn on the worst
+# weather (the highest scores), so taking a quarter of the sample from them holds
+# the tier cutoffs up. If we sampled fires in their real proportions instead
+# (mostly small ones, which often start on ordinary weather) the high and extreme
+# cutoffs would fall by roughly 0.04 to 0.08 and the app would read High on
+# milder days. For a safety tool that over-flagging is worse than being a bit
+# conservative, so we keep the even split. (Checked with a reweighting diagnostic
+# on the cached fires. See the calibration note in handoff.md.)
 SIZE_BUCKETS_RATIO = {"small": 25, "medium": 25, "large": 25, "very_large": 25}
 KBDI_WINDOW_DAYS = 365  # mirrors enrich_iter_kbdi default; used for cache-key probing
 
