@@ -468,7 +468,7 @@ export function Sidebar() {
         }}
       />
 
-      {/* Brand — ember stone + EMBER / Watch · v3 */}
+      {/* Brand — flame stone + WatchFlame wordmark ("flame" in the accent). */}
       <div
         style={{
           position: 'relative',
@@ -516,30 +516,18 @@ export function Sidebar() {
             }}
           />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
-          <span
-            style={{
-              fontFamily: ae.fontDisplay,
-              fontSize: 14,
-              fontWeight: 700,
-              letterSpacing: '0.20em',
-              color: ae.text,
-            }}
-          >
-            EMBER
-          </span>
-          <span
-            style={{
-              fontFamily: ae.fontMono,
-              fontSize: 9,
-              fontWeight: 500,
-              letterSpacing: '0.24em',
-              color: ae.textMute,
-              textTransform: ae.chipUpper ? 'uppercase' : 'none',
-            }}
-          >
-            Watch
-          </span>
+        <div
+          style={{
+            fontFamily: ae.fontDisplay,
+            fontSize: 17,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            lineHeight: 1.05,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ color: ae.text }}>Watch</span>
+          <span style={{ color: accent }}>Flame</span>
         </div>
       </div>
 

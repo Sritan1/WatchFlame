@@ -75,7 +75,7 @@ function LocationNotice() {
 
   const message = loc.outsideUs ? (
     <>
-      Ember Watch currently covers the United States. Showing{' '}
+      WatchFlame currently covers the United States. Showing{' '}
       <strong style={{ color: ae.text }}>{loc.label}</strong>{' '}as a default. Search for a US city
       above to set your location.
     </>

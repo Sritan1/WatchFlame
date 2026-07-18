@@ -165,7 +165,7 @@ app = FastAPI(
     title="Wildfire API",
     version="0.4.0",
     description=(
-        "Backend for Ember Watch: live fire detections, regionally-calibrated "
+        "Backend for WatchFlame: live fire detections, regionally-calibrated "
         "fire-weather risk (V4), weather, shelters, and disaster advisories."
     ),
     lifespan=lifespan,

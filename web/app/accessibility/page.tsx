@@ -3,15 +3,15 @@ import type { Metadata } from 'next';
 import { LegalLayout } from '@/components/legal/LegalLayout';
 
 export const metadata: Metadata = {
-  title: 'Accessibility · Ember Watch',
-  description: 'Ember Watch accessibility statement and how to report issues.',
+  title: 'Accessibility · WatchFlame',
+  description: 'WatchFlame accessibility statement and how to report issues.',
 };
 
 export default function AccessibilityPage() {
   return (
     <LegalLayout title="Accessibility Statement" lastUpdated="June 17, 2026">
       <p>
-        Ember Watch aims to be usable by everyone, and we work toward conformance with the{' '}
+        WatchFlame aims to be usable by everyone, and we work toward conformance with the{' '}
         <a
           href="https://www.w3.org/TR/WCAG21/"
           target="_blank"
