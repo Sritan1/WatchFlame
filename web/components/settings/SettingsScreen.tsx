@@ -384,6 +384,10 @@ export function SettingsScreen() {
           >
             <div>Contains modified Copernicus Sentinel data 2026.</div>
             <div>
+              We acknowledge the use of data and imagery from LANCE FIRMS, operated by NASA&apos;s
+              Earth Science Data and Information System (ESDIS).
+            </div>
+            <div>
               Weather data by{' '}
               <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" style={{ color: ae.textDim, textDecoration: 'underline' }}>Open-Meteo</a>{' '}
               (CC BY 4.0) and{' '}

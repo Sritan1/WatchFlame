@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalLayout title="Terms of Use" lastUpdated="June 17, 2026">
+    <LegalLayout title="Terms of Use" lastUpdated="July 17, 2026">
       <div className="legal-callout">
         <strong>Ember Watch is an informational tool, not an emergency service.</strong>{' '}It is not a
         substitute for official warnings from the National Weather Service, CAL FIRE, your local
@@ -43,19 +43,21 @@ export default function TermsPage() {
       </p>
 
       <h2>No warranty</h2>
-      <p>
-        The Service is provided <strong>&ldquo;as is&rdquo; and &ldquo;as available,&rdquo;</strong>{' '}
-        without warranties of any kind, express or implied, including but not limited to merchantability,
-        fitness for a particular purpose, accuracy, timeliness, or non-infringement. We do not warrant
-        that the Service will be uninterrupted, error-free, or that any information is correct or current.
+      <p className="legal-emphatic">
+        THE SERVICE IS PROVIDED &ldquo;AS IS&rdquo; AND &ldquo;AS AVAILABLE,&rdquo; WITHOUT
+        WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, TIMELINESS, OR NON-INFRINGEMENT. WE DO NOT
+        WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR THAT ANY INFORMATION IS
+        CORRECT OR CURRENT.
       </p>
 
       <h2>Limitation of liability</h2>
-      <p>
-        To the maximum extent permitted by law, the project and its author shall not be liable for any
-        indirect, incidental, special, consequential, or punitive damages, or any loss of property,
-        injury, or harm, arising out of or related to your use of (or inability to use) the Service or
-        any reliance on its content, even if advised of the possibility of such damages.
+      <p className="legal-emphatic">
+        TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE PROJECT AND ITS AUTHOR SHALL NOT BE LIABLE FOR
+        ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF
+        PROPERTY, INJURY, OR HARM, ARISING OUT OF OR RELATED TO YOUR USE OF (OR INABILITY TO USE)
+        THE SERVICE OR ANY RELIANCE ON ITS CONTENT, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+        DAMAGES.
       </p>
 
       <h2>Third-party data</h2>
@@ -67,11 +69,40 @@ export default function TermsPage() {
         providers. Their respective terms may also apply.
       </p>
 
+      <h2>Who may use the Service</h2>
+      <p>
+        You may use the Service only if you can form a binding agreement under applicable law and are
+        not barred from doing so. The Service is intended for a general audience and is not directed to
+        children under 13.
+      </p>
+
       <h2>Acceptable use</h2>
       <p>
         Use the Service lawfully and do not attempt to disrupt, overload, scrape at abusive volumes,
         reverse-engineer access controls, or misuse it. The Service is offered for personal,
         non-commercial use.
+      </p>
+
+      <h2>Governing law</h2>
+      <p>
+        These Terms are governed by the laws of the State of Illinois, without regard to its
+        conflict-of-law rules. Any dispute arising out of or relating to the Service or these Terms
+        will be brought exclusively in the state or federal courts located in Illinois, and you
+        consent to their jurisdiction. Nothing here limits any right you may have under the mandatory
+        consumer-protection laws of the place where you live.
+      </p>
+
+      <h2>Severability and waiver</h2>
+      <p>
+        If any part of these Terms is found unenforceable, that part will be limited or removed to the
+        smallest extent needed, and the rest stays in full effect. Our failure to enforce any part is
+        not a waiver of it.
+      </p>
+
+      <h2>Entire agreement</h2>
+      <p>
+        These Terms, together with the Privacy Policy, are the entire agreement between you and the
+        project regarding the Service, and they replace any earlier understanding on that subject.
       </p>
 
       <h2>Changes</h2>
