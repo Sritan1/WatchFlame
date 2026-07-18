@@ -3,15 +3,15 @@ import type { Metadata } from 'next';
 import { LegalLayout } from '@/components/legal/LegalLayout';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy · Ember Watch',
-  description: 'How Ember Watch handles location and technical data.',
+  title: 'Privacy Policy · WatchFlame',
+  description: 'How WatchFlame handles location and technical data.',
 };
 
 export default function PrivacyPage() {
   return (
     <LegalLayout title="Privacy Policy" lastUpdated="July 17, 2026">
       <p>
-        Ember Watch is built to need as little of your data as possible. It has{' '}
+        WatchFlame is built to need as little of your data as possible. It has{' '}
         <strong>no user accounts</strong>{' '}and sets <strong>no advertising or tracking cookies</strong>.
         It uses one <strong>privacy-friendly, cookieless analytics service</strong>{' '}to count aggregate
         visits, described under Cookies &amp; tracking below. This policy explains the limited data the

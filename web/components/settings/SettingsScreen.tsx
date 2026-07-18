@@ -426,7 +426,7 @@ export function SettingsScreen() {
                 textTransform: 'uppercase',
               }}
             >
-              Ember Watch
+              WatchFlame
             </span>
             <FooterDot ae={ae} />
             <span

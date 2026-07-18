@@ -3,28 +3,28 @@ import type { Metadata } from 'next';
 import { LegalLayout } from '@/components/legal/LegalLayout';
 
 export const metadata: Metadata = {
-  title: 'Terms of Use · Ember Watch',
-  description: 'Terms of use for Ember Watch, an informational wildfire-awareness tool.',
+  title: 'Terms of Use · WatchFlame',
+  description: 'Terms of use for WatchFlame, an informational wildfire-awareness tool.',
 };
 
 export default function TermsPage() {
   return (
     <LegalLayout title="Terms of Use" lastUpdated="July 17, 2026">
       <div className="legal-callout">
-        <strong>Ember Watch is an informational tool, not an emergency service.</strong>{' '}It is not a
+        <strong>WatchFlame is an informational tool, not an emergency service.</strong>{' '}It is not a
         substitute for official warnings from the National Weather Service, CAL FIRE, your local
         emergency management agency, or 911. In an emergency, call 911 and follow official
         evacuation orders.
       </div>
 
       <p>
-        By accessing or using Ember Watch (the &ldquo;Service&rdquo;), you agree to these Terms of
+        By accessing or using WatchFlame (the &ldquo;Service&rdquo;), you agree to these Terms of
         Use. If you do not agree, do not use the Service.
       </p>
 
-      <h2>What Ember Watch is</h2>
+      <h2>What WatchFlame is</h2>
       <p>
-        Ember Watch is an independent, non-commercial project that aggregates publicly available
+        WatchFlame is an independent, non-commercial project that aggregates publicly available
         wildfire, weather, drought, and vegetation data and presents an estimated fire-weather and
         proximity risk picture. It is provided for general informational and educational purposes
         only. It is <strong>not</strong>{' '}an official government service, is not affiliated with or
@@ -34,7 +34,7 @@ export default function TermsPage() {
 
       <h2>No reliance for life-safety decisions</h2>
       <p>
-        Do <strong>not</strong>{' '}rely on Ember Watch to make life-safety, evacuation, or property
+        Do <strong>not</strong>{' '}rely on WatchFlame to make life-safety, evacuation, or property
         decisions. The risk scores, &ldquo;all clear&rdquo; indications, projected trajectories,
         suggested routing, and any other output are estimates derived from third-party data that may
         be delayed, incomplete, or inaccurate, and the underlying models are simplifications that do
