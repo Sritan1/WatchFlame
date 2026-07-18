@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 
 import { DisclaimerGate } from '@/components/DisclaimerGate';
 import { AestheticProvider } from '@/lib/aesthetic';
@@ -56,6 +57,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </UnitsProvider>
           </AestheticProvider>
         </QueryProvider>
+        {/* Vercel Web Analytics — cookieless, first-party (served from
+         *  /_vercel/insights on our own origin, so CSP 'self' covers it). No-op
+         *  off Vercel (dev / non-Vercel host). See the privacy policy. */}
+        <Analytics />
       </body>
     </html>
   );
