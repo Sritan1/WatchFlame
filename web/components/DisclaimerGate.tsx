@@ -146,7 +146,7 @@ export function DisclaimerGate() {
           style={{ fontFamily: ae.fontBody, fontSize: 14, lineHeight: 1.6, color: ae.textDim }}
         >
           <p style={{ margin: '0 0 12px' }}>
-            Ember Watch is an <strong style={{ color: ae.text }}>informational tool</strong>{' '}that
+            WatchFlame is an <strong style={{ color: ae.text }}>informational tool</strong>{' '}that
             estimates wildfire risk from public data. It is{' '}
             <strong style={{ color: ae.text }}>not an emergency service</strong>{' '}and not a substitute
             for official warnings or 911.

@@ -28,7 +28,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Ember Watch · Wildfire Intelligence',
+  title: 'WatchFlame · Wildfire Intelligence',
   description: 'Real-time wildfire risk monitoring, evacuation planning, and federal advisory tracking.',
 };
 

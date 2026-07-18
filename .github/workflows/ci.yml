@@ -75,6 +75,10 @@ jobs:
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
+    # Dependabot PRs run with a restricted, secret-less token that gitleaks-action
+    # errors on, and a dependency version bump cannot introduce a secret anyway.
+    # Scan on pushes to main and on human PRs; skip Dependabot's own PRs.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
         with:
