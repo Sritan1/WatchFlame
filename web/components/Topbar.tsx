@@ -116,6 +116,44 @@ export function Topbar() {
 
         {/* Breadcrumb — group label · chevron · active pill */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+          {/* Mobile-only brand — the sidebar (which carries the wordmark on
+              desktop) is hidden on phones, so surface WatchFlame here in place
+              of the screen-title pill (the bottom nav already shows the screen). */}
+          <span
+            className="app-show-mobile"
+            aria-label="WatchFlame"
+            style={{ display: 'none', alignItems: 'center', gap: 8 }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 7,
+                flexShrink: 0,
+                background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.45), transparent 60%), radial-gradient(circle at 60% 60%, ${accent}, rgba(${accentRgb}, 0.6) 70%)`,
+                border: `0.5px solid rgba(${accentRgb}, 0.55)`,
+                boxShadow: `0 0 14px rgba(${accentRgb}, 0.4), inset 0 1px 0 rgba(255,255,255,0.35)`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="flame" size={13} color="#fff" strokeWidth={2} />
+            </span>
+            <span
+              style={{
+                fontFamily: ae.fontDisplay,
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: '0.01em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ color: ae.text }}>Watch</span>
+              <span style={{ color: accent }}>Flame</span>
+            </span>
+          </span>
           <span
             className="app-hide-mobile"
             style={{
@@ -146,6 +184,7 @@ export function Topbar() {
             />
           </svg>
           <span
+            className="app-hide-mobile"
             style={{
               position: 'relative',
               padding: '5px 12px 5px 11px',
@@ -303,6 +342,7 @@ export function Topbar() {
               Live
             </span>
             <span
+              className="app-hide-mobile"
               style={{
                 width: 1,
                 height: 14,
@@ -311,6 +351,7 @@ export function Topbar() {
               }}
             />
             <span
+              className="app-hide-mobile"
               style={{
                 position: 'relative',
                 fontFamily: ae.fontMono,

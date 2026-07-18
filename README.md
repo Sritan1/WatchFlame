@@ -1,12 +1,12 @@
-# Ember Watch
+# WatchFlame
 
 [![Architecture](https://img.shields.io/badge/docs-architecture-FF7A3A?style=flat-square)](docs/ARCHITECTURE.md) [![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)](LICENSE)
 
 A wildfire-awareness web app for the US. Type in a location and it tells you the current fire risk there, the active fires near you, and where you could go if you had to leave. It pulls live satellite, weather, and vegetation data to do this.
 
-Wildfire information is scattered. Red-flag bulletins live in one place, raw satellite feeds in another, and shelter lists somewhere else. They rarely line up. Ember Watch puts them together. One location gives you a risk tier, the fires nearby, and a basic safety plan.
+Wildfire information is scattered. Red-flag bulletins live in one place, raw satellite feeds in another, and shelter lists somewhere else. They rarely line up. WatchFlame puts them together. One location gives you a risk tier, the fires nearby, and a basic safety plan.
 
-> The app is **Ember Watch**. The repository is `wildfire-app`. The frontend is a Next.js web app (`web/`). The backend is a typed FastAPI service (`api/`).
+> The app is **WatchFlame**. The repository is `wildfire-app`. The frontend is a Next.js web app (`web/`). The backend is a typed FastAPI service (`api/`).
 
 ## Highlights
 
@@ -49,7 +49,7 @@ Five screens, all running on the same backend and the same calibrated algorithm.
 
 **Settings.** Three dark themes, unit preferences (all browser-local, no account), a full disclaimer, dedicated Terms / Privacy / Accessibility pages, and the full data-source attribution.
 
-Plus **saved locations** (search and save any city, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and meets **WCAG 2.1 AA** (color contrast, keyboard focus management, and text alternatives for the charts).
+Plus **saved locations** (search and save any city, swappable from the rail) and a per-incident **Fire Detail** page. The whole web app is **responsive on mobile** and works toward **WCAG 2.1 AA** (color contrast, keyboard focus management, and text alternatives for the charts).
 
 ---
 
@@ -261,7 +261,7 @@ CI gates on `ruff` and the backend tests (api), and on `tsc` + Vitest + a produc
 - ✅ Live FEMA National Shelter System open-shelter layer, integrated into the Safety UI
 - ✅ Full Next.js web app: all five screens, plus Fire Detail and saved locations
 - ✅ Security hardening: CORS allowlist with prod fail-fast, per-IP rate limiting, input/bbox validation, security headers and CSP, secret-redacting logging, CI audits (`pip-audit` / `npm audit` / `gitleaks`)
-- ✅ Responsive mobile web and a **WCAG 2.1 AA** accessibility pass, plus Terms / Privacy / Accessibility pages
+- ✅ Responsive mobile web and an accessibility pass targeting **WCAG 2.1 AA**, plus Terms / Privacy / Accessibility pages
 
 **Deferred**
 

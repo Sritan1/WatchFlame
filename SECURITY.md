@@ -1,6 +1,6 @@
 # Security policy
 
-Ember Watch is a personal portfolio project. It takes security seriously despite
+WatchFlame is a personal portfolio project. It takes security seriously despite
 having no commercial SLA — this document describes the model and how to report
 an issue.
 

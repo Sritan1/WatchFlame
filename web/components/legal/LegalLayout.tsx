@@ -25,7 +25,7 @@ export function LegalLayout({
           <p className="legal-meta">Last updated {lastUpdated}</p>
           {children}
           <p style={{ marginTop: 36 }}>
-            <Link href="/">← Back to Ember Watch</Link>
+            <Link href="/">← Back to WatchFlame</Link>
           </p>
         </article>
       </PageSection>
