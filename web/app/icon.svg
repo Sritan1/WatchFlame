@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7A3A" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#FF7A3A" stop-opacity="0.04" />
+    </linearGradient>
+    <linearGradient id="wg" x1="24" y1="40" x2="24" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC15A" />
+      <stop offset=".5" stop-color="#FF7A3A" />
+      <stop offset="1" stop-color="#F04438" />
+    </linearGradient>
+    <linearGradient id="sw" x1="24" y1="24" x2="44" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7A3A" stop-opacity="0.9" />
+      <stop offset="1" stop-color="#FF7A3A" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="9.5" fill="#100b0a" />
+  <rect width="32" height="32" rx="9.5" fill="url(#stone)" />
+  <g transform="translate(16 16) scale(0.479) translate(-24 -24)">
+    <path fill="none" stroke="url(#sw)" stroke-width="2.2" stroke-linecap="round" d="M24 24 A 19 19 0 0 1 41 13.5" />
+    <path fill="none" stroke="#FF7A3A" stroke-opacity="0.3" stroke-width="1.6" stroke-linecap="round" d="M8 33 A 19 19 0 0 1 7 21" />
+    <g transform="translate(0,0.5) scale(0.8) translate(6,5.2)">
+      <path fill="url(#wg)" d="M6 15 C6 12 10.6 11.4 11.6 14.4 L16.4 29 L20.6 17.4 C21.4 12.5 22.6 10 24 6 C25.4 10 26.6 12.5 27.4 17.4 L31.6 29 L36.4 14.4 C37.4 11.4 42 12 42 15 C42 17 36.8 33 35.2 37.2 C34.4 39.4 31 39.4 30.2 37.2 L24 22 L17.8 37.2 C17 39.4 13.6 39.4 12.8 37.2 C11.2 33 6 17 6 15 Z" />
+    </g>
+    <circle cx="41" cy="13.5" r="2.2" fill="#FFF4E0" />
+  </g>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="9" fill="none" stroke="#FF7A3A" stroke-opacity="0.38" stroke-width="0.8" />
+</svg>
