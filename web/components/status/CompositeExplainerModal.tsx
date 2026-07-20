@@ -96,7 +96,7 @@ export function CompositeExplainerModal({
   const { ae } = useAesthetic();
 
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="Score Breakdown" maxWidth={660}>
+    <Modal open={open} onClose={onClose} eyebrow="How it works" title="Score Breakdown" maxWidth={660}>
       <p style={{ ...textBody(ae), fontSize: 15 }}>
         The overall risk comes from three factors, each answering a different question.
       </p>
@@ -110,15 +110,15 @@ export function CompositeExplainerModal({
       <div className="app-factor-legend" style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
         <FactorLegendRow
           ae={ae}
-          color={FACTOR_DOT.ignition}
-          name="Ignition Likelihood"
-          question="How much does today look like a day fires usually start?"
-        />
-        <FactorLegendRow
-          ae={ae}
           color={FACTOR_DOT.weather}
           name="Fire Weather"
           question="If a fire started today, how intense could it become?"
+        />
+        <FactorLegendRow
+          ae={ae}
+          color={FACTOR_DOT.ignition}
+          name="Ignition Likelihood"
+          question="How much does today look like a day fires usually start?"
         />
         <FactorLegendRow
           ae={ae}
