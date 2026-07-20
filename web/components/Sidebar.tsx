@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
+import { BrandMark } from '@/components/BrandMark';
 import { Icon, type IconName } from '@/components/Icon';
 import { LocationsModal } from '@/components/location/LocationsModal';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -479,43 +480,7 @@ export function Sidebar() {
           gap: 11,
         }}
       >
-        <div
-          style={{
-            position: 'relative',
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            background: `
-              radial-gradient(circle at 30% 25%, rgba(255,255,255,0.45), transparent 60%),
-              radial-gradient(circle at 60% 60%, ${accent}, rgba(${accentRgb}, 0.6) 70%)
-            `,
-            border: `0.5px solid rgba(${accentRgb}, 0.55)`,
-            boxShadow: `
-              0 0 22px rgba(${accentRgb}, 0.55),
-              0 6px 18px rgba(${accentRgb}, 0.35),
-              inset 0 1px 0 rgba(255,255,255,0.35),
-              inset 0 -1px 2px rgba(0,0,0,0.30)
-            `,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Icon name="flame" size={16} color="#fff" strokeWidth={2} />
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute',
-              top: 4,
-              left: 6,
-              width: 6,
-              height: 4,
-              borderRadius: 99,
-              background: 'rgba(255,255,255,0.7)',
-              filter: 'blur(1.5px)',
-            }}
-          />
-        </div>
+        <BrandMark size={32} />
         <div
           style={{
             fontFamily: ae.fontDisplay,

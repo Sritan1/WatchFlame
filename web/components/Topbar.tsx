@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
+import { BrandMark } from '@/components/BrandMark';
 import { Icon } from '@/components/Icon';
 import { LocationsModal } from '@/components/location/LocationsModal';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -124,23 +125,7 @@ export function Topbar() {
             aria-label="WatchFlame"
             style={{ display: 'none', alignItems: 'center', gap: 8 }}
           >
-            <span
-              aria-hidden
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: 7,
-                flexShrink: 0,
-                background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.45), transparent 60%), radial-gradient(circle at 60% 60%, ${accent}, rgba(${accentRgb}, 0.6) 70%)`,
-                border: `0.5px solid rgba(${accentRgb}, 0.55)`,
-                boxShadow: `0 0 14px rgba(${accentRgb}, 0.4), inset 0 1px 0 rgba(255,255,255,0.35)`,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="flame" size={13} color="#fff" strokeWidth={2} />
-            </span>
+            <BrandMark size={24} />
             <span
               style={{
                 fontFamily: ae.fontDisplay,
