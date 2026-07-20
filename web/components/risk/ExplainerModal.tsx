@@ -11,7 +11,7 @@ import { V4_WEIGHT_PCT } from '@/lib/v4-weights';
 export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { ae } = useAesthetic();
   return (
-    <Modal open={open} onClose={onClose} eyebrow="Methodology" title="How is the fire-weather score calculated?" maxWidth={620}>
+    <Modal open={open} onClose={onClose} eyebrow="How it works" title="How is the fire-weather score calculated?" maxWidth={620}>
       <p style={textBody(ae)}>
         This score rates the <strong style={{ color: ae.text }}>fire weather</strong>{' '}around you:
         how much today&apos;s conditions favor a fire starting and spreading. Three weather factors
@@ -66,7 +66,7 @@ export function ExplainerModal({ open, onClose }: { open: boolean; onClose: () =
         </p>
       </Section>
 
-      <Section title="What it&apos;s NOT" ae={ae}>
+      <Section title="What this score isn&apos;t" ae={ae}>
         <p style={textBody(ae)}>
           This isn&apos;t a red flag warning or a prediction of where a fire will start. It&apos;s
           here to help you understand the conditions around you. For official fire-weather alerts,

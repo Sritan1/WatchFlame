@@ -15,6 +15,11 @@ const API_ORIGIN = (() => {
 
 const MAPTILER = "https://api.maptiler.com https://*.maptiler.com";
 
+// Vercel Web Analytics — in production the script + beacon are first-party
+// (/_vercel/insights/*), covered by 'self'. Only in DEV does the SDK load its
+// debug script + beacon from this CDN, so allow it in dev only (prod stays tight).
+const VERCEL_ANALYTICS = "https://va.vercel-scripts.com";
+
 // 'unsafe-eval' is needed only by the dev toolchain (HMR / react-refresh). The
 // production bundle doesn't use eval, so keep it OUT of the prod CSP.
 const DEV = process.env.NODE_ENV !== "production";
@@ -32,10 +37,10 @@ const csp = [
   `img-src 'self' data: blob: ${MAPTILER}`,
   // 'unsafe-inline' for Next's inline hydration bootstrap; 'unsafe-eval' is
   // added in dev only (HMR), never in production.
-  `script-src 'self' 'unsafe-inline'${DEV ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${DEV ? ` 'unsafe-eval' ${VERCEL_ANALYTICS}` : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  `connect-src 'self' ${API_ORIGIN} ${MAPTILER}`.trim(),
+  `connect-src 'self' ${API_ORIGIN} ${MAPTILER}${DEV ? ` ${VERCEL_ANALYTICS}` : ""}`.trim(),
   "worker-src 'self' blob:",
 ].join("; ");
 

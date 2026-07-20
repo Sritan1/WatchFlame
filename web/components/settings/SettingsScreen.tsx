@@ -409,12 +409,20 @@ export function SettingsScreen() {
             paddingTop: 22,
             borderTop: `0.5px solid ${ae.line}`,
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 24,
-            flexWrap: 'wrap',
+            flexDirection: 'column',
+            gap: 18,
           }}
         >
+          {/* Row 1 — build line + data sources */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 24,
+              flexWrap: 'wrap',
+            }}
+          >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span
               style={{
@@ -462,6 +470,52 @@ export function SettingsScreen() {
                 </div>
               ),
             )}
+          </div>
+          </div>
+
+          {/* Row 2 — legal links + copyright */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 14,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Link
+                href="/terms"
+                style={{ fontFamily: ae.fontMono, fontSize: 10.5, color: ae.textDim, letterSpacing: '0.06em', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+              >
+                Terms of Use
+              </Link>
+              <FooterDot ae={ae} opacity={0.6} />
+              <Link
+                href="/privacy"
+                style={{ fontFamily: ae.fontMono, fontSize: 10.5, color: ae.textDim, letterSpacing: '0.06em', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+              >
+                Privacy Policy
+              </Link>
+              <FooterDot ae={ae} opacity={0.6} />
+              <Link
+                href="/accessibility"
+                style={{ fontFamily: ae.fontMono, fontSize: 10.5, color: ae.textDim, letterSpacing: '0.06em', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+              >
+                Accessibility
+              </Link>
+            </div>
+            <span
+              style={{
+                fontFamily: ae.fontMono,
+                fontSize: 10.5,
+                color: ae.textMute,
+                letterSpacing: '0.08em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              © 2026 WatchFlame
+            </span>
           </div>
         </div>
       </PageSection>
