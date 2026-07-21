@@ -24,10 +24,11 @@ const VERCEL_ANALYTICS = "https://va.vercel-scripts.com";
 // production bundle doesn't use eval, so keep it OUT of the prod CSP.
 const DEV = process.env.NODE_ENV !== "production";
 
-// Content-Security-Policy. Shipped as *report-only* for now: the app relies on
-// MapTiler tiles + browser geolocation + Next's inline hydration bootstrap, so
-// this is enforced only after verifying zero console violations in a real
-// browser, then flipping the header name to "Content-Security-Policy".
+// Content-Security-Policy. ENFORCED (2026-07-19): verified zero console
+// violations on the live production site first, then flipped the header name
+// from the report-only variant to the enforcing "Content-Security-Policy". The
+// app relies on MapTiler tiles + browser geolocation + Next's inline hydration
+// bootstrap, all of which the directives below allow.
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -53,8 +54,8 @@ const securityHeaders = [
   // camera/microphone entirely.
   { key: "Permissions-Policy", value: "geolocation=(self), camera=(), microphone=()" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-  // CSP in report-only mode until verified (see note above).
-  { key: "Content-Security-Policy-Report-Only", value: csp },
+  // CSP enforced — verified clean in the live browser before flipping (see note above).
+  { key: "Content-Security-Policy", value: csp },
 ];
 
 const nextConfig: NextConfig = {
