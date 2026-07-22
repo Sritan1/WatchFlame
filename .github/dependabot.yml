@@ -11,6 +11,21 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # React and its DOM renderer must move together. A solo bump of one
+      # breaks peer-dependency resolution and fails the install.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+    ignore:
+      # Next.js 16 and typescript-eslint only support TypeScript 5.x. TS 7 (the
+      # native port) breaks both the Next build and the lint toolchain, so stay
+      # on 5.x until the ecosystem catches up.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

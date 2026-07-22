@@ -93,4 +93,4 @@ A 6-hour fire-weather projection, surfaced as a RISING / STEADY / FALLING chip a
 
 ---
 
-For limitations and planned work, see the README's [Honest gaps](../README.md#honest-gaps) and [Roadmap](../README.md#roadmap).
+For limitations, see the README's [Honest gaps](../README.md#honest-gaps).
