@@ -4,7 +4,7 @@ A technical reference for how the scoring works. The [README](../README.md) is t
 
 Source of truth: [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) (the fire-weather index) and [web/lib/composite-risk.ts](../web/lib/composite-risk.ts) (the overall-risk composite).
 
-> A note on version numbers. The fire-weather index went through several revisions during development. "V1" was the original linear blend; the current fitted multiplicative index is "V4" in a few filenames (`fit_v4_params.py`, `v4_validation.png`). The prose just calls it the fire-weather index.
+> A note on version numbers. The fire-weather index went through several revisions during development. "V1" was the original additive version; the current fitted multiplicative index is "V4" in a few filenames (`fit_v4_params.py`, `v4_validation.png`). The prose just calls it the fire-weather index.
 
 ---
 
@@ -25,7 +25,7 @@ The exponents, saturation scales, and floors live in a `RiskParams` dataclass an
 
 ## Per-state calibration
 
-The raw 0–1 score is bucketed into LOW / MODERATE / HIGH / EXTREME. The bucket boundaries are calibrated per state. Each state's bands are pegged to the 50th / 75th / 97th percentiles of its own historical fire-day scores, so the same raw score can land at EXTREME in one state and HIGH in another.
+The raw 0–1 score is bucketed into LOW / MODERATE / HIGH / EXTREME. The bucket boundaries are calibrated per state. Each state's bands are set from the 50th / 75th / 97th percentiles of its own historical fire-day scores, so the same raw score can land at EXTREME in one state and HIGH in another.
 
 17 states are fitted (the West, the Southeast belt, plus TX/OK), covering the highest-fire-risk regions; the rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. The state is resolved at request time by the US Census reverse-geocoder, which is accurate even at border points like Reno, NV that a bounding-box heuristic would misclassify. Source data is the FPA-FOD database (~1.88M wildfires, 1992–2015), with about 500 fire-days sampled per state (roughly 8,500 across the 17). This per-state sample is separate from the frozen 500-fire benchmark used in [Validation](#validation).
 
@@ -89,8 +89,8 @@ with τ = 21 mi, floor = 0.70, K = 300 ac. Hill saturation on size has no hard c
 
 ## Trajectory
 
-A 6-hour fire-weather projection, surfaced as a RISING / STEADY / FALLING chip and an interactive phase-space graph (time × fire-weather). It projects the score forward hour by hour from Open-Meteo's forecast, then anchors the curve to the Status orb's current score: absolute level comes from OpenWeatherMap so the graph agrees with the cards, and the hour-to-hour deltas come from Open-Meteo. See [api/core/trajectory.py](../api/core/trajectory.py).
+A 6-hour fire-weather projection, shown as a RISING / STEADY / FALLING chip and an interactive phase-space graph (time × fire-weather). It projects the score forward hour by hour from Open-Meteo's forecast, then anchors the curve to the Status orb's current score: absolute level comes from OpenWeatherMap so the graph agrees with the cards, and the hour-to-hour deltas come from Open-Meteo. See [api/core/trajectory.py](../api/core/trajectory.py).
 
 ---
 
-For limitations, see the README's [Honest gaps](../README.md#honest-gaps).
+For limitations, see the README's [Performance and validation](../README.md#performance-and-validation) section.

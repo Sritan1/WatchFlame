@@ -107,3 +107,8 @@ Safety screen 2.png
 
 # One-shot probe/scratch scripts kept locally (not part of the shipped pipeline)
 scripts/_probe_*.py
+
+# Local-only writing artifacts: README draft variants and the engineering study
+# guide (HTML/PDF). Kept locally for reference, not part of the shipped repo.
+docs/readme-variants/
+docs/study-guide/
