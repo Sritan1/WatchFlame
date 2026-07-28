@@ -4,7 +4,7 @@
 -r requirements.txt
 
 # Test + lint + supply-chain audit
-pytest>=8.3
+pytest>=9.1.1
 # Pinned (not >=): ruff ships new default lint rules in minor releases, so a
 # floating version fails CI on rules the code never opted into. Bump this
 # deliberately after running `ruff check api/` locally on the new version.
