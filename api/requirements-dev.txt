@@ -5,7 +5,10 @@
 
 # Test + lint + supply-chain audit
 pytest>=8.3
-ruff>=0.7
+# Pinned (not >=): ruff ships new default lint rules in minor releases, so a
+# floating version fails CI on rules the code never opted into. Bump this
+# deliberately after running `ruff check api/` locally on the new version.
+ruff==0.15.12
 pip-audit>=2.7
 pip-tools>=7.4   # pip-compile --generate-hashes for the deploy lock (see SECURITY.md)
 
