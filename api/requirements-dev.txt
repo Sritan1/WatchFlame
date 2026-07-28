@@ -9,7 +9,7 @@ pytest>=8.3
 # floating version fails CI on rules the code never opted into. Bump this
 # deliberately after running `ruff check api/` locally on the new version.
 ruff==0.15.12
-pip-audit>=2.7
+pip-audit>=2.10.1
 pip-tools>=7.4   # pip-compile --generate-hashes for the deploy lock (see SECURITY.md)
 
 # Validation notebook + offline chart generation (scripts/*.py, notebooks/).
