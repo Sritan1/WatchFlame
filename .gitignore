@@ -112,3 +112,6 @@ scripts/_probe_*.py
 # guide (HTML/PDF). Kept locally for reference, not part of the shipped repo.
 docs/readme-variants/
 docs/study-guide/
+
+# Unused scoring-diagram image (dropped from the README).
+docs/scoring-diagram.png
