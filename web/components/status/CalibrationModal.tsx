@@ -3,7 +3,7 @@
 // Opens from an info icon on the Regional Risk Index card.
 // Explains how state-based calibration shifts the level thresholds without
 // changing the score itself; then renders the live 17-state ladder showing
-// where the user's current V4 score lands in each state's tier band.
+// where the user's current fire-weather score lands in each state's tier band.
 
 import { CalibrationLadder } from '@/components/status/CalibrationLadder';
 import { Modal } from '@/components/ui/Modal';
@@ -20,7 +20,7 @@ export function CalibrationModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** User's current raw V4 score (from /risk). Null while loading or when
+  /** User's current raw fire-weather score (from /risk). Null while loading or when
    *  the request hasn't been issued yet (e.g. modal opens before risk
    *  resolves). The ladder still renders without it. */
   userScore?: number | null;

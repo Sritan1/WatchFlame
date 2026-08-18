@@ -22,7 +22,7 @@ interface Zone {
   label: string;
 }
 
-/** V4 global defaults from api/core/risk_algorithm.py._bucket — used when
+/** Fire-weather global defaults from api/core/risk_algorithm.py._bucket — used when
  *  the user isn't in a fitted state and the backend returns null thresholds. */
 export const GLOBAL_THRESHOLDS = { low: 0.3, moderate: 0.6, extreme: 0.8 } as const;
 

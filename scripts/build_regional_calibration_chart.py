@@ -2,7 +2,7 @@
 
 Reads api/data/regional_thresholds.json and renders each fitted state as a
 horizontal 4-segment bar (LOW / MOD / HIGH / EXT bands). Drops a vertical
-probe line at score 0.45 to drive the headline insight: the same V4 score
+probe line at score 0.45 to drive the headline insight: the same fire-weather score
 maps to materially different danger tiers depending on the state.
 
 Standalone script (no notebook dependency); regenerate with:
@@ -176,7 +176,7 @@ def main() -> None:
     # Bottom-left footer w/ source.
     ax.text(
         0.0, -0.12,
-        f"17 fitted states - global fallback cutoffs: LOW <{global_t['low']:.1f} / MOD <{global_t['moderate']:.1f} / EXT >={global_t['extreme']:.1f}",
+        f"17 fitted states - global fallback cutoffs: LOW <{global_t['low']:.1f} / MOD <{global_t['moderate']:.1f} / HIGH <{global_t['extreme']:.1f} / EXT >={global_t['extreme']:.1f}",
         transform=ax.transAxes,
         fontsize=9, color=COLOR_MUTED,
     )

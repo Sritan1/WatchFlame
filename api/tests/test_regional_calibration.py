@@ -195,7 +195,7 @@ def test_reno_nv_border_overlap_regression(monkeypatch):
     Pins the documented Reno bug from handoff.md."""
     _install_fake_data(monkeypatch, {
         "NV": {
-            # Real NV bbox + centroid from production V4 calibration data.
+            # Real NV bbox + centroid from production calibration data.
             "bbox": [-119.9747, 36.1469, -114.0669, 41.9319],
             "centroid": [39.7015, -116.7347],
             "thresholds": {"low": 0.42, "moderate": 0.49, "high": 0.53, "extreme": 0.57},

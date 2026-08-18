@@ -1,7 +1,7 @@
 // Composite "Personal Threat" score.
 //
 // Combines two independent axes:
-//   1. Fire-weather risk (calibration-aware normalization of the V4 score
+//   1. Fire-weather risk (calibration-aware normalization of the fire-weather score
 //      through per-state regional thresholds). Answers "if a fire started
 //      here today, how badly would it behave?"
 //   2. Active-fire threat (distance + size of the worst nearby fire, with
@@ -46,7 +46,7 @@ const DISTANCE_DECAY_MI = 21;
  *  multiplier in [SIZE_WEIGHT_FLOOR, 1]: a known-but-small fire still reads as
  *  a real fire at close range (the floor), while a larger fire approaches the
  *  full distance-driven threat. The key fix: a large fire FAR away no longer
- *  pegs threat to 1.0 — distance always attenuates. See docs/ARCHITECTURE.md (the overall-risk composite).
+ *  pegs threat to 1.0 — distance always attenuates. See docs/METHODOLOGY.md (the overall-risk composite).
  *
  *  A FIRMS pixel (acres unknown) gets size multiplier 1.0, preserving the
  *  distance-only behavior the satellite path has always had. */
@@ -70,7 +70,7 @@ const WIND_CALM_KPH = 5;
  *  cone edges). Multiplicative (not a flat additive bump) so the effect stays
  *  proportional to the distance/size-driven base — a far fire whose base has
  *  decayed to ~0 can't be escalated a tier by wind direction alone. See
- *  the overall-risk composite in docs/ARCHITECTURE.md. */
+ *  the overall-risk composite in docs/METHODOLOGY.md. */
 const WIND_REL = 0.2;
 
 /** FIRMS staleness dampener. Threat ramps smoothly from ×1.0 (fresh) toward
@@ -94,7 +94,7 @@ const CONTAINED_RAMP_PCT = 8;
 export const THREAT_RADIUS_MI = 50;
 /** Distance at which the smooth edge taper begins. Inside it, the natural
  *  exp-decay stands; from here to THREAT_RADIUS_MI the contribution eases to
- *  0. See docs/ARCHITECTURE.md (the overall-risk composite). */
+ *  0. See docs/METHODOLOGY.md (the overall-risk composite). */
 const TAPER_START_MI = 46;
 
 /** When the highest-threat fire is a FIRMS pixel, look for a named incident
@@ -111,7 +111,7 @@ const BUCKET_EDGES = { low: 0.25, moderate: 0.5, high: 0.75 } as const;
 /** Mirrors `_GLOBAL_FALLBACK` in api/core/regional_calibration.py. Used when
  *  the response carries no `regional_thresholds` (uncalibrated state, or a
  *  state where the JSON is missing required keys). Without this fallback the
- *  Status page would treat the raw V4 score as if it were already a 0-1
+ *  Status page would treat the raw fire-weather score as if it were already a 0-1
  *  percentile, which silently mis-buckets every uncalibrated location.
  *
  *  Must stay in lockstep with the backend's `_GLOBAL_FALLBACK` and the JSON
@@ -127,7 +127,7 @@ const GLOBAL_FALLBACK_THRESHOLDS: RegionalThresholds = {
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
-/** Map the V4 raw `risk_score` to [0, 1] using the region's percentile
+/** Map the raw `risk_score` to [0, 1] using the region's percentile
  *  thresholds. Each tier occupies exactly 0.25 of the output range, so
  *  passing the result through `bucketOf(w)` is guaranteed to agree with
  *  the backend's `danger_level` (or `regional_level`).
@@ -152,7 +152,7 @@ export function normalizeWeather(
 ): number {
   // Fall back to the same global thresholds the backend uses when the
   // response carries no per-state calibration. Without this, an uncalibrated
-  // location would silently treat raw V4 as a 0-1 percentile.
+  // location would silently treat the raw score as a 0-1 percentile.
   const thresholds = t && isThresholdsValid(t) ? t : GLOBAL_FALLBACK_THRESHOLDS;
   const { low, moderate, extreme, score_max } = thresholds;
 
@@ -198,7 +198,7 @@ function isThresholdsValid(t: RegionalThresholds): boolean {
 // 75% containment, 24 h FIRMS staleness, or the ±30° wind cone flipped the
 // score discontinuously. These helpers replace each step with a continuous
 // transition so the threat moves smoothly as conditions change. See
-// docs/ARCHITECTURE.md (the overall-risk composite).
+// docs/METHODOLOGY.md (the overall-risk composite).
 
 /** Smoothstep (Hermite) 0→1 over a clamped [0, 1] input. */
 function smoothstep01(t: number): number {

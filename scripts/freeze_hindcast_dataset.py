@@ -1,4 +1,4 @@
-"""Freeze the V4 hindcast feature set to data/hindcast_features.csv.
+"""Freeze the fire-weather hindcast feature set to data/hindcast_features.csv.
 
 The fire-weather constants we want to fit (VPD/wind scales, multiplicative
 exponents, floors) are applied INSIDE compute_risk — they do not affect the
@@ -40,7 +40,7 @@ from api.core.validation import (  # noqa: E402
 
 SEED = 7
 BUCKETS = ["small", "medium", "large", "very_large"]
-PER_BUCKET = 125  # 4 * 125 = 500-fire stratified sample (matches validate_v4_chart)
+PER_BUCKET = 125  # 4 * 125 = 500-fire stratified sample (matches validate_fireweather_chart)
 
 OUT_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
 

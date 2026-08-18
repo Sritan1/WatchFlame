@@ -52,7 +52,7 @@ LC_CACHE_PATH = PROJECT_ROOT / "data" / "landcover_cache.json"  # gitignored (da
 
 
 def vpd_hpa(temp_c: float | None, humidity_pct: float | None) -> float | None:
-    """Vapor pressure deficit (hPa) — same Tetens form the V4 algorithm uses."""
+    """Vapor pressure deficit (hPa) — same Tetens form the fire-weather algorithm uses."""
     if temp_c is None or humidity_pct is None:
         return None
     es = 6.1078 * math.exp(17.27 * temp_c / (temp_c + 237.3))

@@ -1,7 +1,7 @@
 'use client';
 
-// Right panel of the Risk hero: weighted bars for each factor + season multiplier card.
-// Weights come from the fitted V4 exponents (V4_WEIGHT_PCT, mirroring the
+// Right panel of the Risk hero: one bar per factor + season multiplier card.
+// Weights come from the fitted fire-weather exponents (V4_WEIGHT_PCT, mirroring the
 // backend); the factor values come from the live RiskResponse.factors.
 
 import { useState } from 'react';
@@ -86,7 +86,7 @@ export function FactorBreakdown({
             letterSpacing: '0.10em',
           }}
         >
-          weighted sum
+          weighted product
         </span>
       </div>
 
@@ -175,7 +175,7 @@ export function FactorBreakdown({
         {/* Vegetation factor — lifted above the "How is this calculated?"
          *  button so NDVI gets the visual weight its operational importance
          *  deserves. Mathematically the multiplier sits outside the weighted
-         *  sum (raw = vpd^a × wind^b × drought^c with fitted a/b/c; score =
+         *  product (raw = vpd^a × wind^b × drought^c with fitted a/b/c; score =
          *  vegFactor × raw), so it doesn't get a percentage-bar treatment — but it does
          *  get its own card-within-a-card with the source named explicitly
          *  ("NDVI" vs "Summer"/etc) and an inline context line. */}
@@ -245,7 +245,7 @@ export function FactorBreakdown({
                     textTransform: ae.chipUpper ? 'uppercase' : 'none',
                   }}
                 >
-                  Applied to weighted sum
+                  Applied to weighted product
                 </div>
               </div>
             </div>

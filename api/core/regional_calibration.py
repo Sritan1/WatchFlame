@@ -40,7 +40,7 @@ _GLOBAL_FALLBACK = {
     "high": 0.8,
     # Aligned with the Risk Calculator's gauge UI (which always used 0.8).
     # Was 1.0, which made the EXTREME bucket literally unreachable globally
-    # (V4 raw scores rarely cross 1.0). Calibrated states still use their
+    # (raw scores rarely cross 1.0). Calibrated states still use their
     # own fitted 97th-percentile values — this only affects the fallback
     # for uncalibrated locations.
     "extreme": 0.8,

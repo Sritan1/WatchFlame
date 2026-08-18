@@ -75,7 +75,7 @@ export function CalibrationLadder({
   /** State code (e.g. "CA") for the user's current location. Null when the
    *  user is outside the 17 fitted states or location hasn't resolved yet. */
   userState: string | null;
-  /** User's current raw V4 score. Null while risk data is loading. */
+  /** User's current raw fire-weather score. Null while risk data is loading. */
   userScore: number | null;
   /** True (default) when userState comes from an auto-resolved live location
    *  (Status), so a null state with no score yet means "still resolving".

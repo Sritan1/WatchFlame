@@ -1,7 +1,7 @@
-"""Generate notebooks/figures/v4_validation.png + print current-V4 metrics.
+"""Generate notebooks/figures/fireweather_validation.png + print current fire-weather metrics.
 
-Hindcasts the production V4 fire-weather algorithm (multiplicative VPD × wind ×
-KBDI × vegetation, with constants fit in scripts/fit_v4_params.py) against the
+Hindcasts the production fire-weather algorithm (multiplicative VPD × wind ×
+KBDI × vegetation, with constants fit in scripts/fit_fireweather_params.py) against the
 frozen 500-fire FPA-FOD hindcast set (data/hindcast_features.csv, built by
 scripts/freeze_hindcast_dataset.py from real per-fire Open-Meteo weather + KBDI).
 
@@ -12,7 +12,7 @@ Sentinel-2 replay isn't tractable — so the calendar season multiplier stands
 in, matching the live fallback when an NDVI fetch fails).
 
 Outputs:
-  - notebooks/figures/v4_validation.png (chart for README)
+  - notebooks/figures/fireweather_validation.png (chart for README)
   - stdout summary with Spearman r, per-bucket means, sample sizes
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ from scipy import stats  # noqa: E402
 from api.core.risk_algorithm import compute_risk  # noqa: E402
 
 CSV_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
-# Same stratified split as scripts/fit_v4_params.py, so the ρ reported here is
+# Same stratified split as scripts/fit_fireweather_params.py, so the ρ reported here is
 # measured on the exact held-out fires the fitted constants never trained on.
 SEED = 7
 TEST_FRAC = 0.30
@@ -53,7 +53,7 @@ COLORS = ["#7ee787", "#fbbf24", "#fb923c", "#ef4444"]
 
 def _heldout_test_mask(df: pd.DataFrame) -> np.ndarray:
     """Boolean mask marking the held-out TEST split — identical stratified
-    split to scripts/fit_v4_params.py (same SEED, TEST_FRAC, per-size-bucket,
+    split to scripts/fit_fireweather_params.py (same SEED, TEST_FRAC, per-size-bucket,
     fresh Generator used only for this shuffle) so the ρ measured on it is the
     honest out-of-sample number for the fitted production constants."""
     rng = np.random.default_rng(SEED)
@@ -79,7 +79,7 @@ def main() -> None:
     print(f"loaded {len(ew)} fires from {CSV_PATH.name}; with real KBDI: {n_with_kbdi}")
     print(ew["size_bucket"].value_counts().reindex(BUCKETS).to_string())
 
-    # 2. Score with the production V4 path (fitted constants via DEFAULT_PARAMS).
+    # 2. Score with the production path (fitted constants via DEFAULT_PARAMS).
     #    Real KBDI where available; days_since_rain fallback otherwise — the
     #    documented live behavior when Open-Meteo Archive is unavailable.
     def per_row_score(r: pd.Series) -> float:
@@ -96,8 +96,15 @@ def main() -> None:
 
     ew = ew.copy()
     ew["risk_v4"] = ew.apply(per_row_score, axis=1)
+    ew["log_size"] = np.log10(ew["fire_size"] + 1.0)
 
-    # 4. Per-bucket discrimination + 95% CIs.
+    # The production constants were fit on ~70% of these fires, so anything
+    # measured on the full set is an in-sample hindcast (descriptive only).
+    # The whole figure below reports the SAME held-out test split those
+    # constants never saw: bars, CIs, and the headline rho all come from it.
+    test = ew.loc[_heldout_test_mask(ew)]
+
+    # 4. Per-bucket discrimination + 95% CIs, on the held-out test split.
     def mean_ci(values: pd.Series) -> tuple[float, float]:
         if len(values) < 2:
             return float(values.iloc[0]) if len(values) else 0.0, 0.0
@@ -107,21 +114,14 @@ def main() -> None:
 
     rows_agg = []
     for b in BUCKETS:
-        sub = ew.loc[ew["size_bucket"] == b, "risk_v4"]
+        sub = test.loc[test["size_bucket"] == b, "risk_v4"]
         m, ci = mean_ci(sub)
         rows_agg.append({"bucket": b, "mean": m, "ci": ci, "n": int(len(sub))})
     agg = pd.DataFrame(rows_agg).set_index("bucket")
 
     # 5. Continuous correlation (log size vs predicted score).
-    ew["log_size"] = np.log10(ew["fire_size"] + 1.0)
     spearman_full = float(ew[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
     pearson_full = float(ew[["log_size", "risk_v4"]].corr(method="pearson").iloc[0, 1])
-
-    # Held-out validation: the production constants were fit on ~70% of these
-    # fires, so the full-set ρ above is an in-sample hindcast (descriptive
-    # only). The honest, quotable figure is ρ on the SAME held-out test split
-    # those constants never saw — that is the headline for the chart + README.
-    test = ew.loc[_heldout_test_mask(ew)]
     spearman_test = float(test[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
 
     print("\n-- fire-weather metrics --------------------------------")
@@ -142,7 +142,7 @@ def main() -> None:
     vlarge_lo = agg.loc["very_large", "mean"] - agg.loc["very_large", "ci"]
     non_overlap = vlarge_lo > small_hi
     print(
-        f"Mean-V4 CIs non-overlapping (very_large vs small): "
+        f"Mean-score CIs non-overlapping (very_large vs small): "
         f"{'YES' if non_overlap else 'NO'} "
         f"(small_hi={small_hi:.3f}, vlarge_lo={vlarge_lo:.3f})"
     )
@@ -192,8 +192,8 @@ def main() -> None:
     ax.set_ylabel("Mean predicted fire-weather score (95 % CI)", fontsize=11)
     ax.set_xlabel("Fire size bucket", fontsize=11, labelpad=36)
     ax.set_title(
-        f"Fire-weather algorithm — hindcast over {len(ew)} historical fires\n"
-        f"Held-out test-split Spearman ρ(log size, score) = {spearman_test:+.2f}   "
+        f"Fire-weather algorithm on {len(test)} held-out fires\n"
+        f"Spearman ρ(log size, score) = {spearman_test:+.3f}   "
         f"non-overlapping 95 % CIs between extremes: {'yes' if non_overlap else 'no'}",
         fontsize=12,
         pad=14,
@@ -204,8 +204,8 @@ def main() -> None:
     ax.spines["right"].set_visible(False)
 
     fig.tight_layout()
-    docs_out = PROJECT_ROOT / "docs" / "v4_validation.png"
-    figures_out = PROJECT_ROOT / "notebooks" / "figures" / "v4_validation.png"
+    docs_out = PROJECT_ROOT / "docs" / "fireweather_validation.png"
+    figures_out = PROJECT_ROOT / "notebooks" / "figures" / "fireweather_validation.png"
     docs_out.parent.mkdir(parents=True, exist_ok=True)
     figures_out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(docs_out, dpi=140, bbox_inches="tight", facecolor="white")

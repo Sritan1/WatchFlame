@@ -1,10 +1,10 @@
-// V4 fire-weather multiplicative exponents — the single frontend source of
+// Fire-weather multiplicative exponents — the single frontend source of
 // truth for the per-factor weights shown in the Risk Calculator and used to
 // rank the dominant driver.
 //
 // These MIRROR the fitted `RiskParams` defaults in
 // api/core/risk_algorithm.py (DEFAULT_PARAMS), which were fit against a
-// 500-fire FPA-FOD hindcast (scripts/fit_v4_params.py). The backend is the
+// 500-fire FPA-FOD hindcast (scripts/fit_fireweather_params.py). The backend is the
 // authority — if the constants are ever re-fit, update these to match.
 //
 // Note: the score is a weighted *product* (vpd^a · wind^b · drought^c), not a

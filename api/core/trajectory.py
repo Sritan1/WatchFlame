@@ -2,7 +2,7 @@
 
 The Status composite tier is "now-only." It tells the user how dangerous
 the current environment is, but not whether conditions are about to get
-worse or better. Trajectory closes that gap by projecting the V4
+worse or better. Trajectory closes that gap by projecting the fire-weather
 fire-weather score 6 hours forward using Open-Meteo's hourly Forecast
 data, and surfacing one of three tiers:
 
@@ -10,7 +10,7 @@ data, and surfacing one of three tiers:
     steady   — projected within ±10% of now
     falling  — projected score materially lower than now (improving)
 
-The "materially" threshold is a 10% delta in raw V4 score. That's roughly
+The "materially" threshold is a 10% delta in raw fire-weather score. That's roughly
 the resolution at which a one-tier bucket shift becomes plausible, and
 small enough that genuine direction is captured before it crosses a
 boundary the user can act on.
@@ -28,7 +28,7 @@ from .validation import doy_to_season
 
 Tier = Literal["rising", "steady", "falling"]
 
-# Trajectory threshold — % change in raw V4 score that counts as a
+# Trajectory threshold — % change in raw fire-weather score that counts as a
 # directional move rather than steady. Symmetric for rising and falling.
 SIGNIFICANT_DELTA_PCT = 10.0
 
