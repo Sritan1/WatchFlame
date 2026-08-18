@@ -1,4 +1,4 @@
-"""Tests for the V4 fire weather index.
+"""Tests for the fire-weather index.
 
 Notes on assertion strategy:
 - Score values are checked with tolerance because of the multiplicative form
@@ -187,7 +187,7 @@ def test_kbdi_none_falls_back_to_days_since_rain():
     assert a.factors == b.factors
 
 
-# --- NDVI override (V4) ------------------------------------------------------
+# --- NDVI override ------------------------------------------------------
 
 def test_ndvi_anomaly_overrides_season_mult():
     """When ndvi_anomaly is supplied, the season multiplier in factors['season']

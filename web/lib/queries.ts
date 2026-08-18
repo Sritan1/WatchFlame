@@ -56,7 +56,7 @@ export function useRiskFromWeather(
 }
 
 /** Short-term forward-looking trajectory for the user's location. Projects
- *  the V4 fire-weather score 6 hours forward using Open-Meteo's hourly
+ *  the fire-weather score 6 hours forward using Open-Meteo's hourly
  *  Forecast endpoint and returns one of three tiers (rising / steady /
  *  falling) plus per-frame weather + dominant driver. Drives the Status
  *  trajectory chip and the 2D phase-space arrow.

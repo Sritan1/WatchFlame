@@ -1,7 +1,7 @@
 'use client';
 
 // Fire-weather trajectory plot — opens from the Trajectory chip on Status.
-// X axis = TIME (now at left → +horizon at right); Y axis = fire-weather (V4)
+// X axis = TIME (now at left → +horizon at right); Y axis = fire-weather
 // score (0 bottom → 1 top). The background is a canvas-rendered "risk strata"
 // field: a continuous vertical thermal gradient where each fire-weather tier
 // (LOW/MOD/HIGH/EXT) owns a color and the calibrated thresholds are the
