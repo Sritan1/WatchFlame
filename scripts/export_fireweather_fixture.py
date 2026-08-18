@@ -1,4 +1,4 @@
-"""Export a V4 parity fixture for the web test suite.
+"""Export a fire-weather parity fixture for the web test suite.
 
 Runs the authoritative Python `compute_risk` over a representative grid of
 inputs and writes the (input -> expected score) pairs as JSON. The web vitest
@@ -7,7 +7,7 @@ web/lib/risk-local.ts) reproduces the same numbers — turning the
 backend/frontend "duplicated algorithm" risk into an enforced guard.
 
 Regenerate after any RiskParams re-fit:
-    python scripts/export_v4_fixture.py
+    python scripts/export_fireweather_fixture.py
 """
 from __future__ import annotations
 

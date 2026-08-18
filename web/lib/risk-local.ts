@@ -1,4 +1,4 @@
-// Pure, client-side V4 fire-weather scorer — the single source of truth for
+// Pure, client-side fire-weather scorer — the single source of truth for
 // computing a risk score from explicit inputs WITHOUT the backend.
 //
 // Why this exists: the Risk Calculator ("what-if") is a deterministic function
@@ -16,7 +16,7 @@ import type { RegionalThresholds, RiskRequest, RiskResponse } from '@/lib/api';
 import { thresholdsForState } from '@/lib/regional-thresholds';
 import { SEASON_MULT, V4_SCALES, V4_WEIGHTS } from '@/lib/v4-weights';
 
-// V4 saturation scales + floors now live in v4-weights.ts (the single TS source
+// Saturation scales + floors now live in v4-weights.ts (the single TS source
 // of truth for the fitted constants). Alias them to the local names this scorer
 // already uses.
 const {
@@ -50,7 +50,7 @@ export interface V4Factors {
   season: number;
 }
 
-/** Pure V4 factor + score computation from explicit physical inputs. Mirrors
+/** Pure fire-weather factor + score computation from explicit physical inputs. Mirrors
  *  api/core/risk_algorithm.py `compute_risk`. */
 export function scoreV4(input: {
   temperatureC: number;
@@ -95,7 +95,7 @@ export function scoreV4(input: {
       ? clamp(0.8 - input.ndviAnomaly, 0.4, 1)
       : SEASON_MULT[input.season];
 
-  // V4 multiplicative combination (log-space exponents from v4-weights.ts).
+  // Multiplicative combination (log-space exponents from v4-weights.ts).
   const raw =
     Math.pow(vpdFactor, V4_WEIGHTS.vpd) *
     Math.pow(windFactor, V4_WEIGHTS.wind) *

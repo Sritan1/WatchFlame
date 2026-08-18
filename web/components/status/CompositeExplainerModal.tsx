@@ -84,7 +84,7 @@ export function CompositeExplainerModal({
   threatBucket: RiskLevel | null;
   /** Headline tier — already computed upstream. */
   compositeBucket: RiskLevel | null;
-  /** Raw V4 fire-weather score for display. */
+  /** Raw fire-weather score for display. */
   weatherRawScore: number | null;
   /** Aggregate threat score (0-1). */
   threatSignal: number | null;

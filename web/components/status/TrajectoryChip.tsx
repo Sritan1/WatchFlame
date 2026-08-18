@@ -2,7 +2,7 @@
 
 // Trajectory chip — short-term forward-looking signal sits next to the
 // confidence chip below the Status hero subtitle. Three tiers driven by
-// the backend's projected V4-score delta over the next 6 hours:
+// the backend's projected fire-weather-score delta over the next 6 hours:
 //
 //   RISING  — conditions deteriorating; orange tone, arrow-up glyph
 //   STEADY  — no material change; muted tone, dash glyph

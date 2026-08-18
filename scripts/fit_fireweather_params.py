@@ -1,4 +1,4 @@
-"""Fit the V4 fire-weather constants against the frozen hindcast set.
+"""Fit the fire-weather constants against the frozen hindcast set.
 
 Reads data/hindcast_features.csv (produced by freeze_hindcast_dataset.py),
 splits it stratified-by-size into train/test, and searches RiskParams to
@@ -10,14 +10,14 @@ indices (Hot-Dry-Windy and Fosberg FWI).
 Pure analysis: writes only data/fitted_params.json (the winning constants,
 for the adoption step to read) + stdout. Does NOT touch production code.
 
-The scoring path mirrors validate_v4_chart.py exactly: real KBDI where
+The scoring path mirrors validate_fireweather_chart.py exactly: real KBDI where
 available (else days_since_rain), calendar season multiplier (no NDVI — the
 hindcast can't replay historical Sentinel-2). A self-check asserts the
 vectorized scorer is identical to compute_risk under DEFAULT_PARAMS, so the
 fit optimizes the true production formula.
 
 Usage:
-    python scripts/fit_v4_params.py
+    python scripts/fit_fireweather_params.py
 """
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def _season_mult_array(seasons: pd.Series) -> np.ndarray:
 
 
 def score_array(df: pd.DataFrame, p: RiskParams) -> np.ndarray:
-    """Vectorized V4 score for every row under params `p`. Mirrors compute_risk
+    """Vectorized fire-weather score for every row under params `p`. Mirrors compute_risk
     exactly for the season path (no NDVI), kbdi-preferred drought."""
     t = df["temperature_c"].to_numpy(dtype=float)
     rh = np.clip(df["humidity_pct"].to_numpy(dtype=float), 0.0, 100.0)
@@ -319,8 +319,8 @@ def main() -> int:
 
     print("\n== Spearman ρ(score, log fire size) ===================")
     print(f"{'':16}{'train':>10}{'test':>10}")
-    print(f"{'current V4':16}{rho_cur_train:>+10.4f}{rho_cur_test:>+10.4f}")
-    print(f"{'fitted V4':16}{rho_fit_train:>+10.4f}{rho_fit_test:>+10.4f}")
+    print(f"{'current':16}{rho_cur_train:>+10.4f}{rho_cur_test:>+10.4f}")
+    print(f"{'fitted':16}{rho_fit_train:>+10.4f}{rho_fit_test:>+10.4f}")
 
     # Benchmark indices on the SAME test split.
     log_test = test["log_size"].to_numpy()
@@ -329,8 +329,8 @@ def main() -> int:
     print("\n== Benchmark vs published indices (test split) ========")
     print(f"{'Hot-Dry-Windy':16}{rho_hdw:>+10.4f}")
     print(f"{'Fosberg FFWI':16}{rho_ffwi:>+10.4f}")
-    print(f"{'V4 current':16}{rho_cur_test:>+10.4f}")
-    print(f"{'V4 fitted':16}{rho_fit_test:>+10.4f}")
+    print(f"{'current':16}{rho_cur_test:>+10.4f}")
+    print(f"{'fitted':16}{rho_fit_test:>+10.4f}")
 
     # Per-bucket discrimination on test (the non-overlap claim).
     agg_cur = bucket_means(test, score_array(test, cur))

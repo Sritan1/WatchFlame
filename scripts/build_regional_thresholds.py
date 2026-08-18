@@ -149,7 +149,7 @@ def per_row_score(r: dict) -> float | None:
     # fallback only because compute_risk's signature still requires it (it's
     # ignored when kbdi is supplied).
     #
-    # V4: explicitly pass ndvi_anomaly=0.0 so calibration baselines against
+    # explicitly pass ndvi_anomaly=0.0 so calibration baselines against
     # the "neutral vegetation" multiplier (ndvi_factor(0)=0.80), matching the
     # live /risk path's scoring path. Real NDVI deviations at request time
     # then shift scores up (stressed) or down (greener) RELATIVE to this

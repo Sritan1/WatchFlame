@@ -166,7 +166,7 @@ app = FastAPI(
     version="0.4.0",
     description=(
         "Backend for WatchFlame: live fire detections, regionally-calibrated "
-        "fire-weather risk (V4), weather, shelters, and disaster advisories."
+        "fire-weather risk, weather, shelters, and disaster advisories."
     ),
     lifespan=lifespan,
 )

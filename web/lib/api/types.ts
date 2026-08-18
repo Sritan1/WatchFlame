@@ -105,11 +105,11 @@ export interface CalibrationInfo {
 }
 
 // ─── Trajectory (Tier 2 #7) ────────────────────────────────────────────────
-// Short-term forward-looking signal — projects the V4 score 6 hours forward
+// Short-term forward-looking signal — projects the fire-weather score 6 hours forward
 // using Open-Meteo hourly forecast data and surfaces a tier:
-//   - 'rising'  → conditions deteriorating; V4 score up > 10%
-//   - 'steady'  → conditions stable; V4 score within ±10%
-//   - 'falling' → conditions improving; V4 score down > 10%
+//   - 'rising'  → conditions deteriorating; fire-weather score up > 10%
+//   - 'steady'  → conditions stable; fire-weather score within ±10%
+//   - 'falling' → conditions improving; fire-weather score down > 10%
 // Backend logic in api/core/trajectory.py + api/routes/trajectory.py.
 
 export type IgnitionLevel = 'low' | 'moderate' | 'high' | 'extreme';
