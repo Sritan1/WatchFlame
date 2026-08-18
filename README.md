@@ -31,7 +31,7 @@ The four main screens, all built on the same calibrated scoring algorithm and fu
 
 <img align="right" width="45%" hspace="20" src="docs/screenshots/status.png" alt="Status page Wildfire Intelligence panel showing three signals: fire weather, active fire threat, and the machine-learning ignition likelihood">
 
-<br><br><br><br><br><br>
+<br><br><br><br><br>
 A single risk tier for your location, combining today's fire weather, how likely a fire is to start, and any active fires within 50 mi. It also shows local drought, vegetation stress, the nearest fire driving your risk, and a trajectory for where things are headed.
 
 <br clear="all">
@@ -40,7 +40,7 @@ A single risk tier for your location, combining today's fire weather, how likely
 
 <img align="right" width="52%" hspace="20" src="docs/screenshots/map.png" alt="Live Map with risk-colored fire markers, filter chips, and the incident rail listing nearby fires">
 
-<br><br><br>
+<br><br>
 A map of what is burning near you. Named incidents from NIFC and Cal Fire alongside raw satellite detections from NASA FIRMS, sized by acreage and colored by risk. Click any fire for the full breakdown, or use the side tabs to filter down to just the named incidents or just the satellite detections.
 
 <br clear="all">
@@ -49,7 +49,7 @@ A map of what is burning near you. Named incidents from NIFC and Cal Fire alongs
 
 <img align="right" width="45%" hspace="20" src="docs/screenshots/whatif.png" alt="Fire-Weather What-If page showing the fire-weather score and a factor breakdown of vapor pressure deficit, wind, and drought">
 
-<br><br><br><br><br>
+<br><br><br><br>
 A sandbox for the scoring model. Set your own temperature, humidity, wind, drought, and vegetation and the fire-weather score reacts instantly, along with how the same conditions would rate in each of the 17 calibrated states. It runs entirely in the browser with no backend needed.
 
 <br clear="all">
@@ -58,7 +58,7 @@ A sandbox for the scoring model. Set your own temperature, humidity, wind, droug
 
 <img align="right" width="38%" hspace="50" src="docs/screenshots/safety.png" alt="Safety page with an evacuation checklist and an open shelter tile showing occupancy and directions">
 
-<br><br><br><br><br><br>
+<br><br><br><br><br>
 Open shelters from the live FEMA National Shelter System with status and capacity, and backup gathering points from OpenStreetMap and the NCES school database, sorted by distance. Includes a suggested direction to head, a checklist, and a button that opens directions in your maps app.
 
 <br clear="all">
