@@ -91,7 +91,7 @@ def main() -> int:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.grid(alpha=0.25)
-    fig.suptitle(f"Fire-ignition model - honest out-of-fold evaluation "
+    fig.suptitle(f"Fire-ignition Model - leakage-safe out-of-fold evaluation "
                  f"(ROC-AUC {roc_auc:.3f}, PR-AUC {pr_auc:.3f})", fontsize=12)
     fig.tight_layout()
     DOCS_OUT.parent.mkdir(parents=True, exist_ok=True)

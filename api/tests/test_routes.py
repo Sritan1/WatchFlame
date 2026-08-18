@@ -93,7 +93,7 @@ _RISK_BODY = {
 def _stub_ndvi(monkeypatch):
     """Default NDVI stubs return None so /risk tests don't hit the live CDSE
     Statistical API. compute_risk falls back to season_mult when both NDVI
-    fetches return None — preserves the pre-V4 behavior for existing tests.
+    fetches return None — preserves the prior behavior for existing tests.
     Individual tests can override these patches to exercise the NDVI path."""
     async def _none(*_args, **_kwargs):
         return None

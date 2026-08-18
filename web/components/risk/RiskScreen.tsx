@@ -357,7 +357,7 @@ export function RiskScreen() {
   // The what-if score is a pure function of the slider inputs — compute it
   // LOCALLY (offline, instant, no per-keystroke /risk round-trip). The backend
   // stays the authority for the live Status/Safety flows; the calculator only
-  // needs the V4 formula + the bundled per-state calibration cutoffs. This also
+  // needs the fire-weather formula + the bundled per-state calibration cutoffs. This also
   // removes the old "fake placeholder on error" behavior — there's no request
   // to fail. See web/lib/risk-local.ts. (Seeding from the user's real location
   // — localWeather/localRisk above — still uses the backend.)
@@ -370,7 +370,7 @@ export function RiskScreen() {
   const factors = risk.factors;
 
   // Dominant driver + the three factor SHARES — both derived from the WEIGHTED
-  // contributions (raw factor × its fitted V4 exponent weight, per
+  // contributions (raw factor × its fitted fire-weather exponent weight, per
   // api/core/risk_algorithm.py RiskParams). Sharing one basis keeps the named
   // driver and the share percentages consistent, and normalizing by the total
   // makes the shares sum to 100%. Memoized so a slider drag doesn't recompute

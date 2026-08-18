@@ -222,7 +222,7 @@ export function StatusScreen() {
   // the breakdown row below the hero. For weather, prefer the backend's
   // authoritative `regional_level` (or the global `danger_level` fallback)
   // so the bucket pill on the Status breakdown card matches the Risk
-  // Calculator's pill for the same raw V4 score. `bucketOf(weatherSignal)`
+  // Calculator's pill for the same raw fire-weather score. `bucketOf(weatherSignal)`
   // is mathematically equivalent when thresholds are present, but using
   // the backend value directly is simpler and avoids any drift if the two
   // band schemes ever diverge.
@@ -241,7 +241,7 @@ export function StatusScreen() {
 
   // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
   // bucketOf(linear blend). Two reasons spelled out in
-  // web/lib/composite-risk.ts + docs/ARCHITECTURE.md (the overall-risk composite): the prior 0.45/0.55
+  // web/lib/composite-risk.ts + docs/METHODOLOGY.md (the overall-risk composite): the prior 0.45/0.55
   // weights were a political knob with no empirical fit, and the linear
   // blend's quartile sometimes lands in a tier the operational intent
   // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
@@ -566,7 +566,7 @@ export function StatusScreen() {
           <IntelligenceSystem
             ae={ae}
             fireWeather={{
-              // Raw V4 risk_score (matches the Risk Calculator for the same
+              // Raw risk_score (matches the Risk Calculator for the same
               // inputs). Regional thresholds drive the gauge zones so they
               // agree with the backend bucket; global defaults otherwise.
               score: risk.data?.risk_score ?? null,

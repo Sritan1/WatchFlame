@@ -37,7 +37,7 @@ class TrajectoryFrameOut(BaseModel):
 class TrajectoryResponse(BaseModel):
     """Trajectory result for the user's location.
 
-    `tier` drives the chip color/label; `delta_pct` is the % change in V4
+    `tier` drives the chip color/label; `delta_pct` is the % change in the fire-weather
     score from `now` to `projected`; `dominant_driver` names the input
     that shifted the most ("vpd" / "wind" / "humidity") so the UI can
     surface a one-line context like "VPD up 18% by 3pm"."""

@@ -1,4 +1,4 @@
-"""Fire weather index — V4 (multiplicative VPD × wind × KBDI × vegetation).
+"""Fire-weather index (multiplicative VPD × wind × KBDI × vegetation).
 
 Inputs: temperature (°C), relative humidity (%), wind (km/h), days_since_rain,
 season, and optionally KBDI (drought) + NDVI anomaly (vegetation stress).
@@ -35,7 +35,7 @@ held-out test split — ρ improved from ~0.26 to ~0.32, edging out raw HDW and
 Fosberg on the same fires. The vegetation/NDVI factor and calendar season
 multipliers are held fixed (the hindcast can't replay historical NDVI, and
 season is a selection proxy, not a weather driver). See
-scripts/fit_v4_params.py and docs/ARCHITECTURE.md.
+scripts/fit_fireweather_params.py and docs/METHODOLOGY.md.
 
 Raw 0–1 scores are re-bucketed per US state from fire-day score percentiles
 (regional_calibration.py); the global LOW<0.3 / MOD<0.6 / EXT≥0.8 cutoffs are
@@ -65,16 +65,16 @@ _SEASON_MULT: dict[Season, float] = {
 
 # Fine-fuel drying e-folding time for the days_since_rain fallback drought
 # path. Held fixed (not fit): the hindcast fits against real KBDI, so this
-# constant is barely exercised. See scripts/fit_v4_params.py.
+# constant is barely exercised. See scripts/fit_fireweather_params.py.
 _DROUGHT_TAU_DAYS = 15.0
 
 
 @dataclass(frozen=True)
 class RiskParams:
-    """Tunable calibration constants for the V4 fire-weather index.
+    """Tunable calibration constants for the fire-weather index.
 
     Defaults are the values fit against a 500-fire FPA-FOD hindcast
-    (Spearman ρ on a held-out test split — see scripts/fit_v4_params.py).
+    (Spearman ρ on a held-out test split — see scripts/fit_fireweather_params.py).
     Pulling them into a dataclass lets the fitting harness sweep candidates
     while every production caller gets the fitted defaults via DEFAULT_PARAMS.
 
@@ -96,7 +96,7 @@ class RiskParams:
     exp_drought: float = 0.1204
     # Saturation scales.
     vpd_scale_hpa: float = 40.32    # ~35°C/15% RH ≈ 48 hPa saturates
-    wind_scale_kph: float = 52.31   # wind saturates later than V4's original 40
+    wind_scale_kph: float = 52.31   # wind saturates later than the original 40
     # Lower bounds — prevent score collapse on a calm or post-rain day
     # (fires still happen under those conditions).
     wind_floor: float = 0.0458
@@ -177,7 +177,7 @@ def compute_risk(
     ndvi_anomaly: float | None = None,
     params: RiskParams = DEFAULT_PARAMS,
 ) -> RiskResult:
-    """Compute the V2 fire weather index.
+    """Compute the fire-weather index.
 
     `kbdi` (Keetch-Byram Drought Index, 0–800) is the preferred drought input
     when available — it's the operational metric the US Forest Service uses

@@ -69,10 +69,10 @@ export function HeroScorePanel({
   // Pill tone uses the TRUE level so the label "Risk Level: LOW" displays
   // accurately in green when applicable, even though the card chrome is amber.
   const pillTone = getRisk(level, accent);
-  // V4 backend bucketing: LOW < thresholds.low (50th pct), MOD < moderate
+  // Fire-weather backend bucketing: LOW < thresholds.low (50th pct), MOD < moderate
   // (75th), HIGH < extreme (97th), EXTREME ≥ extreme. The `high` field
   // (90th pct) is informational only — don't use it as a band boundary.
-  // Defaults are the V4 global cutoffs (shared GLOBAL_THRESHOLDS, from
+  // Defaults are the fire-weather global cutoffs (shared GLOBAL_THRESHOLDS, from
   // api/core/risk_algorithm.py._bucket) used when the user isn't in a fitted
   // state and no per-state thresholds are supplied.
   const th = {

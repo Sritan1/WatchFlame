@@ -1,6 +1,6 @@
-"""Generate docs/v4_benchmark.png — fitted index vs published fire-weather indices.
+"""Generate docs/fireweather_benchmark.png — fitted index vs published fire-weather indices.
 
-Reads the held-out test-split Spearman ρ values that scripts/fit_v4_params.py
+Reads the held-out test-split Spearman ρ values that scripts/fit_fireweather_params.py
 persisted to data/fitted_params.json and renders a single horizontal bar chart
 comparing:
 
@@ -16,7 +16,7 @@ It deliberately does NOT plot a separate "original hand-picked constants" bar:
 once the fit was adopted, `rho_current_test` (spearman on DEFAULT_PARAMS) became
 the fitted constants too, so a "before vs after fitting" chart is no longer
 reproducible — re-running the pipeline would compare the fitted set against
-itself. The before/after improvement is reported in fit_v4_params.py's stdout;
+itself. The before/after improvement is reported in fit_fireweather_params.py's stdout;
 this chart makes the reproducible claim: the fitted index beats the published
 benchmarks on held-out fires.
 
@@ -35,13 +35,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import matplotlib.pyplot as plt  # noqa: E402
 
 PARAMS_PATH = PROJECT_ROOT / "data" / "fitted_params.json"
-DOCS_OUT = PROJECT_ROOT / "docs" / "v4_benchmark.png"
-FIGURES_OUT = PROJECT_ROOT / "notebooks" / "figures" / "v4_benchmark.png"
+DOCS_OUT = PROJECT_ROOT / "docs" / "fireweather_benchmark.png"
+FIGURES_OUT = PROJECT_ROOT / "notebooks" / "figures" / "fireweather_benchmark.png"
 
 
 def main() -> int:
     if not PARAMS_PATH.exists():
-        print(f"ERROR: {PARAMS_PATH} not found — run scripts/fit_v4_params.py first.")
+        print(f"ERROR: {PARAMS_PATH} not found — run scripts/fit_fireweather_params.py first.")
         return 1
     m = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))["metrics"]
 
@@ -49,7 +49,7 @@ def main() -> int:
     bars = [
         ("Fosberg FFWI (1978)", m["rho_ffwi_test"], "#E8B339"),
         ("Hot-Dry-Windy (2018)", m["rho_hdw_test"], "#4FA8FF"),
-        ("Fire weather — fitted", m["rho_fitted_test"], "#F04438"),
+        ("Fire weather (fitted)", m["rho_fitted_test"], "#F04438"),
     ]
     bars.sort(key=lambda b: b[1])
     labels = [b[0] for b in bars]
@@ -71,8 +71,8 @@ def main() -> int:
                   fontsize=10.5)
     ax.set_xlim(0, max(values) * 1.18)
     ax.set_title(
-        "Fitted fire-weather index discriminates fire size better than published indices\n"
-        "— same held-out fires, apples-to-apples —",
+        "Fitted fire-weather index vs. published indices\n"
+        "Spearman ρ on the same held-out fires",
         fontsize=12, pad=12,
     )
     ax.grid(axis="x", alpha=0.25, linewidth=0.6)

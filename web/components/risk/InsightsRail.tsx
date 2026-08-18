@@ -29,7 +29,7 @@ export function InsightsRail({
 }: {
   dominantLabel: string;
   dominantDescription: string;
-  /** Each factor's WEIGHTED share of the score (raw factor × its V4 exponent
+  /** Each factor's WEIGHTED share of the score (raw factor × its fire-weather exponent
    *  weight, normalized to sum to 1). Same basis as the dominant-driver pick,
    *  so the named driver is always the largest share and the three add to 100%. */
   shares: { vpd: number; wind: number; drought: number };

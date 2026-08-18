@@ -89,6 +89,7 @@ styleUI.md
 handoff.md
 ML.md
 CodeReviewPlan.md
+ReviewDoc.md
 Trajectory.html
 Ember.html
 WatchFlame Icon - W Signal Hybrids.html
@@ -108,10 +109,20 @@ Safety screen 2.png
 # One-shot probe/scratch scripts kept locally (not part of the shipped pipeline)
 scripts/_probe_*.py
 
-# Local-only writing artifacts: README draft variants and the engineering study
-# guide (HTML/PDF). Kept locally for reference, not part of the shipped repo.
+# Local-only writing artifacts: README draft variants, ARCHITECTURE draft
+# variants, model-card draft variants, and the engineering study guide
+# (HTML/PDF). Kept locally for reference, not part of the shipped repo.
 docs/readme-variants/
+docs/architecture-variants/
+docs/model-card-variants/
 docs/study-guide/
 
 # Unused scoring-diagram image (dropped from the README).
 docs/scoring-diagram.png
+
+# Local archive of superseded v1/v2/v3 validation artifacts (kept locally, not published)
+_archive/
+
+# Notebook figure outputs -- regenerable chart copies; published charts live in docs/
+notebooks/figures/
+
