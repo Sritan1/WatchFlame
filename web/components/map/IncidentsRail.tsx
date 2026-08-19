@@ -733,23 +733,6 @@ function IncidentCardImpl({
           >
             {RISK_LEVELS[severity].label}
           </span>
-          {/* Shimmer pip for urgent (high/extreme) */}
-          {isUrgent ? (
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                left: 0,
-                width: '40%',
-                background:
-                  'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)',
-                animation: 'inc-card-shimmer 3.4s linear infinite',
-                pointerEvents: 'none',
-              }}
-            />
-          ) : null}
         </div>
 
         <span
@@ -955,6 +938,16 @@ function RailTabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      onMouseEnter={(e) => {
+        if (active) return;
+        e.currentTarget.style.background = `rgba(${glow}, 0.06)`;
+        e.currentTarget.style.borderColor = `rgba(${glow}, 0.28)`;
+      }}
+      onMouseLeave={(e) => {
+        if (active) return;
+        e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+        e.currentTarget.style.borderColor = ae.line;
+      }}
       style={{
         flex: 1,
         minWidth: 0,
