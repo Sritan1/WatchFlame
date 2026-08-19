@@ -103,12 +103,15 @@ def main() -> int:
         n=("pred", "size")).reset_index()
 
     # ── Charts ───────────────────────────────────────────────────────────────
+    import _chart_theme as chart_theme
+    pal = chart_theme.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 5.0))
 
     imp = [(FEATURES[i], r.importances_mean[i]) for i in order]
     names = [n for n, _ in imp][::-1]
     vals = [v for _, v in imp][::-1]
-    ax1.barh(names, vals, color="#F04438", alpha=0.9, edgecolor="#1f2937", lw=0.6)
+    ax1.barh(names, vals, color=("#C56A62" if chart_theme.is_dark() else "#F04438"),
+             alpha=0.9, edgecolor=pal["edge"], lw=0.6)
     ax1.set_xlabel("drop in ROC-AUC when scrambled")
     ax1.set_title("What the model relies on (permutation importance)")
     ax1.grid(axis="x", alpha=0.25)
@@ -129,8 +132,8 @@ def main() -> int:
     fig.tight_layout()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     FIG.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT, dpi=160, bbox_inches="tight", facecolor="white")
-    fig.savefig(FIG, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(chart_theme.out_path(OUT), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
+    fig.savefig(chart_theme.out_path(FIG), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
     plt.close(fig)
     print(f"\nsaved: {OUT.relative_to(PROJECT_ROOT)}")
     return 0

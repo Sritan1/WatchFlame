@@ -26,14 +26,18 @@ FIGURES_OUT = PROJECT_ROOT / "notebooks" / "figures" / "regional_thresholds.png"
 
 # Tier colors. Match the app's RISK_LEVELS palette so the chart and the UI
 # read as one design system.
-COLOR_LOW = "#3FB68B"   # green-teal
-COLOR_MOD = "#E8B339"   # amber
-COLOR_HIGH = "#FF7A3A"  # orange
-COLOR_EXT = "#F04438"   # red
-COLOR_PROBE = "#0B0E12"
-COLOR_AXIS = "#374151"
-COLOR_LABEL = "#111827"
-COLOR_MUTED = "#6b7280"
+import _chart_theme as chart_theme  # noqa: E402
+
+_PAL = chart_theme.palette()
+
+COLOR_LOW = chart_theme.data_color("#3FB68B")   # green-teal
+COLOR_MOD = chart_theme.data_color("#E8B339")   # amber
+COLOR_HIGH = chart_theme.data_color("#FF7A3A")  # orange
+COLOR_EXT = chart_theme.data_color("#F04438")   # red
+COLOR_PROBE = _PAL["fg"] if chart_theme.is_dark() else "#0B0E12"
+COLOR_AXIS = _PAL["muted"] if chart_theme.is_dark() else "#374151"
+COLOR_LABEL = _PAL["fg"]
+COLOR_MUTED = _PAL["muted"]
 
 # Probe score — drives the "same score, different tier" callout.
 # Picked at 0.45 because it sits in distinct tiers across the spread:
@@ -60,15 +64,16 @@ def main() -> None:
     y = np.arange(n)
     bar_h = 0.72
 
+    chart_theme.apply()
     fig, ax = plt.subplots(figsize=(11.5, 7.5))
 
     # Per-state 4-segment bars (side-by-side, not stacked — each segment
     # spans its own tier so the band widths are directly visible).
     # Use explicit lefts so segments butt against each other cleanly.
-    ax.barh(y, lows,                left=0,    height=bar_h, color=COLOR_LOW,  edgecolor="white", linewidth=0.6, zorder=2)
-    ax.barh(y, mods - lows,         left=lows, height=bar_h, color=COLOR_MOD,  edgecolor="white", linewidth=0.6, zorder=2)
-    ax.barh(y, exts - mods,         left=mods, height=bar_h, color=COLOR_HIGH, edgecolor="white", linewidth=0.6, zorder=2)
-    ax.barh(y, 1.0 - exts,          left=exts, height=bar_h, color=COLOR_EXT,  edgecolor="white", linewidth=0.6, zorder=2)
+    ax.barh(y, lows,                left=0,    height=bar_h, color=COLOR_LOW,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
+    ax.barh(y, mods - lows,         left=lows, height=bar_h, color=COLOR_MOD,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
+    ax.barh(y, exts - mods,         left=mods, height=bar_h, color=COLOR_HIGH, edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
+    ax.barh(y, 1.0 - exts,          left=exts, height=bar_h, color=COLOR_EXT,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
 
     # Vertical probe line at PROBE_SCORE — the visual hook for the
     # "same score, different danger" story.
@@ -90,7 +95,7 @@ def main() -> None:
         fontweight="bold",
         color=COLOR_PROBE,
         bbox=dict(
-            facecolor="white",
+            facecolor=_PAL["bg"],
             edgecolor=COLOR_PROBE,
             linewidth=1.2,
             boxstyle="round,pad=0.35",
@@ -185,8 +190,8 @@ def main() -> None:
 
     DOCS_OUT.parent.mkdir(parents=True, exist_ok=True)
     FIGURES_OUT.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(DOCS_OUT, dpi=160, bbox_inches="tight", facecolor="white")
-    fig.savefig(FIGURES_OUT, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(chart_theme.out_path(DOCS_OUT), dpi=160, bbox_inches="tight", facecolor=_PAL["bg"])
+    fig.savefig(chart_theme.out_path(FIGURES_OUT), dpi=160, bbox_inches="tight", facecolor=_PAL["bg"])
     plt.close(fig)
 
     print(f"saved: {DOCS_OUT.relative_to(PROJECT_ROOT)}")
