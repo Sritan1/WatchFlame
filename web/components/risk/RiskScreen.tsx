@@ -685,6 +685,16 @@ function ResetButton({
       disabled={!ready}
       title={tip}
       aria-label={tip}
+      onMouseEnter={(e) => {
+        if (!ready) return;
+        e.currentTarget.style.background = `rgba(${RISK_LEVELS.low.glow}, 0.16)`;
+        e.currentTarget.style.borderColor = `rgba(${RISK_LEVELS.low.glow}, 0.42)`;
+      }}
+      onMouseLeave={(e) => {
+        if (!ready) return;
+        e.currentTarget.style.background = `rgba(${RISK_LEVELS.low.glow}, 0.10)`;
+        e.currentTarget.style.borderColor = `rgba(${RISK_LEVELS.low.glow}, 0.30)`;
+      }}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -693,6 +703,7 @@ function ResetButton({
         borderRadius: 99,
         background: ready ? `rgba(${RISK_LEVELS.low.glow}, 0.10)` : 'rgba(255, 255, 255, 0.04)',
         border: `0.5px solid ${ready ? `rgba(${RISK_LEVELS.low.glow}, 0.30)` : ae.line}`,
+        transition: 'background .15s ease, border-color .15s ease',
         color: ready ? RISK_LEVELS.low.color : ae.textMute,
         cursor: ready ? 'pointer' : 'not-allowed',
         fontFamily: ae.fontMono,

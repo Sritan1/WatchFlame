@@ -45,7 +45,7 @@ export function InsightsRail({
   const accentGlow = RISK_LEVELS.extreme.glow;
   return (
     <div
-      className="ember-card ember-hero-card ember-card-hover"
+      className="ember-card ember-hero-card"
       style={{
         position: 'relative',
         overflow: 'hidden',

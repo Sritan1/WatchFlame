@@ -804,6 +804,14 @@ export function Sidebar() {
             toggleFeeds();
           }
         }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))';
+          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.14)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))';
+          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)';
+        }}
         style={{
           position: 'relative',
           zIndex: 1,
@@ -814,6 +822,7 @@ export function Sidebar() {
           background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))',
           border: '0.5px solid rgba(255,255,255,0.07)',
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+          transition: 'background .18s ease, border-color .18s ease',
         }}
       >
         <div

@@ -175,6 +175,14 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
             <button
               type="button"
               onClick={showOnMap}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.26), rgba(${AMBER_RGB}, 0.10))`;
+                e.currentTarget.style.borderColor = `rgba(${AMBER_RGB}, 0.55)`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.18), rgba(${AMBER_RGB}, 0.06))`;
+                e.currentTarget.style.borderColor = `rgba(${AMBER_RGB}, 0.40)`;
+              }}
               style={{
                 height: 40,
                 padding: '0 18px',
@@ -182,6 +190,7 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
                 background: `linear-gradient(180deg, rgba(${AMBER_RGB}, 0.18), rgba(${AMBER_RGB}, 0.06))`,
                 border: `0.5px solid rgba(${AMBER_RGB}, 0.40)`,
                 color: AMBER,
+                transition: 'background .16s ease, border-color .16s ease',
                 fontFamily: ae.fontMono,
                 fontSize: 11,
                 fontWeight: 700,
@@ -202,6 +211,14 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
               href={disaster.url}
               target="_blank"
               rel="noopener noreferrer"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `rgba(${AMBER_RGB}, 0.12)`;
+                e.currentTarget.style.borderColor = `rgba(${AMBER_RGB}, 0.55)`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = `rgba(${AMBER_RGB}, 0.40)`;
+              }}
               style={{
                 height: 40,
                 padding: '0 18px',
@@ -209,6 +226,7 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
                 background: 'transparent',
                 border: `0.5px solid rgba(${AMBER_RGB}, 0.40)`,
                 color: AMBER,
+                transition: 'background .16s ease, border-color .16s ease',
                 fontFamily: ae.fontMono,
                 fontSize: 11,
                 fontWeight: 700,
