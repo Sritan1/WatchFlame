@@ -275,11 +275,20 @@ export function FactorBreakdown({
             <button
               type="button"
               onClick={() => setExplainerOpen(true)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `rgba(${RISK_LEVELS.low.glow}, 0.14)`;
+                e.currentTarget.style.borderColor = `rgba(${RISK_LEVELS.low.glow}, 0.34)`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = `rgba(${RISK_LEVELS.low.glow}, 0.08)`;
+                e.currentTarget.style.borderColor = `rgba(${RISK_LEVELS.low.glow}, 0.22)`;
+              }}
               style={{
                 padding: '8px 12px',
                 borderRadius: 8,
                 background: `rgba(${RISK_LEVELS.low.glow}, 0.08)`,
                 border: `0.5px solid rgba(${RISK_LEVELS.low.glow}, 0.22)`,
+                transition: 'background .15s ease, border-color .15s ease',
                 color: RISK_LEVELS.low.color,
                 cursor: 'pointer',
                 fontFamily: ae.fontMono,

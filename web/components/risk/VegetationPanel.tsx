@@ -53,7 +53,7 @@ export function VegetationPanel({
 
   return (
     <div
-      className="ember-card ember-card-hover"
+      className="ember-card"
       style={{
         position: 'relative',
         overflow: 'hidden',

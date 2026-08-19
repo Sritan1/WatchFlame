@@ -1,56 +1,18 @@
 'use client';
 
-// Subtle cursor-following translation — used inside HeroOrb so the orb drifts
-// a few pixels toward the cursor, giving the parallax depth of a real instrument.
+// Plain wrapper. Previously a cursor-following parallax drift used by HeroOrb;
+// that hover animation was removed. Kept as a passthrough so HeroOrb is unchanged.
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 
 export function CursorParallax({
   children,
-  strength = 12,
   style,
 }: {
   children: ReactNode;
+  /** Retained for call-site compatibility; no longer used. */
   strength?: number;
   style?: CSSProperties;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  // Suppress the cursor-follow drift for users who ask for reduced motion.
-  const reduced = useRef(false);
-  useEffect(() => {
-    reduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
-
-  const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (reduced.current) return;
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left - r.width / 2) / r.width;
-    const y = (e.clientY - r.top - r.height / 2) / r.height;
-    el.style.setProperty('--px', `${x * strength}px`);
-    el.style.setProperty('--py', `${y * strength}px`);
-  };
-
-  const onLeave = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.setProperty('--px', '0px');
-    el.style.setProperty('--py', '0px');
-  };
-
-  return (
-    <div
-      ref={ref}
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-      style={{
-        transform: 'translate3d(var(--px, 0px), var(--py, 0px), 0)',
-        transition: 'transform 0.6s cubic-bezier(0.2, 0.7, 0.3, 1)',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div style={style}>{children}</div>;
 }
