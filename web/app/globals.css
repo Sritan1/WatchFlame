@@ -69,7 +69,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 
 /* ───── Card chrome system ─────────────────────────────────────────────────
  * `.ember-card` applies the always-on "lit from above" inset highlight + a
- * 200ms transition. `.ember-card-hover` adds the hover lift. Hero-level cards
+ * 200ms transition. Hero-level cards
  * also render a top accent stripe + soft corner glow via two pseudo-elements
  * — opt in with `.ember-hero-card` and set --card-accent on the parent. */
 .ember-card {
@@ -79,11 +79,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
               border-radius 0.25s ease,
               border-color 0.25s ease,
               background-color 0.25s ease;
-}
-.ember-card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
-              0 12px 28px rgba(0, 0, 0, 0.35);
 }
 .ember-hero-card {
   position: relative;
@@ -317,27 +312,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .ember-chip-sheen, .ember-chip-charge { animation: none !important; }
 }
 
-/* TiltCard shine — radial highlight that follows --mx/--my set by the JS handler */
-.tilt-card.with-shine::before {
-  content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: radial-gradient(circle 220px at var(--mx, 50%) var(--my, 50%),
-              rgba(255,255,255,0.08), transparent 60%);
-  pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
-  mix-blend-mode: overlay;
-}
-.tilt-card:hover.with-shine::before { opacity: 1; }
-.tilt-card.with-shine::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: radial-gradient(circle 280px at var(--mx, 50%) var(--my, 50%),
-              rgba(255,255,255,0.18), transparent 60%);
-  pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;       mask-composite: exclude;
-  padding: 0.5px;
-}
-.tilt-card:hover.with-shine::after { opacity: 1; }
-
 /* Premium button — mouse-tracked highlight + sheen for primary variant */
 .px-btn {
   position: relative; isolation: isolate;
@@ -403,8 +377,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   from { opacity: 1; transform: none; }
   to   { opacity: 0; transform: translateY(4px) scale(0.98); }
 }
-.feeds-pop-row { transition: background .15s ease; }
-.feeds-pop-row:hover { background: rgba(255, 255, 255, 0.04); }
 
 .web-icon-btn { transition: background .15s ease, transform .15s ease, border-color .15s ease; }
 .web-icon-btn:hover {
@@ -436,7 +408,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   border-color: rgba(255, 255, 255, 0.18);
 }
 .inc-panel { transition: border-color .25s ease, box-shadow .25s ease; }
-.inc-panel:hover { border-color: rgba(255, 255, 255, 0.14); }
 .inc-open-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
 .inc-open-btn:active { transform: translateY(0) scale(0.992); }
 
@@ -449,11 +420,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   50%      { opacity: 0.55; box-shadow: 0 0 4px #3FB68B; }
 }
 .inc-live-dot { animation: inc-live-pulse 2.2s ease-in-out infinite; }
-
-@keyframes inc-card-shimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
-}
 
 /* Custom slim scrollbar for the rail's fire list. */
 .inc-rail-scroll::-webkit-scrollbar { width: 6px; }
@@ -486,15 +452,6 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .inc-card:active {
   transform: translateY(0) scale(0.995);
   transition-duration: 0.08s;
-}
-/* Selected variant gets a deeper accent-tinted shadow on hover. */
-.inc-card.inc-card-sel:hover {
-  transform: translateY(-1px);
-  border-color: rgba(var(--ic-glow), 0.55) !important;
-  box-shadow:
-    0 0 0 0.5px rgba(var(--ic-glow), 0.25),
-    0 18px 38px rgba(var(--ic-glow), 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
 }
 
 /* Cursor-following radial highlight inside each card. Two CSS vars
