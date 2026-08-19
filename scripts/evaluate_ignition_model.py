@@ -68,6 +68,8 @@ def main() -> int:
     print(f"  Decision gate: {'PASS' if gate else 'REVIEW'}")
 
     # ── Charts ───────────────────────────────────────────────────────────────
+    import _chart_theme as chart_theme
+    pal = chart_theme.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
 
     fpr, tpr, _ = roc_curve(y, raw)
@@ -96,8 +98,8 @@ def main() -> int:
     fig.tight_layout()
     DOCS_OUT.parent.mkdir(parents=True, exist_ok=True)
     FIG_OUT.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(DOCS_OUT, dpi=160, bbox_inches="tight", facecolor="white")
-    fig.savefig(FIG_OUT, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(chart_theme.out_path(DOCS_OUT), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
+    fig.savefig(chart_theme.out_path(FIG_OUT), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
     plt.close(fig)
     print(f"\nsaved: {DOCS_OUT.relative_to(PROJECT_ROOT)}")
     return 0
