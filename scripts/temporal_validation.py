@@ -79,6 +79,8 @@ def validate_ignition() -> dict:
 
 
 def make_chart(ig: dict) -> None:
+    import _chart_theme as chart_theme
+    pal = chart_theme.apply()
     fig, ax = plt.subplots(figsize=(5.6, 5.0))
     ax.plot(ig["fpr"], ig["tpr"], color="#F04438", lw=2.2,
             label=f"out-of-time (AUC {ig['roc']:.3f})")
@@ -90,8 +92,8 @@ def make_chart(ig: dict) -> None:
     ax.text(0.46, 0.10,
             f"spatial-CV reference: {SPATIAL_CV_REFERENCE:.3f}\n"
             f"out-of-time:          {ig['roc']:.3f}",
-            fontsize=9.5, color="#374151", family="monospace",
-            bbox=dict(boxstyle="round", fc="white", ec="#cbd5e1"))
+            fontsize=9.5, color=pal["fg"], family="monospace",
+            bbox=dict(boxstyle="round", fc=pal["bg"], ec=pal["grid"]))
     ax.legend(loc="lower right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -99,8 +101,8 @@ def make_chart(ig: dict) -> None:
     fig.tight_layout()
     DOCS_OUT.parent.mkdir(parents=True, exist_ok=True)
     FIG_OUT.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(DOCS_OUT, dpi=160, bbox_inches="tight", facecolor="white")
-    fig.savefig(FIG_OUT, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(chart_theme.out_path(DOCS_OUT), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
+    fig.savefig(chart_theme.out_path(FIG_OUT), dpi=160, bbox_inches="tight", facecolor=pal["bg"])
     plt.close(fig)
     print(f"\nsaved: {DOCS_OUT.relative_to(PROJECT_ROOT)}")
 

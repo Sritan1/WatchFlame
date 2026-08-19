@@ -37,13 +37,13 @@ The evaluation is designed so the model cannot score well simply by memorizing l
 
 About 15% of examples are fire days, which sets the no-skill PR-AUC line. The same base rate sets the no-skill Brier at 0.128, the score you get by predicting 0.151 for every row. The raw model is worse than that at 0.163, which is normal for uncalibrated boosted trees, and isotonic calibration brings it to 0.100, about 22% below no-skill. The gradient-boosted model improves on a logistic-regression baseline (0.798 ROC-AUC on the same data).
 
-<img src="ignition_eval.png" alt="ROC curve and reliability diagram for the ignition model" width="640">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/ignition_eval.png"><img src="ignition_eval.png" alt="ROC curve and reliability diagram for the ignition model" width="640"></picture>
 
 ### Tested Across Time
 
 Spatial cross-validation holds out regions but still mixes years, so it can train on a 2015 fire and test on a 2005 one. A stricter check trains only on rows before 2010 and tests on 2010 to 2015 (n=4,893), which is the situation the live model is actually in, since only the past is ever available. Discrimination barely moves: **0.832** out-of-time against **0.840** in spatial cross-validation, PR-AUC 0.481. A six-year forward gap costs almost nothing, which says the drivers are stable. Reproduce with `scripts/temporal_validation.py`.
 
-<img src="temporal_validation.png" alt="Out-of-time validation, ROC-AUC on the 2010 to 2015 holdout compared with spatial cross-validation" width="460">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/temporal_validation.png"><img src="temporal_validation.png" alt="Out-of-time validation, ROC-AUC on the 2010 to 2015 holdout compared with spatial cross-validation" width="460"></picture>
 
 ### What the Model Relies On
 
@@ -51,7 +51,7 @@ The model relies on dryness. VPD, humidity, and KBDI take the top three spots by
 
 Wind ranks last here, the opposite of its weight in the fire-weather index. The index is fitted to fire size, and wind drives spread. This model predicts whether a fire starts, which turns on fuel dryness.
 
-<img src="ignition_interpret.png" alt="Permutation feature importance and the model's regional prediction map" width="640">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/ignition_interpret.png"><img src="ignition_interpret.png" alt="Permutation feature importance and the model's regional prediction map" width="640"></picture>
 
 ## Fixing the Urban Over-Flag
 

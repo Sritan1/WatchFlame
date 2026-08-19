@@ -49,6 +49,10 @@ LABELS = {
     "very_large": ">1,000 ac",
 }
 COLORS = ["#7ee787", "#fbbf24", "#fb923c", "#ef4444"]
+# Dark-theme palette: same green -> red heat progression, but evened to a
+# cohesive family (~60% lightness, ~40% saturation) so the bars sit on the dark
+# canvas instead of glowing. Tuned for dark mode, not a uniform mute of the above.
+COLORS_DARK = ["#6FAF8E", "#C6A55E", "#C9885A", "#C56A62"]
 
 
 def _heldout_test_mask(df: pd.DataFrame) -> np.ndarray:
@@ -148,15 +152,18 @@ def main() -> None:
     )
 
     # 6. Chart — single panel, bar means + CI whiskers, color-coded.
+    import _chart_theme as chart_theme
+    pal = chart_theme.apply()
     fig, ax = plt.subplots(figsize=(9.5, 5.4))
     x = np.arange(len(BUCKETS))
     ax.bar(
         x,
         agg["mean"],
         yerr=agg["ci"],
-        color=COLORS,
+        color=(COLORS_DARK if chart_theme.is_dark() else COLORS),
         capsize=10,
-        edgecolor="#1f2937",
+        edgecolor=pal["edge"],
+        ecolor=pal["fg"],
         linewidth=0.8,
         alpha=0.92,
     )
@@ -172,7 +179,7 @@ def main() -> None:
             ha="center",
             fontsize=11,
             fontweight="bold",
-            color="#111827",
+            color=pal["fg"],
         )
         # n=125 caption — positioned in axes-fraction coords so it sits
         # cleanly below the x-tick labels regardless of the data y_max.
@@ -184,7 +191,7 @@ def main() -> None:
             textcoords="offset points",
             ha="center",
             fontsize=9.5,
-            color="#6b7280",
+            color=pal["muted"],
         )
 
     ax.set_xticks(x)
@@ -208,8 +215,8 @@ def main() -> None:
     figures_out = PROJECT_ROOT / "notebooks" / "figures" / "fireweather_validation.png"
     docs_out.parent.mkdir(parents=True, exist_ok=True)
     figures_out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(docs_out, dpi=140, bbox_inches="tight", facecolor="white")
-    fig.savefig(figures_out, dpi=140, bbox_inches="tight", facecolor="white")
+    fig.savefig(chart_theme.out_path(docs_out), dpi=140, bbox_inches="tight", facecolor=pal["bg"])
+    fig.savefig(chart_theme.out_path(figures_out), dpi=140, bbox_inches="tight", facecolor=pal["bg"])
     plt.close(fig)
     print(f"\nsaved charts: {docs_out}, {figures_out}")
 

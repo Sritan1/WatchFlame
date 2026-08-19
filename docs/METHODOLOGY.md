@@ -2,9 +2,8 @@
 
 This is the technical reference for how WatchFlame turns a location into one risk tier. It covers the three signals, how they combine into a single tier, and how the scoring is calibrated and validated. The [README](../README.md) is the higher-level overview.
 
-<br>
 
-# Scoring Overview
+## Scoring Overview
 
 A location produces three independent signals. Two lookup tables fold them into one tier.
 
@@ -12,7 +11,7 @@ A location produces three independent signals. Two lookup tables fold them into 
 
 <br>
 
-# Signal 1: Fire Weather
+## Signal 1: Fire Weather
 
 A rule-based index that grades the local environment for fire ignition and growth on a 0 to 1 scale.
 
@@ -39,7 +38,7 @@ The exponents, saturation scales, and floors live in a `RiskParams` dataclass in
 
 <br>
 
-# Signal 2: Ignition Likelihood
+## Signal 2: Ignition Likelihood
 
 A separate machine-learning model that answers a different question: Do today's conditions resemble the days fires actually start? It predicts occurrence, unlike the fire-weather index, which scores severity. Served at `/ignition` as a calibrated percentile and shown next to the fire-weather tier on Status.
 
@@ -60,7 +59,7 @@ Its measured performance is in [Performance and Validation](#performance-and-val
 
 <br>
 
-# Signal 3: Active-Fire Threat
+## Signal 3: Active-Fire Threat
 
 The first two signals are about conditions. This one scores fires that are already burning, weighing how close a fire is and how big it is.
 
@@ -93,7 +92,7 @@ Three factors then adjust the base threat up or down. These are what make the sc
 
 <br>
 
-# Combining the Three Signals
+## Combining the Three Signals
 
 Two lookup matrices in series ([web/lib/composite-risk.ts](../web/lib/composite-risk.ts)) combine the three signals into a single risk tier. A formula would force every combination onto one smooth curve. A matrix lets each cell be set directly, so a case like high ignition on a low-severity day lands at the right tier without shifting any of the others.
 
@@ -109,7 +108,7 @@ Two lookup matrices in series ([web/lib/composite-risk.ts](../web/lib/composite-
 
 <br>
 
-# Performance and Validation
+## Performance and Validation
 
 Two things back the scoring system: local calibration and held-out validation.
 
@@ -119,7 +118,7 @@ The raw 0 to 1 fire-weather score is bucketed into LOW / MODERATE / HIGH / EXTRE
 
 17 states are fitted (the West, the Southeast belt, TX, and OK), covering the highest-fire-risk regions. The rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. The state is resolved at request time by the US Census reverse-geocoder, which is accurate even at border points like Reno, NV that a bounding-box heuristic would misclassify. Source data is the FPA-FOD database (~1.88M wildfires, 1992 to 2015), with about 500 fire-days sampled per state (roughly 8,500 across the 17). This per-state sample is separate from the frozen 498-fire benchmark used below.
 
-<img src="regional_thresholds.png" alt="Per-state risk-band thresholds. Each fitted state's LOW, MODERATE, HIGH, and EXTREME cutoffs come from its own historical fire-day score percentiles, so the same raw score can map to a different tier by state." width="600">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/regional_thresholds.png"><img src="regional_thresholds.png" alt="Per-state risk-band thresholds. Each fitted state's LOW, MODERATE, HIGH, and EXTREME cutoffs come from its own historical fire-day score percentiles, so the same raw score can map to a different tier by state." width="600"></picture>
 
 ### Fire-Weather Validation
 
@@ -127,19 +126,19 @@ The constants for the fire-weather formula are fitted to maximize Spearman ρ(sc
 
 Mean score is flat across the two smallest size classes, then rises clearly above 100 acres, with non-overlapping 95% confidence intervals between the smallest and largest bins.
 
-<img src="fireweather_validation.png" alt="Mean fire-weather score by fire-size class on the held-out test fires, with 95% confidence intervals. The score is flat across the two smallest classes, then rises clearly above 100 acres." width="600">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/fireweather_validation.png"><img src="fireweather_validation.png" alt="Mean fire-weather score by fire-size class on the held-out test fires, with 95% confidence intervals. The score is flat across the two smallest classes, then rises clearly above 100 acres." width="600"></picture>
 
-<img src="fireweather_benchmark.png" alt="Spearman correlation with fire size for the fitted fire-weather index next to the Hot-Dry-Windy and Fosberg indices on the held-out fires, showing the three are close." width="600">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/fireweather_benchmark.png"><img src="fireweather_benchmark.png" alt="Spearman correlation with fire size for the fitted fire-weather index next to the Hot-Dry-Windy and Fosberg indices on the held-out fires, showing the three are close." width="600"></picture>
 
 ### Ignition Model Validation
 
 Leakage-safe spatial-block cross-validation gives **ROC-AUC 0.840**, holding at 0.832 on a separate out-of-time test. Full metrics, calibration, and the limitations are in the [model card](IGNITION_MODEL_CARD.md).
 
-<img src="ignition_eval.png" alt="ROC curve and reliability diagram for the ignition model" width="700">
+<picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/ignition_eval.png"><img src="ignition_eval.png" alt="ROC curve and reliability diagram for the ignition model" width="700"></picture>
 
 <br>
 
-# Design Decisions
+## Design Decisions
 
 ### The Drought Floor
 

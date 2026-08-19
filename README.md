@@ -87,11 +87,11 @@ The fire-weather index and the ignition model were both validated against fires 
 
 <table width="100%">
 <tr>
-<td width="68%" valign="middle"><img src="docs/fireweather_benchmark.png" alt="The fitted fire-weather index alongside the published Hot-Dry-Windy and Fosberg indices, Spearman ρ on the same held-out fires" width="100%"></td>
+<td width="68%" valign="middle"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/charts-dark/fireweather_benchmark.png"><img src="docs/fireweather_benchmark.png" alt="The fitted fire-weather index alongside the published Hot-Dry-Windy and Fosberg indices, Spearman ρ on the same held-out fires" width="100%"></picture></td>
 <td width="32%" valign="middle"><em>On 151 held-out fires the fitted index reaches Spearman ρ +0.315, performing as well as Hot-Dry-Windy (+0.304) and Fosberg (+0.281), while also using drought and vegetation.</em></td>
 </tr>
 <tr>
-<td width="68%" valign="middle"><img src="docs/ignition_eval.png" alt="Ignition model: ROC curve and reliability diagram" width="100%"></td>
+<td width="68%" valign="middle"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/charts-dark/ignition_eval.png"><img src="docs/ignition_eval.png" alt="Ignition model: ROC curve and reliability diagram" width="100%"></picture></td>
 <td width="32%" valign="middle"><em>The ignition model ranks a real fire day above an ordinary one about 84% of the time (0.84 ROC-AUC) and stays well-calibrated.</em></td>
 </tr>
 </table>
