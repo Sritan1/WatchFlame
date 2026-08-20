@@ -3,13 +3,13 @@ updates:
   - package-ecosystem: pip
     directory: /api
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
     directory: /web
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       # React and its DOM renderer must move together. A solo bump of one
@@ -30,4 +30,4 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
