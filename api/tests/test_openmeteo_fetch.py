@@ -1,11 +1,8 @@
-"""Tests for fetch_window's caching behavior across success / fail / rate-limit.
+"""Tests for fetch_window's caching across success, failure and rate-limit.
 
-The key invariant pinned here:
-- 200 → cache the response
-- 4xx-not-429 / network error → cache None (permanent failure)
-- All retries 429 → do NOT cache; future runs must retry transparently
-  (this was the silent-failure bug that wiped out FL/GA/NC/SC/OK/NV in the
-  initial KBDI calibration run)
+A 200 caches the response. A network error or a non-429 4xx caches None, that failure
+is permanent. Exhausting retries on 429 caches nothing, so a later run retries. That
+last one silently wiped out six states in the first KBDI calibration run.
 """
 from __future__ import annotations
 
@@ -29,8 +26,8 @@ class _StubResponse:
 class _StubClient:
     """Drop-in replacement for httpx.Client used inside fetch_window."""
     def __init__(self, responses: list[_StubResponse]):
-        # Each call to .get() consumes the next item; raise on exhaustion so
-        # tests fail loudly if they accidentally make extra calls.
+        # Each .get() consumes the next item and raises once they run out, so
+        # an unexpected extra call fails loudly.
         self._responses = list(responses)
         self.call_count = 0
 
@@ -71,7 +68,7 @@ def test_fetch_window_200_caches_data(monkeypatch):
 
 
 def test_fetch_window_4xx_caches_none(monkeypatch):
-    """A 4xx that's not 429 (e.g. 400 bad request) is permanent — cache None."""
+    """A 4xx other than 429 is permanent, so it caches."""
     _patch_client(monkeypatch, [_StubResponse(400, text="bad coords")])
     cache: dict = {}
     result = openmeteo.fetch_window(
@@ -83,7 +80,6 @@ def test_fetch_window_4xx_caches_none(monkeypatch):
 
 
 def test_fetch_window_network_error_caches_none(monkeypatch):
-    """Connection errors are also permanent-ish — cache None."""
     class _ExplodingClient:
         def __enter__(self): return self
         def __exit__(self, *a): return False
@@ -101,7 +97,7 @@ def test_fetch_window_network_error_caches_none(monkeypatch):
 
 
 def test_fetch_window_exhausted_429_does_not_cache(monkeypatch, capsys):
-    """The fix: all retries 429 must NOT poison the cache, and must log."""
+    """A rate limit must not poison the cache, and must log."""
     stub = _patch_client(
         monkeypatch,
         [_StubResponse(429), _StubResponse(429), _StubResponse(429)],
@@ -119,7 +115,6 @@ def test_fetch_window_exhausted_429_does_not_cache(monkeypatch, capsys):
 
 
 def test_fetch_window_429_then_200_succeeds(monkeypatch):
-    """A transient 429 followed by 200 should succeed and cache the data."""
     payload = {"daily": {"time": ["2020-06-01"], "temperature_2m_max": [25.0]}}
     stub = _patch_client(
         monkeypatch,
@@ -135,9 +130,9 @@ def test_fetch_window_429_then_200_succeeds(monkeypatch):
 
 
 def test_fetch_window_uses_existing_cache_first(monkeypatch):
-    """If the key is already in cache (even as None), we don't hit the network."""
+    """A cached key skips the network even when its value is None."""
     cache = {"37.0|-120.0|2020-06-01|60": None}
-    # Patch with no responses available — any HTTP attempt would fail loudly.
+    # Patch with no responses available, any HTTP attempt would fail loudly.
     _patch_client(monkeypatch, [])
     result = openmeteo.fetch_window(
         37.0, -120.0, date(2020, 6, 1), days=60, cache=cache, polite_delay=0,

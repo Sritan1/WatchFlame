@@ -1,4 +1,4 @@
-// Safety Plan route. SafetyScreen owns checklist state + evac mode + hook orchestration.
+// SafetyScreen owns the checklist state, the evac mode and the data hooks.
 
 import { Shell } from '@/components/Shell';
 import { SafetyScreen } from '@/components/safety/SafetyScreen';

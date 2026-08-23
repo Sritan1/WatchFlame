@@ -1,5 +1,4 @@
-// Wire types — ported verbatim from app/lib/types.ts so the web client speaks
-// the exact same shapes as the mobile app. Backend changes touch both.
+// The shapes the backend sends and expects. Change a route and change these.
 
 export type DangerLevel = 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME';
 export type Season = 'winter' | 'spring' | 'summer' | 'fall';
@@ -60,15 +59,14 @@ export interface RiskResponse {
   regional_state?: string | null;
   regional_thresholds?: RegionalThresholds | null;
   kbdi?: number | null;
-  /** Observed days-since-rain from the Open-Meteo Archive precip pull,
-   *  computed alongside KBDI. Null on manual / no-coords requests or when
-   *  the archive fetch failed. */
+  /** Real days since rain, worked out alongside KBDI from the archive. Null when
+   *  the request had no coordinates or the archive fetch failed. */
   days_since_rain_observed?: number | null;
   ndvi_anomaly?: number | null;
 }
 
-/** Per-state calibration thresholds + score-distribution summary. Shape
- *  matches `api/data/regional_thresholds.json` per-state entries. */
+/** One state's thresholds and score summary, shaped like the entries in
+ *  api/data/regional_thresholds.json. */
 export interface StateCalibration {
   n_fires: number;
   bbox: [number, number, number, number];
@@ -87,9 +85,8 @@ export interface StateCalibration {
   };
 }
 
-/** Backend diagnostic response from `/risk/calibration`. Returns the full
- *  per-state thresholds dict so the calibration ladder UI can render
- *  without a separate copy of the JSON. */
+/** What /risk/calibration returns, every state's thresholds, so the ladder can
+ *  draw itself without its own copy of the JSON. */
 export interface CalibrationInfo {
   version: string | null;
   fitted_at: string | null;
@@ -104,20 +101,15 @@ export interface CalibrationInfo {
   states: Record<string, StateCalibration>;
 }
 
-// ─── Trajectory (Tier 2 #7) ────────────────────────────────────────────────
-// Short-term forward-looking signal — projects the fire-weather score 6 hours forward
-// using Open-Meteo hourly forecast data and surfaces a tier:
-//   - 'rising'  → conditions deteriorating; fire-weather score up > 10%
-//   - 'steady'  → conditions stable; fire-weather score within ±10%
-//   - 'falling' → conditions improving; fire-weather score down > 10%
-// Backend logic in api/core/trajectory.py + api/routes/trajectory.py.
+// Trajectory. Where the fire-weather score is heading over the next 6 hours. A
+// move of more than 10% either way counts as rising or falling. Math is in
+// api/core/trajectory.py.
 
 export type IgnitionLevel = 'low' | 'moderate' | 'high' | 'extreme';
 
-/** Machine-learning fire-ignition-likelihood signal for a location.
- *  `percentile` (0-100) is a calibrated index of how fire-start-like the
- *  current conditions are — NOT an absolute probability. `as_of` is the date
- *  the conditions are from (the Open-Meteo archive lags ~6 days). */
+/** The model's read on how fire-start-like conditions are. `percentile` is a
+ *  calibrated 0-100 index, not a probability. `as_of` is the date the conditions
+ *  come from, since the archive lags about 6 days. */
 export interface IgnitionResponse {
   percentile: number;
   probability: number;
@@ -128,7 +120,7 @@ export interface IgnitionResponse {
 export type TrajectoryTier = 'rising' | 'steady' | 'falling';
 
 export interface TrajectoryFrame {
-  label: string;            // "now", "+1 hr", … "+6 hr"
+  label: string;            // "now", then "+1 hr" through "+6 hr"
   iso_time: string;         // local-time ISO string from the forecast API
   temperature_c: number;
   humidity_pct: number;
@@ -144,8 +136,8 @@ export interface TrajectoryResponse {
   now: TrajectoryFrame;
   projected: TrajectoryFrame;
   dominant_driver: 'vpd' | 'wind' | 'humidity';
-  // Hour-by-hour series, now .. +horizon_hours (frames[0] === now,
-  // frames[frames.length - 1] === projected). Powers the phase-space curve.
+  // Every hour out to the horizon, first frame being now and last the
+  // projection. This is what the phase-space curve draws.
   frames: TrajectoryFrame[];
 }
 
@@ -176,9 +168,9 @@ export interface Shelter {
   type: string;
   distance_mi: number;
   address: string | null;
-  // Tier-1 "activated / open right now" fields. Present (non-null) only when
-  // `activated` is true — an authoritative open shelter from Emergency
-  // Management / the Red Cross. Candidate facilities carry `activated: false`.
+  // These are only filled in for shelters that are actually open, as reported by
+  // emergency management or the Red Cross. Everything else is a candidate
+  // building where a shelter could open, and carries activated: false.
   activated?: boolean;
   status?: ShelterStatus;
   capacity?: number | null;
@@ -186,8 +178,8 @@ export interface Shelter {
   pet_friendly?: boolean | null;
   ada_accessible?: boolean | null;
   managing_org?: string | null;
-  // FEMA NSS record timestamps (not our fetch time): updated_at = last status
-  // report (reporting_period, often absent); opened_at = when it opened.
+  // FEMA's timestamps, not ours. updated_at is the last status report, which is
+  // often missing, and opened_at is when the shelter opened.
   updated_at?: string | null;
   opened_at?: string | null;
 }
@@ -230,7 +222,7 @@ export interface NamedIncident {
   url: string | null;
 }
 
-/** Map the backend's uppercase DangerLevel to the web theme's lowercase RiskLevel. */
+/** The backend shouts its danger levels, the theme wants them lowercase. */
 export function dangerToRisk(d: DangerLevel): 'low' | 'moderate' | 'high' | 'extreme' {
   return d.toLowerCase() as 'low' | 'moderate' | 'high' | 'extreme';
 }

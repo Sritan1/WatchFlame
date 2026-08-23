@@ -17,7 +17,7 @@ def test_input_length_mismatch_raises():
 
 
 def test_cold_winter_holds_q_steady():
-    # 30 days at -5°C, no precip → drying term clamped to 0, Q stays put.
+    # A month of freezing weather with no rain. Nothing dries, so Q stays put.
     Q0 = 100.0
     series = compute_kbdi_series(
         daily_max_temp_c=[-5.0] * 30,
@@ -30,7 +30,7 @@ def test_cold_winter_holds_q_steady():
 
 
 def test_hot_dry_summer_climbs():
-    # 60 days at 35°C, no precip → Q monotonically rises toward 800.
+    # Two months of heat with no rain. Q should climb the whole way.
     series = compute_kbdi_series(
         daily_max_temp_c=[35.0] * 60,
         daily_precip_mm=[0.0] * 60,
@@ -48,9 +48,9 @@ def test_big_rain_knocks_q_down():
     dry = [35.0] * 30
     series_dry = compute_kbdi_series(dry, [0.0] * 30, mean_annual_precip_mm=900.0)
     Q_after_dry = series_dry[-1]
-    assert Q_after_dry > 100.0  # sanity: built up drought
+    assert Q_after_dry > 100.0  # drought has built up
 
-    # Now apply 50mm (~2") of rain on day 31 (well above 0.20" interception).
+    # 50mm of rain on day 31, well above the 0.20" interception.
     series = compute_kbdi_series(
         dry + [25.0],
         [0.0] * 30 + [50.0],
@@ -61,38 +61,36 @@ def test_big_rain_knocks_q_down():
 
 
 def test_antecedent_interception_threshold():
-    # Two dry-then-light-rain runs with the same total but split differently
-    # both must NOT reduce Q because cumulative event rain stays under 0.20".
-    light_rain_mm = [4.0]  # 4mm = 0.157" — below 0.20" interception
+    # A light shower never reaches the soil, so Q should not move.
+    light_rain_mm = [4.0]  # 4mm = 0.157", below 0.20" interception
     series = compute_kbdi_series(
         daily_max_temp_c=[10.0] + [10.0],
         daily_precip_mm=[0.0] + light_rain_mm,
         mean_annual_precip_mm=900.0,
         initial_q=300.0,
     )
-    # Q after the light shower should still be near 300 (interception ate it,
-    # cold day so drying ~0). Allow tiny floating-point drift.
+    # The canopy ate the rain and it's too cold to dry, so Q stays near 300.
     assert abs(series[-1] - 300.0) < 1.0, \
         "rain below the 0.20\" interception threshold must not reduce Q"
 
 
 def test_antecedent_cumulative_event():
-    # Two consecutive rain days totalling 0.30" — first day below threshold,
-    # second day pushes cumulative > 0.20" so the EXCESS reaches soil.
+    # Two rain days totalling 0.30". The second pushes the event past the 0.20"
+    # interception line, so the excess reaches the soil.
     series = compute_kbdi_series(
         daily_max_temp_c=[10.0, 10.0, 10.0],
-        # Day 1: 0.10" (no net), Day 2: 0.20" (cumulative 0.30", net 0.10"), Day 3: dry
+        # 0.10" with no net, then 0.20" giving 0.10" net, then dry.
         daily_precip_mm=[0.10 * 25.4, 0.20 * 25.4, 0.0],
         mean_annual_precip_mm=900.0,
         initial_q=300.0,
     )
-    # Net 0.10" on day 2 → Q drops by 10 (0.01-inch units)
+    # A tenth of an inch reaches the soil, which drops Q by ten.
     assert series[1] < series[0] - 5.0, \
         "cumulative rainfall above 0.20\" must reduce Q in subsequent steps"
 
 
 def test_q_is_bounded():
-    # Push hard to upper bound and lower bound separately.
+    # Push hard against each bound separately.
     series_hot = compute_kbdi_series(
         [40.0] * 365, [0.0] * 365, mean_annual_precip_mm=200.0
     )

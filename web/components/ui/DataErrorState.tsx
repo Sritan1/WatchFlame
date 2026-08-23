@@ -1,21 +1,8 @@
 'use client';
 
-// Shared "we couldn't load this" failure state.
-//
-// Three distinct states a data surface can be in:
-//   1. loading  — request in flight        → skeleton
-//   2. empty    — loaded, nothing to show  → success/empty copy
-//   3. FAILED   — request errored          → THIS component
-//
-// Before this existed, screens collapsed (3) into (1) or (2): an API error
-// looked like a perpetual skeleton, or — worse, on Safety — like a successful
-// "All Clear". The tone here is deliberately NEUTRAL SLATE: it must not read as
-// any risk tier, since green (safe) / amber (moderate) / red (danger) would all
-// imply a verdict we can't actually make with no data. The warning glyph is the
-// only warm accent.
-//
-// `compact` switches between the prominent card (replacing a hero/banner) and a
-// small inline note (a single card or rail slot that failed).
+// The shared "couldn't load this" state. Loading, empty and broken are three
+// different things, and broken used to collapse into one of the others, so an API
+// error looked like a skeleton or an all-clear. Grey avoids implying a verdict.
 
 import { Icon } from '@/components/Icon';
 import { useAesthetic } from '@/lib/aesthetic';

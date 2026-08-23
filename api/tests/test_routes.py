@@ -1,13 +1,8 @@
 """End-to-end route tests using FastAPI's TestClient.
 
-Strategy:
-- Each route's upstream service function is monkey-patched at the *route
-  module* import location (where it's actually called from), not at the
-  service module — that's how Python imports + monkeypatch work.
-- Success path + at-least-one upstream-failure path per route.
-- /risk and /healthz exercise real code (pure functions, no upstream).
-- Mocked stubs are tiny async functions, not unittest.mock.AsyncMock —
-  shorter and easier to read in the asserts.
+Upstream services are patched where the route module imports them, not on the service
+module, because that's the name the route actually calls. Every route gets a success
+path and at least one upstream-failure path.
 """
 from __future__ import annotations
 
@@ -23,7 +18,7 @@ from api.main import app
 client = TestClient(app)
 
 
-# --- /healthz ----------------------------------------------------------------
+# /healthz
 
 def test_healthz():
     r = client.get("/healthz")
@@ -31,7 +26,7 @@ def test_healthz():
     assert r.json() == {"ok": True}
 
 
-# --- /fires ------------------------------------------------------------------
+# /fires
 
 def test_fires_success(monkeypatch):
     payload = {
@@ -58,7 +53,6 @@ def test_fires_success(monkeypatch):
 
 
 def test_fires_validates_days_range():
-    """days param has ge=1 le=10 — 100 must fail Pydantic validation."""
     r = client.get("/fires?days=100")
     assert r.status_code == 422
 
@@ -72,13 +66,12 @@ def test_fires_passes_bbox(monkeypatch):
     monkeypatch.setattr("api.routes.fires.fetch_fires_geojson", stub)
     r = client.get("/fires?days=3&bbox=-122,37,-121,38")
     assert r.status_code == 200
-    # The route validates and canonicalizes the bbox to a normalized float
-    # string before it reaches the service (keeps arbitrary text out of the
-    # upstream FIRMS URL path).
+    # The route normalizes the bbox to floats before the service sees it, which
+    # keeps arbitrary text out of the FIRMS URL path.
     assert seen == {"days": 3, "bbox": "-122.0,37.0,-121.0,38.0"}
 
 
-# --- /risk -------------------------------------------------------------------
+# /risk
 
 _RISK_BODY = {
     "temperature": 30.0,
@@ -91,10 +84,9 @@ _RISK_BODY = {
 
 @pytest.fixture(autouse=True)
 def _stub_ndvi(monkeypatch):
-    """Default NDVI stubs return None so /risk tests don't hit the live CDSE
-    Statistical API. compute_risk falls back to season_mult when both NDVI
-    fetches return None — preserves the prior behavior for existing tests.
-    Individual tests can override these patches to exercise the NDVI path."""
+    """Return None by default so /risk tests never reach the live CDSE API.
+    Both fetches returning None makes compute_risk fall back to season_mult.
+    Tests that want the NDVI path override these."""
     async def _none(*_args, **_kwargs):
         return None
     monkeypatch.setattr("api.routes.risk.get_ndvi_current", _none)
@@ -103,11 +95,9 @@ def _stub_ndvi(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _stub_census(monkeypatch):
-    """Default Census reverse-geocode stub returns None so /risk tests don't
-    hit the live Census endpoint. None means regional_level falls back to its
-    bbox/centroid heuristic — preserves pre-fix behavior for existing tests.
-    Individual tests can override with a real CountyInfo to exercise the
-    authoritative state-lookup path."""
+    """Return None by default so /risk tests never reach the live Census
+    endpoint. None makes regional_level fall back to its bbox/centroid guess.
+    Tests that want the authoritative lookup override this with a CountyInfo."""
     async def _none(*_args, **_kwargs):
         return None
     monkeypatch.setattr("api.routes.risk.reverse_geocode", _none)
@@ -115,15 +105,9 @@ def _stub_census(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _stub_openmeteo(monkeypatch):
-    """Default Open-Meteo stubs return None so coord-bearing /risk tests never
-    reach the live Archive/Forecast APIs. Without this, any test with lat/lon
-    fans out real fetch_kbdi_today + fetch_days_since_rain_today calls (the
-    route requests them whenever body.kbdi is None), and asyncio.gather's
-    return_exceptions=True silently swallows the network failure — so the suite
-    would pass while making live, slow, quota-consuming HTTP calls. None matches
-    the graceful-degrade behavior (KBDI unavailable falls back to
-    days_since_rain; days-since-rain unavailable falls back to the body value).
-    Individual tests override these to exercise the KBDI path."""
+    """Return None by default so any /risk test with coords never reaches the live
+    Archive and Forecast APIs. Without it the route fires real fetches whenever
+    body.kbdi is None, and gather hides the failure while burning live quota."""
     async def _none(*_args, **_kwargs):
         return None
     monkeypatch.setattr("api.routes.risk.fetch_kbdi_today", _none)
@@ -131,8 +115,7 @@ def _stub_openmeteo(monkeypatch):
 
 
 def test_risk_basic_no_location():
-    """Without lat/lon AND without state hint, every regional/satellite/kbdi
-    field should be None — pure what-if path."""
+    """The pure what-if path, so every regional and kbdi field comes back None."""
     r = client.post("/risk", json=_RISK_BODY)
     assert r.status_code == 200
     j = r.json()
@@ -146,7 +129,7 @@ def test_risk_basic_no_location():
 
 
 def test_risk_validates_humidity():
-    bad = {**_RISK_BODY, "humidity": 150}  # > 100
+    bad = {**_RISK_BODY, "humidity": 150}  # above the 100 ceiling
     r = client.post("/risk", json=bad)
     assert r.status_code == 422
 
@@ -158,16 +141,14 @@ def test_risk_validates_season():
 
 
 def test_risk_rejects_out_of_domain_temperature():
-    """Temperature is bounded (record Earth extremes). Values near the
-    saturation-vapor-pressure singularity (t = -237.3) must 422, not 500."""
+    """A value near the saturation-vapor-pressure singularity must 422, not 500."""
     for bad_temp in (-237.3, -238.0, -500.0, 200.0):
         r = client.post("/risk", json={**_RISK_BODY, "temperature": bad_temp})
         assert r.status_code == 422, f"temperature={bad_temp} should be rejected"
 
 
 def test_risk_rejects_nonfinite_temperature():
-    """NaN / Infinity (which JSON + pydantic accept by default) must be
-    rejected by the bound, not silently scored."""
+    """JSON and pydantic accept NaN by default, so the bound has to reject it."""
     import json as _json
     for token in ("NaN", "Infinity", "-Infinity"):
         r = client.post(
@@ -181,7 +162,6 @@ def test_risk_rejects_nonfinite_temperature():
 
 
 def test_risk_with_location_returns_regional(monkeypatch):
-    """When lat/lon is in a calibrated state, regional_state must be set."""
     async def stub_kbdi(lat, lon):
         return None  # KBDI unavailable, route falls back to days_since_rain
     monkeypatch.setattr("api.routes.risk.fetch_kbdi_today", stub_kbdi)
@@ -196,7 +176,6 @@ def test_risk_with_location_returns_regional(monkeypatch):
 
 
 def test_risk_with_location_uses_kbdi(monkeypatch):
-    """When fetch_kbdi_today returns data, kbdi propagates to the response."""
     async def stub_kbdi(lat, lon):
         return {"kbdi": 555.0, "mean_annual_precip_mm": 600,
                 "end_date": "2026-05-01", "n_days": 365}
@@ -210,7 +189,6 @@ def test_risk_with_location_uses_kbdi(monkeypatch):
 
 
 def test_risk_manual_kbdi_skips_fetch_and_propagates(monkeypatch):
-    """Body-supplied kbdi takes precedence over the archive fetch."""
     fetch_called = False
     async def stub_kbdi(lat, lon):
         nonlocal fetch_called
@@ -227,7 +205,7 @@ def test_risk_manual_kbdi_skips_fetch_and_propagates(monkeypatch):
 
 
 def test_risk_manual_kbdi_validates_range():
-    bad = {**_RISK_BODY, "kbdi": 1000}  # > 800
+    bad = {**_RISK_BODY, "kbdi": 1000}  # above the 800 ceiling
     r = client.post("/risk", json=bad)
     assert r.status_code == 422
 
@@ -240,11 +218,10 @@ def test_risk_calibration_endpoint():
     assert isinstance(j["states_calibrated"], list)
 
 
-# --- /risk NDVI integration --------------------------------------------------
+# /risk NDVI integration
 
 def test_risk_with_ndvi_propagates_to_response(monkeypatch):
-    """When CDSE returns usable current + climatology, ndvi_anomaly appears
-    in the response and the score reflects ndvi_factor in place of season_mult."""
+    """The score should reflect ndvi_factor in place of season_mult."""
     async def stub_current(lat, lon):
         return 0.35
     async def stub_clim(lat, lon, month):
@@ -261,8 +238,6 @@ def test_risk_with_ndvi_propagates_to_response(monkeypatch):
 
 
 def test_risk_manual_ndvi_anomaly_skips_fetch(monkeypatch):
-    """Body-supplied ndvi_anomaly takes precedence; the CDSE fetchers must
-    not be called."""
     current_called = False
     clim_called = False
     async def stub_current(lat, lon):
@@ -286,16 +261,14 @@ def test_risk_manual_ndvi_anomaly_skips_fetch(monkeypatch):
 
 
 def test_risk_manual_ndvi_anomaly_validates_range():
-    """Pydantic should reject |anomaly| > 1."""
     bad = {**_RISK_BODY, "ndvi_anomaly": 1.5}
     r = client.post("/risk", json=bad)
     assert r.status_code == 422
 
 
 def test_risk_census_state_used_for_regional_lookup(monkeypatch):
-    """When Census reverse-geocode returns a state, it must be passed as
-    state_hint to regional_level so the authoritative state wins over the
-    bbox+centroid heuristic. Pins the Reno NV border-overlap fix."""
+    """The Census state has to reach regional_level as state_hint and beat the
+    bbox guess. Pins the Reno border-overlap fix."""
     from api.services.census import CountyInfo
 
     async def stub_census(lat, lon):
@@ -312,43 +285,38 @@ def test_risk_census_state_used_for_regional_lookup(monkeypatch):
     r = client.post("/risk", json=body)
     assert r.status_code == 200
     j = r.json()
-    # Census said NV; route must surface NV, NOT CA (which the bbox heuristic
-    # would have picked because CA's centroid is closer to Reno).
+    # Census said NV, so NV has to win. The bbox guess would have said CA,
+    # whose centroid sits closer to Reno.
     assert j["regional_state"] == "NV"
 
 
 def test_risk_census_unavailable_falls_back_to_heuristic(monkeypatch):
-    """When Census returns None (rate-limited, network error, point not in
-    US), the route falls back to the bbox+centroid heuristic — which is
-    imperfect at borders but better than no calibration at all."""
+    """The bbox guess is shaky at borders but beats no calibration at all."""
     # _stub_census already makes reverse_geocode return None.
     body = {**_RISK_BODY, "lat": 37.77, "lon": -122.42}  # SF
     r = client.post("/risk", json=body)
     assert r.status_code == 200
     j = r.json()
-    # SF is squarely inside CA's bbox, so the heuristic correctly returns CA
-    # even without Census help.
+    # SF sits well inside CA's box, so the guess gets it right unaided.
     assert j["regional_state"] == "CA"
 
 
 def test_risk_state_body_field_without_coords_returns_regional():
-    """Risk Calculator's state-dropdown path: a state hint in the body alone
-    (no lat/lon) must still trigger regional bucketing using that state's
-    thresholds. Pre-fix, regional_level was only computed when have_coords."""
+    """The what-if dropdown sends a state and no coords, and that alone has to
+    bucket against the state's thresholds."""
     body = {**_RISK_BODY, "state": "CA"}
     r = client.post("/risk", json=body)
     assert r.status_code == 200
     j = r.json()
     assert j["regional_state"] == "CA"
     assert j["regional_level"] in ("LOW", "MODERATE", "HIGH", "EXTREME")
-    # No coords means no upstream fetches; kbdi must remain None.
+    # No coords means no upstream fetches, so kbdi has to stay None.
     assert j["kbdi"] is None
 
 
 def test_risk_state_body_field_skips_census_when_provided(monkeypatch):
-    """When the body supplies an explicit `state`, reverse_geocode must not
-    be called. Saves a round-trip and honors the explicit user choice over
-    the Census/heuristic chain."""
+    """An explicit `state` in the body skips reverse_geocode entirely. Saves a
+    round trip and lets the user's choice beat the lookup chain."""
     census_called = False
     async def stub_census(lat, lon):
         nonlocal census_called
@@ -380,9 +348,8 @@ def test_risk_state_body_field_lowercase_normalized():
 
 
 def test_risk_regional_thresholds_present_when_state_calibrated():
-    """The Status orb's percentile-fill mapping needs the per-state cutoffs +
-    score_max in the response. Pin the shape so a future schema change can't
-    silently drop the fields the frontend depends on."""
+    """The Status orb fills against these, so a schema change must not drop what the
+    frontend reads."""
     body = {**_RISK_BODY, "state": "FL"}
     r = client.post("/risk", json=body)
     assert r.status_code == 200
@@ -391,27 +358,24 @@ def test_risk_regional_thresholds_present_when_state_calibrated():
     for k in ("low", "moderate", "high", "extreme", "score_max"):
         assert k in t, f"missing key: {k}"
         assert isinstance(t[k], (int, float))
-    # Monotonic ordering — guards against accidentally swapping fields.
+    # Monotonic ordering, guards against accidentally swapping fields.
     assert t["low"] < t["moderate"] < t["extreme"] <= t["score_max"]
 
 
 def test_risk_regional_thresholds_absent_for_unknown_state():
-    """state="XX" (unfit / unknown) must NOT crash; route falls back to
-    global cutoffs and leaves regional_thresholds unset."""
+    """An unknown state code must not crash, just fall back to the globals."""
     body = {**_RISK_BODY, "state": "XX"}
     r = client.post("/risk", json=body)
     assert r.status_code == 200
     j = r.json()
-    # regional_state is None because the unknown code doesn't map to a fit;
-    # the response stays well-formed (no crash) and falls back to globals.
+    # The unknown code maps to no fit, so regional_state stays None and the
+    # response is still well-formed.
     assert j["regional_state"] is None
     assert j["regional_thresholds"] is None
 
 
 def test_risk_ndvi_partial_failure_falls_back_to_season(monkeypatch):
-    """If only one of {current, climatology} returns a value, anomaly cannot
-    be computed — route must leave ndvi_anomaly=None and fall back to
-    season_mult silently."""
+    """One of the two alone gives no anomaly, so the route falls back to season."""
     async def stub_current(lat, lon):
         return 0.35  # have current
     async def stub_clim(lat, lon, month):
@@ -423,10 +387,10 @@ def test_risk_ndvi_partial_failure_falls_back_to_season(monkeypatch):
     r = client.post("/risk", json=body)
     assert r.status_code == 200
     j = r.json()
-    assert j["ndvi_anomaly"] is None  # partial data → no anomaly surfaced
+    assert j["ndvi_anomaly"] is None  # half the data means no anomaly
 
 
-# --- /weather ----------------------------------------------------------------
+# /weather
 
 def test_weather_success(monkeypatch):
     async def stub(lat, lon):
@@ -459,7 +423,7 @@ def test_weather_validates_lat():
     assert r.status_code == 422
 
 
-# --- /geocode ----------------------------------------------------------------
+# /geocode
 
 def test_geocode_passthrough(monkeypatch):
     async def stub(q, limit=5):
@@ -472,8 +436,7 @@ def test_geocode_passthrough(monkeypatch):
 
 
 def test_geocode_empty_when_no_matches(monkeypatch):
-    """A successful lookup with zero results returns 200 [] — the frontend
-    shows "No matches" only for a genuine empty result, not an outage."""
+    """A genuine empty result stays a 200, so "No matches" never means an outage."""
     async def stub(q, limit=5):
         return []
     monkeypatch.setattr("api.routes.geocode.geocode_city", stub)
@@ -483,8 +446,8 @@ def test_geocode_empty_when_no_matches(monkeypatch):
 
 
 def test_geocode_upstream_outage_returns_503(monkeypatch):
-    """A real upstream failure surfaces as 503 (distinct from an empty result)
-    so the frontend can show "search unavailable" instead of "No matches"."""
+    """A real failure surfaces as 503, distinct from an empty result, so the
+    frontend can say "search unavailable" instead of "No matches"."""
     async def stub(q, limit=5):
         raise HTTPException(status_code=503, detail="Geocoding service unavailable")
     monkeypatch.setattr("api.routes.geocode.geocode_city", stub)
@@ -493,8 +456,7 @@ def test_geocode_upstream_outage_returns_503(monkeypatch):
 
 
 def test_geocode_city_raises_on_upstream_error(monkeypatch):
-    """geocode_city itself raises HTTPException(503) when the OWM call fails,
-    rather than swallowing the outage as an empty "no matches" list."""
+    """Raises rather than swallowing the outage as an empty "no matches" list."""
     import asyncio
 
     import httpx as _httpx
@@ -521,8 +483,7 @@ def test_geocode_city_raises_on_upstream_error(monkeypatch):
 
 
 def test_geocode_city_scopes_to_us(monkeypatch):
-    """The search is US-only: geocode_city appends ',US' to the query (so OWM
-    returns US matches) AND filters out any non-US result as a guarantee."""
+    """US-only twice over, with ',US' on the query plus a filter on the results."""
     import asyncio
 
     from api.services import owm
@@ -535,7 +496,7 @@ def test_geocode_city_scopes_to_us(monkeypatch):
             return None
 
         def json(self):
-            # Mixed-country payload; only the US entry should survive the filter.
+            # A mixed-country payload, where only the US entry survives the filter.
             return [
                 {"name": "London", "state": "England", "country": "GB", "lat": 51.5, "lon": -0.1},
                 {"name": "London", "state": "Kentucky", "country": "US", "lat": 37.1, "lon": -84.1},
@@ -565,9 +526,9 @@ def test_geocode_validates_query_length():
     assert r.status_code == 422
 
 
-# --- /incidents/near ---------------------------------------------------------
+# /incidents/near
 
-# Helper: minimal NIFC + Cal Fire dataclass-shaped stubs that the route can iterate.
+# Minimal NIFC and Cal Fire stand-ins shaped like the dataclasses the route iterates.
 
 class _NIFC:
     def __init__(self, **kw):
@@ -602,12 +563,11 @@ class _CalFire:
 
 
 def test_incidents_near_merges_calfire_and_nifc(monkeypatch):
-    """Both feeds return the same incident — the merge keeps Cal Fire (richer)
-    as base and fills personnel/cause from NIFC."""
+    """The merge keeps the richer Cal Fire row and fills its gaps from NIFC."""
     async def stub_nifc():
         return [_NIFC(personnel=120, cause="Powerline", acres=None)]
     async def stub_calfire():
-        return [_CalFire()]  # has acres + url, no personnel/cause
+        return [_CalFire()]  # has acres and url, no personnel or cause
     monkeypatch.setattr("api.routes.incidents.fetch_nifc", stub_nifc)
     monkeypatch.setattr("api.routes.incidents.fetch_calfire", stub_calfire)
 
@@ -626,8 +586,6 @@ def test_incidents_near_merges_calfire_and_nifc(monkeypatch):
 
 
 def test_incidents_near_survives_nifc_exception(monkeypatch):
-    """asyncio.gather(return_exceptions=True) means a raising service
-    doesn't kill the route — the Cal Fire result still flows through."""
     async def stub_nifc():
         raise RuntimeError("WFIGS exploded")
     async def stub_calfire():
@@ -643,9 +601,8 @@ def test_incidents_near_survives_nifc_exception(monkeypatch):
 
 
 def test_incidents_near_filters_by_radius(monkeypatch):
-    """Incidents outside the radius must be excluded."""
     async def stub_nifc():
-        return [_NIFC(lat=40.0, lon=-122.0)]  # ~180mi from query point
+        return [_NIFC(lat=40.0, lon=-122.0)]  # about 200 mi from the query point
     async def stub_calfire():
         return []
     monkeypatch.setattr("api.routes.incidents.fetch_nifc", stub_nifc)
@@ -655,7 +612,7 @@ def test_incidents_near_filters_by_radius(monkeypatch):
     assert r.json() == []
 
 
-# --- /shelters ---------------------------------------------------------------
+# /shelters
 
 class _Shelter:
     def __init__(self, **kw):
@@ -694,8 +651,8 @@ class _OpenShelter:
 
 
 async def _stub_open_empty(lat, lon, radius_mi=50):
-    # Default: no activated shelters. Keeps the candidate-merge tests network-free
-    # now that the route also queries the live FEMA NSS feed.
+    # No activated shelters by default. The route also hits the live FEMA NSS
+    # feed now, and the merge tests need to stay network-free.
     return []
 
 
@@ -718,7 +675,6 @@ def test_shelters_merges_overpass_and_nces(monkeypatch):
 
 
 def test_shelters_survives_overpass_exception(monkeypatch):
-    """Same as /incidents/near — gather(return_exceptions=True) keeps the route alive."""
     async def stub_shelters(lat, lon, radius_km=80):
         raise RuntimeError("overpass nuked")
     async def stub_schools(lat, lon, radius_mi=50):
@@ -733,7 +689,7 @@ def test_shelters_survives_overpass_exception(monkeypatch):
 
 
 def test_shelters_dedupes_same_location(monkeypatch):
-    """OSM and NCES at the exact same coords — first wins (OSM)."""
+    """OSM and NCES at the exact same coords, first wins (OSM)."""
     async def stub_shelters(lat, lon, radius_km=80):
         return [_Shelter(lat=37.500, lon=-120.000)]
     async def stub_schools(lat, lon, radius_mi=50):
@@ -752,9 +708,9 @@ def test_shelters_activated_sort_first(monkeypatch):
     """An open/activated shelter sorts ahead of a closer candidate and carries
     the tier-1 fields."""
     async def stub_open(lat, lon, radius_mi=50):
-        return [_OpenShelter(lat=37.55, lon=-120.02)]  # ~4 mi away
+        return [_OpenShelter(lat=37.55, lon=-120.02)]  # about 4 mi away
     async def stub_shelters(lat, lon, radius_km=80):
-        return [_Shelter(lat=37.5, lon=-120.0)]        # closer candidate (~0 mi)
+        return [_Shelter(lat=37.5, lon=-120.0)]        # closer candidate, right on the point
     async def stub_schools(lat, lon, radius_mi=50):
         return []
     monkeypatch.setattr("api.routes.shelters.fetch_open_shelters", stub_open)
@@ -770,7 +726,7 @@ def test_shelters_activated_sort_first(monkeypatch):
     assert rows[1]["activated"] is False
 
 
-# --- /disasters/near ---------------------------------------------------------
+# /disasters/near
 
 class _CountyInfo:
     def __init__(self, state="CA", county_name="Los Angeles County",
@@ -833,7 +789,7 @@ def test_openfema_area_match_distinguishes_county_from_city():
     # City user (is_city=True)
     assert _area_matches("fairfax (city)", "fairfax", is_city=True) is True
     assert _area_matches("fairfax (county)", "fairfax", is_city=True) is False
-    # Whole-word: a prefix collision must not match.
+    # Whole-word only, so a prefix collision must not match.
     assert _area_matches("franklinton (county)", "franklin", is_city=False) is False
     # No type qualifier falls through to the name match.
     assert _area_matches("statewide", "fairfax", is_city=False) is False
@@ -862,11 +818,9 @@ def test_disasters_near_filters_old_declarations(monkeypatch):
     assert r.json()["active"] == []
 
 
-# --- source health (X-Source-Health header) ----------------------------------
-#
-# Routes that degrade gracefully report which upstreams failed on the request
-# via a JSON header, so the frontend can show "this feed is down" instead of a
-# misleading empty result. The response BODY must stay unchanged.
+# Source health. A degrading route names the failed upstreams in the X-Source-Health
+# header so the frontend can say "this feed is down" instead of showing an empty
+# result. The response body must stay unchanged.
 
 def _health(r) -> dict:
     return json.loads(r.headers["X-Source-Health"])
@@ -882,9 +836,8 @@ def test_fires_health_ok_on_success(monkeypatch):
 
 
 def test_fires_health_down_on_outage(monkeypatch):
-    """On a real FIRMS outage the service raises SourceUnavailable (same
-    mechanism as the other degrading feeds). The route must report firms=down
-    and degrade to an empty FeatureCollection."""
+    """A real FIRMS outage raises SourceUnavailable, so the route reports
+    firms=down and degrades to an empty FeatureCollection."""
     from api.core.source_health import SourceUnavailable
 
     async def stub(days=1, bbox=None):
@@ -907,7 +860,7 @@ def test_incidents_health_reports_nifc_down(monkeypatch):
     r = client.get("/incidents/near?lat=37.5&lon=-120.0&radius_mi=50")
     assert r.status_code == 200
     assert _health(r) == {"nifc": "down", "calfire": "ok"}
-    # Body unchanged — Cal Fire result still flows through.
+    # Body unchanged, Cal Fire result still flows through.
     assert len(r.json()) == 1
 
 
@@ -929,8 +882,8 @@ def test_shelters_health_reports_overpass_down(monkeypatch):
 
 
 def test_disasters_health_census_down(monkeypatch):
-    """A real Census outage reports census=down AND fema=down (FEMA can't be
-    queried without a county). Body is the same graceful empty result."""
+    """A Census outage reports both census=down and fema=down. FEMA can't be queried
+    without a county. The body is the usual empty result."""
     async def stub_geo(lat, lon):
         raise SourceUnavailable("census down")
     monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
@@ -941,7 +894,7 @@ def test_disasters_health_census_down(monkeypatch):
 
 
 def test_disasters_health_fema_down(monkeypatch):
-    """County resolves but FEMA is down: census=ok, fema=down, county present."""
+    """County resolves but FEMA is down, so census=ok, fema=down, county present."""
     async def stub_geo(lat, lon):
         return _CountyInfo()
     async def stub_fema(state, county_name, is_city=False):
@@ -957,7 +910,7 @@ def test_disasters_health_fema_down(monkeypatch):
 
 
 def test_disasters_health_outside_us_not_flagged(monkeypatch):
-    """Outside a US county is NOT a failure — census stays ok."""
+    """Outside a US county is NOT a failure, census stays ok."""
     async def stub_geo(lat, lon):
         return None
     monkeypatch.setattr("api.routes.disasters.reverse_geocode", stub_geo)
@@ -967,9 +920,8 @@ def test_disasters_health_outside_us_not_flagged(monkeypatch):
 
 
 def test_risk_survives_census_outage(monkeypatch):
-    """The hardened gather must keep /risk at 200 when Census actually raises
-    (regression guard for the new SourceUnavailable path) — falls back to the
-    bbox/centroid state heuristic."""
+    """/risk stays at 200 when Census raises, falling back to the bbox and
+    centroid guess."""
     async def stub_census(lat, lon):
         raise SourceUnavailable("census down")
     monkeypatch.setattr("api.routes.risk.reverse_geocode", stub_census)

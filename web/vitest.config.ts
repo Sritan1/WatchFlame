@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config';
 // framework-free functions), so the default 'node' environment is fine.
 export default defineConfig({
   resolve: {
-    // Mirror tsconfig's "@/*" -> web root alias so imports resolve in tests.
+    // Mirror tsconfig's "@/*" alias to the web root so imports resolve in tests.
     alias: { '@': fileURLToPath(new URL('.', import.meta.url)) },
   },
   test: {

@@ -1,9 +1,8 @@
 'use client';
 
-// Tiny global "is any shared Modal open" store. Lets ambient background work
-// (e.g. the Status waves canvas) pause while a modal covers the screen, without
-// wiring each modal in by hand. The shared <Modal> increments on open and
-// decrements on close; consumers read it via useAnyModalOpen().
+// Tracks whether any modal is open, so background animation like the Status
+// waves can stop while something covers the screen. <Modal> counts itself in and
+// out, so no individual modal needs wiring.
 
 import { useSyncExternalStore } from 'react';
 
@@ -33,11 +32,11 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-/** True whenever at least one shared Modal is open anywhere in the app. */
+/** True while at least one modal is open anywhere in the app. */
 export function useAnyModalOpen(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => openCount > 0,
-    () => false, // SSR: nothing is open
+    () => false, // on the server, nothing is open
   );
 }

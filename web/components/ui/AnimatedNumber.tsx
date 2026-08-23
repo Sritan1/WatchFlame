@@ -1,8 +1,7 @@
 'use client';
 
-// Smoothly counts to `value` over `duration` ms, then jumps to the new value
-// when `value` changes. Uses the reference's cubic-out easing (1 - (1-t)^3.2)
-// for a settling feel — fast at the start, gentle at the end.
+// Counts up to `value` over `duration` ms on a cubic-out easing, so it moves fast
+// at the start and settles gently.
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
@@ -20,13 +19,12 @@ export function AnimatedNumber({
   style?: CSSProperties;
 }) {
   const [n, setN] = useState(startFrom);
-  // The value currently on screen. Starting a new tween from this (rather than
-  // the last fully-completed value) means an interrupted tween continues from
-  // where it visibly is instead of snapping backward and re-animating.
+  // Starting a new tween from what's on screen, rather than the last completed
+  // value, means an interrupted one continues instead of snapping backward.
   const currentRef = useRef(startFrom);
 
   useEffect(() => {
-    // Honor prefers-reduced-motion: jump straight to the target, no count-up.
+    // Under reduced motion, jump straight to the target with no count-up.
     const reduce =
       typeof window !== 'undefined' &&
       typeof window.matchMedia === 'function' &&

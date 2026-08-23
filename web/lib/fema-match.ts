@@ -1,14 +1,13 @@
-// Shared FEMA→incident matcher used by FemaBanner (to gate the Show-on-Map
-// button) and MapScreen (to auto-select on intent handoff). Centralized so
-// the gating and the selection logic stay in sync — otherwise the banner
-// could surface a button that the map then fails to honor, or vice versa.
+// Matches a FEMA disaster to one of our incidents. FemaBanner decides whether to
+// show its Show-on-Map button, MapScreen picks the fire when pressed. Shared, so
+// the banner can't offer a button the map then fails to honor.
 
 import type { NamedIncident } from '@/lib/api';
 
-// Tokens shorter than this are too generic to anchor a match on their own.
+// Anything shorter than this is too generic to match on.
 const MIN_TOKEN_LEN = 3;
 
-// Words that carry no identifying signal for a fire name.
+// Words that say nothing about which fire this is.
 const STOPWORDS = new Set([
   'fire',
   'fires',
@@ -20,8 +19,7 @@ const STOPWORDS = new Set([
   'and',
 ]);
 
-/** Split a name into lowercased identifying tokens (drops the "Fire"/"Complex"
- *  style noise words and very short words). "Cow Creek Fire" -> ["cow", "creek"]. */
+/** "Cow Creek Fire" becomes ["cow", "creek"]. */
 function tokenize(name: string): string[] {
   return name
     .toLowerCase()
@@ -29,24 +27,14 @@ function tokenize(name: string): string[] {
     .filter((t) => t.length >= MIN_TOKEN_LEN && !STOPWORDS.has(t));
 }
 
-/** Try to find the NIFC/CalFire incident that corresponds to a FEMA disaster
- *  title. FEMA titles are like "Canyon Fire" / "Cow Creek Fire"; NIFC/CalFire
- *  incident names are like "Canyon" / "Cow Creek" (the trailing " Fire" is
- *  almost always dropped). We try an exact name match first, then score
- *  candidates by how much of the title's identifying tokens they share.
- *  Returns null when nothing plausibly matches.
- *
- *  Ranking is by shared-token count, then FEWEST extra tokens, then shorter
- *  name. The fewest-extra tie-break is the fix for the old longest-name rule,
- *  which let a broader superset shadow the real fire (e.g. "Canyon Fire" would
- *  land on "Grand Canyon Complex" instead of "Canyon"). A candidate must cover
- *  at least half of the title's tokens to match at all, so one common word
- *  can't carry an otherwise-unrelated incident. */
+/** Find the incident behind a FEMA disaster title, or null when nothing fits. Exact
+ *  match first, then shared-word scoring. Most shared wins, then fewest extra, then
+ *  shorter. Fewest extras stopped "Canyon Fire" landing on "Grand Canyon Complex". */
 export function matchIncidentByFemaTitle(
   femaTitle: string,
   fires: NamedIncident[],
 ): NamedIncident | null {
-  // Drop the trailing " Fire" / " Wildfire" suffix and a leading "The ".
+  // Strip a trailing "Fire" or "Wildfire" and a leading "The".
   const needle = femaTitle
     .replace(/\s+(wild)?fires?\s*$/i, '')
     .replace(/^the\s+/i, '')
@@ -56,7 +44,7 @@ export function matchIncidentByFemaTitle(
 
   const normalized = fires.map((f) => ({ fire: f, name: f.name.trim().toLowerCase() }));
 
-  // Exact name match wins outright (the common, clean case).
+  // An exact match wins outright, which is the usual clean case.
   const exact = normalized.find((n) => n.name && n.name === needle);
   if (exact) return exact.fire;
 
@@ -73,7 +61,7 @@ export function matchIncidentByFemaTitle(
 
     let shared = 0;
     for (const t of needleSet) if (candSet.has(t)) shared++;
-    // Require the candidate to cover at least half of the title's tokens.
+    // Has to cover half the title's words to count at all.
     if (shared === 0 || shared / needleSet.size < 0.5) continue;
 
     const extra = candSet.size - shared;

@@ -1,17 +1,8 @@
-"""Async Open-Meteo Forecast client for the Trajectory index.
+"""Hourly forecast weather for the trajectory index.
 
-Fetches the next 12 hours of hourly weather (temperature, humidity, wind,
-precipitation) for a lat/lon and returns the now-vs-projected pair the
-trajectory computation needs. Cached at the 0.1° grid for 1 hour so two
-users at the same metro area share one upstream call.
-
-This is a separate endpoint from the Archive client used for KBDI history
-(see openmeteo_history.py). The Forecast API typically has a less-stressed
-quota than the Archive — appropriate for the live-updating trajectory chip
-that runs on every Status page load.
-
-Graceful degrade: on any upstream failure we return None rather than
-raising, mirroring the rest of the api/services pattern.
+Pulls temperature, humidity, wind and precipitation for a point, cached on a coarse
+grid so a whole metro area shares one call. Different endpoint from the archive KBDI
+reads, with a less stressed quota. Failures return None instead of raising.
 """
 from __future__ import annotations
 
@@ -23,29 +14,22 @@ import httpx
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
-# Horizon we project forward when computing the trajectory tier.
+# How far ahead the trajectory looks.
 TRAJECTORY_HORIZON_HOURS = 6
 
-# How many hourly samples to request — enough for the horizon plus a small
-# buffer so we can pick the closest sample regardless of clock alignment.
 HOURLY_VARIABLES = "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation"
-# Same variables for the `current` block — returns the current-hour values
-# anchored to the location's actual local clock. Without this, "now" would
-# be the first element of the hourly array (midnight of today), which is
-# NOT the user's current real-time observation.
+# The same fields for the `current` block, anchored to the location's own clock.
+# Without it, "now" is the first hourly entry, which is local midnight.
 CURRENT_VARIABLES = HOURLY_VARIABLES
-# 2 days = 48 hourly samples. Today + tomorrow gives us enough headroom to
-# project +6 hr from any current hour (e.g. 23:00 + 6 hr = 05:00 tomorrow)
-# without clamping to the end of today's array. forecast_days=1 was producing
-# identical now/projected frames when the user opened the modal late at night.
+# Today and tomorrow, so six hours past 23:00 still lands inside the array. With
+# one day, opening the modal late at night gave identical now and projected frames.
 FORECAST_DAYS = 2
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _ttl() -> int:
-    # 1-hour TTL — forecast values shift slowly within an hour and the
-    # endpoint is rate-sensitive. Override via env for testing.
+    # The forecast barely moves inside an hour, and the endpoint is rate-sensitive.
     return int(os.getenv("FORECAST_CACHE_TTL_SECONDS", str(3600)))
 
 
@@ -54,13 +38,10 @@ def _grid_key(lat: float, lon: float) -> str:
 
 
 async def fetch_forecast_hourly(lat: float, lon: float) -> dict[str, Any] | None:
-    """Return {time: [...], temperature_2m: [...], relative_humidity_2m: [...],
-    wind_speed_10m: [...], precipitation: [...]} from Open-Meteo's hourly
-    Forecast endpoint, or None on upstream failure.
+    """The hourly forecast for a point, or None if the fetch failed.
 
-    The returned `time` array is ISO8601 strings in the location's local
-    timezone (`timezone: "auto"`). All value arrays are aligned by index
-    with `time`.
+    Times are ISO strings in the location's own timezone, and every value array
+    lines up with them by index.
     """
     cache_key = _grid_key(lat, lon)
     now = time.time()
@@ -86,7 +67,7 @@ async def fetch_forecast_hourly(lat: float, lon: float) -> dict[str, Any] | None
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
@@ -109,10 +90,8 @@ async def fetch_forecast_hourly(lat: float, lon: float) -> dict[str, Any] | None
         "relative_humidity_2m": hourly.get("relative_humidity_2m") or [],
         "wind_speed_10m": hourly.get("wind_speed_10m") or [],
         "precipitation": hourly.get("precipitation") or [],
-        # `current` block — anchored at the user's actual current hour
-        # (not the hourly array's index 0, which is midnight). Used by
-        # the trajectory core to pick the "now" frame; the hourly array
-        # is then used only to find the matching +6 hr index.
+        # The trajectory picks its "now" frame from this, then walks the hourly
+        # array forward from there.
         "current": data.get("current") or None,
     }
     _CACHE[cache_key] = (now, out)

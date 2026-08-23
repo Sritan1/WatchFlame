@@ -1,27 +1,12 @@
-"""Generate docs/fireweather_benchmark.png — fitted index vs published fire-weather indices.
+"""Chart the fitted index against Fosberg and Hot-Dry-Windy. The metrics come from
+data/fitted_params.json, where all three were scored on the same held-out fires.
+Nothing is rescored here.
 
-Reads the held-out test-split Spearman ρ values that scripts/fit_fireweather_params.py
-persisted to data/fitted_params.json and renders a single horizontal bar chart
-comparing:
+There is no "before fitting" bar. Adopting the fit removed the old constants, so
+that comparison can't be regenerated from a fresh run. This chart claims only the
+reproducible part.
 
-    Fosberg FFWI            — Fosberg (1978)
-    Hot-Dry-Windy           — Srock et al. (2018)
-    Fire weather (fitted)   — this project's fitted constants  ← highlighted
-
-All three ρ values are computed on the SAME held-out fires, so the comparison
-is apples-to-apples. Offline; no API, no recompute.
-
-NOTE: the fitted bar reads `rho_fitted_test`, the fresh fit's held-out score.
-It deliberately does NOT plot a separate "original hand-picked constants" bar:
-once the fit was adopted, `rho_current_test` (spearman on DEFAULT_PARAMS) became
-the fitted constants too, so a "before vs after fitting" chart is no longer
-reproducible — re-running the pipeline would compare the fitted set against
-itself. The before/after improvement is reported in fit_fireweather_params.py's stdout;
-this chart makes the reproducible claim: the fitted index beats the published
-benchmarks on held-out fires.
-
-Usage:
-    python scripts/build_benchmark_chart.py
+Run with python scripts/build_benchmark_chart.py
 """
 from __future__ import annotations
 
@@ -48,7 +33,7 @@ def main() -> int:
     m = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))["metrics"]
     pal = chart_theme.apply()
 
-    # Ascending so the fitted bar lands on top as the clear winner.
+    # Ascending, so ours ends up on top.
     bars = [
         ("Fosberg FFWI (1978)", m["rho_ffwi_test"], "#E8B339"),
         ("Hot-Dry-Windy (2018)", m["rho_hdw_test"], "#4FA8FF"),
@@ -57,8 +42,7 @@ def main() -> int:
     bars.sort(key=lambda b: b[1])
     labels = [b[0] for b in bars]
     values = [b[1] for b in bars]
-    # Dark-theme series colors: desaturated, cohesive tones tuned for the dark
-    # canvas (keyed on the light color so bar sort order doesn't matter).
+    # Dark-mode tones, keyed on the light color so sort order doesn't matter.
     dark_map = {"#E8B339": "#9A8348", "#4FA8FF": "#52739C", "#F04438": "#9B564F"}
     colors = [dark_map[b[2]] if chart_theme.is_dark() else b[2] for b in bars]
 

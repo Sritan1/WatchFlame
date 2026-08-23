@@ -2,8 +2,8 @@
 
 import { useId } from 'react';
 
-/** Diagonal stripe SVG overlay — used inside the FEMA card for that
- *  federal/official feel. Render as the first child of a positioned card. */
+/** Diagonal stripe overlay, giving the FEMA card an official feel. Render it as
+ *  the first child of a positioned card. */
 export function StripePattern({
   color,
   opacity = 0.05,
@@ -11,8 +11,8 @@ export function StripePattern({
   color: string;
   opacity?: number;
 }) {
-  // Unique per instance so repeated stripes don't collide on a shared id, and
-  // so the id never embeds a raw "#hex" color (fragile inside a url(#…) ref).
+  // Per-instance, so repeated stripes don't collide on a shared id and the id
+  // never embeds a raw hex color, which breaks inside a url() reference.
   const id = `stripe-${useId().replace(/:/g, '')}`;
   return (
     <svg

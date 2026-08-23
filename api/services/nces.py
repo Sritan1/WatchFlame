@@ -1,13 +1,8 @@
-"""NCES (National Center for Education Statistics) Public Schools client.
+"""Public schools, roughly 100k of them, from the Department of Education's
+ArcGIS service. This replaced the HIFLD endpoints retired in August 2025.
 
-The original HIFLD Open ArcGIS endpoints were retired in August 2025. NCES
-maintains the authoritative public-school dataset in an actively-served ArcGIS
-FeatureServer that we can query by bounding box. ~100k US K-12 schools.
-
-Public schools are commonly designated as evacuation shelters by county
-emergency-management offices (gym, cafeteria, parking lot — large indoor
-volume, accessible by school bus). They make a strong static "potential
-shelter" layer alongside the OSM data.
+County emergency managers lean on schools as evacuation shelters. A gym holds a lot
+of people and the buses are already there. Good candidate layer next to OSM.
 """
 
 from __future__ import annotations
@@ -29,7 +24,7 @@ NCES_FEATURESERVER = (
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
-# Short-lived negative cache for transient upstream failures (see census.py).
+# Failures cached separately from results, as in census.py.
 _FAIL_CACHE: dict[str, float] = {}
 
 
@@ -64,8 +59,7 @@ async def fetch_schools(
     if cached and now - cached[0] < _ttl():
         return [_to_school(r) for r in cached[1]]
 
-    # Recent failure for this area? Back off and signal the outage so /shelters
-    # reports shelters_nces `down` instead of a misleading empty list.
+    # Still inside the failure window, so report down without re-asking.
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         raise SourceUnavailable("nces failed (cached)")
@@ -93,11 +87,10 @@ async def fetch_schools(
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
-        # ArcGIS endpoints occasionally 5xx during heavy ingest windows. Record a
-        # short-lived failure marker to back off, and raise so /shelters reports
-        # `down` rather than a misleading empty list.
+        # These endpoints 5xx now and then during heavy ingest, so back off and
+        # raise rather than returning nothing.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[nces] upstream {status} for {lat:.2f},{lon:.2f} "
@@ -113,9 +106,8 @@ async def fetch_schools(
         coords = geom.get("coordinates")
         if not coords or len(coords) < 2:
             continue
-        # Coordinates can be present-but-null for a school with unset geometry;
-        # skip the row rather than aborting the whole feed (the route swallows
-        # our exceptions via gather()).
+        # A school can carry null coordinates, so skip the row rather than killing
+        # the whole parse.
         try:
             lat, lon = float(coords[1]), float(coords[0])
         except (TypeError, ValueError):

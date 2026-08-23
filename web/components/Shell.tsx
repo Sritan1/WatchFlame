@@ -1,9 +1,7 @@
 'use client';
 
-// Top-level layout: floating 220px glass sidebar (14px inset on all sides) +
-// sticky floating 56px topbar dock + content slot. Pages render INTO this
-// shell — they don't repeat sidebar/topbar. Content offset = 14 (gutter) +
-// 220 (sidebar) + 14 (gap) = 248px from the viewport's left edge.
+// The layout every page renders into, so no page repeats the chrome. The content
+// offset clears the sidebar rail and its gutters.
 
 import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -26,9 +24,8 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="app-content" style={{ marginLeft: 248 }}>
         <Topbar />
         <LocationNotice />
-        {/* `key={pathname}` re-mounts the main on route change, replaying the
-         *  ember-route-fade animation so each page entrance gets a 220ms
-         *  fade+lift instead of a snap. */}
+        {/* The key re-mounts main on a route change, replaying the fade so a page
+            arrives on a short lift instead of snapping in. */}
         <main
           key={pathname}
           className="ember-route-fade"
@@ -41,24 +38,16 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-/** Thin global banner shown when we've fallen back to the Berkeley default, for
- *  one of two reasons: the browser denied/cannot provide geolocation, OR the
- *  device GPS resolved to a location OUTSIDE the US (the app's incident /
- *  shelter / FEMA / calibration data is US-only). Either way the user should
- *  know the data isn't for their actual location. Suppressed when a saved
- *  location is active: that's a deliberate choice, not a silent fallback.
- *  Dismissible for the session. */
+/** Says the default location is showing and not theirs, because GPS was denied or
+ *  resolved outside the US. A saved location hides it. That one they picked. */
 function LocationNotice() {
   const { ae } = useAesthetic();
   const loc = useUserLocation();
   const { activeId } = useSavedLocations();
   const [dismissed, setDismissed] = useState(false);
 
-  // Dismissing hides the banner for the CURRENT location only — if the user
-  // switches to a different location and back, it should reappear. Reset the
-  // dismiss whenever the active selection changes, using React's "adjust state
-  // during render on a changed value" pattern (no effect, converges in one extra
-  // render since the next render sees dismissedFor === activeId).
+  // Dismissing only covers the current location, so switching away and back brings
+  // it back. Adjusted during render, not in an effect.
   const [dismissedFor, setDismissedFor] = useState<string | null>(activeId);
   if (dismissedFor !== activeId) {
     setDismissedFor(activeId);
@@ -68,9 +57,7 @@ function LocationNotice() {
   const permissionOff =
     loc.isFallback &&
     (loc.permission === 'denied' || loc.permission === 'unavailable');
-  // outsideUs implies permission 'granted' (GPS worked, just abroad), so the two
-  // reasons are mutually exclusive. `dismissed` hides it for the session once the
-  // user closes it with the × button.
+  // Being abroad means location worked, so the two reasons never overlap.
   if ((!permissionOff && !loc.outsideUs) || dismissed) return null;
 
   const message = loc.outsideUs ? (
@@ -91,21 +78,19 @@ function LocationNotice() {
     <div
       role="status"
       style={{
-        // Lift above the page's fixed background canvases (zIndex 0). Without a
-        // position + z-index this static banner is painted over by them and is
-        // invisible — it sits below the Topbar (zIndex 20), above the backdrop.
+        // Above the page's background canvases, which would paint over it, and
+        // still below the topbar.
         position: 'relative',
         zIndex: 10,
         display: 'flex',
-        // flex-start (not center) so on a phone, where the message wraps to
-        // several lines, the icon + × sit beside the FIRST line instead of
-        // floating in the middle of the block.
+        // Top-aligned, so on a phone where the message wraps the icon and close
+        // button sit beside the first line and not halfway down.
         alignItems: 'flex-start',
         gap: 10,
         margin: '0 24px',
         padding: '8px 14px',
         borderRadius: 10,
-        // Translucent glass so it reads clearly over whatever background is behind.
+        // Frosted, so it stays legible over whatever is behind it.
         background: `linear-gradient(180deg, rgba(${SLATE}, 0.12), rgba(${SLATE}, 0.06)), rgba(11, 14, 18, 0.6)`,
         backdropFilter: 'blur(10px)',
         border: `0.5px solid rgba(${SLATE}, 0.28)`,

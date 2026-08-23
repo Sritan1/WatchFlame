@@ -1,15 +1,7 @@
 'use client';
 
-// What-If Risk Score hero — ported from mobile (app/(tabs)/risk.tsx). Two
-// stacked blocks instead of one fused card:
-//   1. Title block (above the card) — small amber dot, "What-If Risk Score"
-//      headline, hairline divider, subtitle. No card chrome here.
-//   2. Score card — premium-card chrome with grid texture + corner halo +
-//      level-tinted border. Region picker (top-right), big animated score,
-//      score gauge, threshold readout, "RISK LEVEL: X" pill.
-//
-// Ambient chrome is floored at 'moderate' so low-risk pages don't read as
-// washed-out teal — the literal label/pill still shows the actual level.
+// The hero at the top of the what-if screen. The card's tint floors at amber so a
+// low score doesn't wash the page out, and the pill still reads the real level.
 
 import { useState } from 'react';
 
@@ -31,7 +23,7 @@ import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 
 const AMBER = RISK_LEVELS.moderate.color;
 
-/** null = Global (no state calibration). Otherwise 2-letter US state code. */
+/** A state code, or null for the global cutoffs. */
 export type RegionCode = string | null;
 
 export function regionName(code: RegionCode): string {
@@ -52,29 +44,20 @@ export function HeroScorePanel({
   region: RegionCode;
   onRegionChange: (r: RegionCode) => void;
   thresholds: RegionalThresholds | null;
-  /** True during location-switch transitions — replaces the score number,
-   *  gauge, threshold labels and pill with skeletons so the hero matches
-   *  the slider tiles' loading rhythm. The title + region picker stay
-   *  visible since they don't depend on the in-flight risk computation. */
+  /** Skeletons the number, gauge and pill during a location switch. The title and
+   *  region picker stay put. Neither depends on the score. */
   isLoading?: boolean;
 }) {
   const { ae, accent } = useAesthetic();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ladderOpen, setLadderOpen] = useState(false);
-  // Ambient chrome (border tint, top stripe, corner glow) is floored to
-  // moderate when actual is low — matches the same convention used on Status
-  // / Safety so low doesn't read as muted teal everywhere.
+  // The card tint floors at amber, as it does on Status and Safety.
   const chromeLevel = floorLow(level);
   const cr = getRisk(chromeLevel, accent);
-  // Pill tone uses the TRUE level so the label "Risk Level: LOW" displays
-  // accurately in green when applicable, even though the card chrome is amber.
+  // The pill takes the real level, so LOW still reads green on an amber card.
   const pillTone = getRisk(level, accent);
-  // Fire-weather backend bucketing: LOW < thresholds.low (50th pct), MOD < moderate
-  // (75th), HIGH < extreme (97th), EXTREME ≥ extreme. The `high` field
-  // (90th pct) is informational only — don't use it as a band boundary.
-  // Defaults are the fire-weather global cutoffs (shared GLOBAL_THRESHOLDS, from
-  // api/core/risk_algorithm.py._bucket) used when the user isn't in a fitted
-  // state and no per-state thresholds are supplied.
+  // high is informational and never a boundary. Falls back to the global cutoffs
+  // outside a fitted state.
   const th = {
     low: thresholds?.low ?? GLOBAL_THRESHOLDS.low,
     moderate: thresholds?.moderate ?? GLOBAL_THRESHOLDS.moderate,
@@ -83,10 +66,9 @@ export function HeroScorePanel({
 
   return (
     <div>
-      {/* ─── Title block (above the card, centered) ──────────────────────── */}
+      {/* Title block, above the card */}
       <div style={{ textAlign: 'center', marginBottom: 18 }}>
-        {/* Amber accent dot — echoes the SectionEyebrow above and anchors
-         *  the title to the page rather than letting it float. */}
+        {/* Echoes the eyebrow above, so the title feels anchored. */}
         <div
           style={{
             margin: '0 auto',
@@ -111,7 +93,7 @@ export function HeroScorePanel({
         >
           Fire-Weather What-If
         </h1>
-        {/* Hairline divider — short, centered, fading at edges. */}
+        {/* Hairline divider, short and centered, fading at the edges. */}
         <div
           aria-hidden="true"
           style={{
@@ -140,7 +122,7 @@ export function HeroScorePanel({
         </p>
       </div>
 
-      {/* ─── Score card ─────────────────────────────────────────────────── */}
+      {/* Score card */}
       <div
         className="ember-card ember-hero-card"
         style={{
@@ -150,20 +132,16 @@ export function HeroScorePanel({
           border: `0.5px solid rgba(${cr.glow}, 0.22)`,
           borderRadius: ae.radiusLg,
           padding: 24,
-          // Drop-shadow + corner halo both lessened so the card reads as a
-          // confident hero artifact rather than glowing like a UI button.
+          // Kept restrained, so the card looks like a panel and not a big button.
           boxShadow: `0 18px 48px rgba(${cr.glow}, 0.08)`,
           ['--card-accent' as string]: cr.color,
           ['--card-accent-soft' as string]: `rgba(${cr.glow}, 0.12)`,
         }}
       >
-        {/* Grid texture — technical / measured feel, mirrors mobile's
-         *  PremiumCard texture="grid". 4% opacity stays barely-there. */}
+        {/* A grid, faint enough to feel like texture and not pattern. */}
         <GridPattern opacity={0.04} />
 
-        {/* Bottom-right corner halo — softer + wider than the default
-         *  ember-hero-card top-right glow, matches mobile glowPosition="bottomRight".
-         *  Alpha lessened from 0.22 → 0.12 so it reads as warmth, not a spotlight. */}
+        {/* A corner glow, dim enough to feel warm without becoming a spotlight. */}
         <div
           aria-hidden="true"
           style={{
@@ -179,7 +157,7 @@ export function HeroScorePanel({
         />
 
         <div style={{ position: 'relative', zIndex: 1 }}>
-          {/* Region picker — top right inside the card */}
+          {/* Region picker, top right inside the card */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button
               type="button"
@@ -232,7 +210,7 @@ export function HeroScorePanel({
 
           {isLoading ? (
             <>
-              {/* Score number skeleton — matches the 96px line height */}
+              {/* Score number skeleton, matches the 96px line height */}
               <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
                 <Skeleton width={220} height={96} rounded="md" />
               </div>
@@ -254,15 +232,14 @@ export function HeroScorePanel({
                   <Skeleton key={i} width={70} height={12} rounded="sm" />
                 ))}
               </div>
-              {/* Risk-level pill skeleton — same footprint as the real pill */}
+              {/* Risk-level pill skeleton, same footprint as the real one */}
               <div style={{ marginTop: 22, display: 'flex', justifyContent: 'center' }}>
                 <Skeleton width={240} height={52} rounded="full" />
               </div>
             </>
           ) : (
             <>
-              {/* Giant score — centered, level-colored. ~96px (mobile uses 84;
-               *  web has wider hero cells so a bit bigger reads better). */}
+              {/* The score itself, big and colored by tier. */}
               <div
                 style={{
                   marginTop: 16,
@@ -319,11 +296,7 @@ export function HeroScorePanel({
                 </span>
               </div>
 
-              {/* "See across all states" trigger — opens the calibration
-               *  ladder modal driven by the current slider-driven score.
-               *  Reuses the same CalibrationLadder component the Status
-               *  hero uses; reinforces the calibration story for users
-               *  experimenting with the what-if sliders. */}
+              {/* The same ladder Status uses, driven by the sliders. */}
               <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
                 <button
                   type="button"
@@ -350,7 +323,7 @@ export function HeroScorePanel({
                 </button>
               </div>
 
-              {/* Risk Level pill — keeps actual level color so "Low" stays green */}
+              {/* Risk level pill. Keeps the true level color so "Low" stays green */}
               <div style={{ marginTop: 22, display: 'flex', justifyContent: 'center' }}>
                 <div
                   style={{
@@ -405,11 +378,8 @@ export function HeroScorePanel({
         onChange={onRegionChange}
       />
 
-      {/* Calibration ladder — uses the picked region as the user's state.
-       *  When region is null (Global), the ladder's per-row tier-at-score
-       *  column still works but no row gets the "your state" highlight;
-       *  the user can still see how their slider score buckets across all
-       *  17 states. */}
+      {/* The ladder treats the picked region as the user's state. On the global
+          cutoffs no row is highlighted, but every row still reads. */}
       <Modal
         open={ladderOpen}
         onClose={() => setLadderOpen(false)}
@@ -435,9 +405,8 @@ export function HeroScorePanel({
           in for that state.
         </p>
         <div style={{ marginTop: 18 }}>
-          {/* Calibration data is bundled (web/lib/regional-thresholds.ts), so
-              the ladder renders instantly and works fully offline — no
-              /risk/calibration fetch, no loading state. */}
+          {/* The calibration data is bundled, so the ladder renders instantly
+              and works offline. No fetch and no loading state. */}
           <CalibrationLadder
             data={CALIBRATION_INFO}
             userState={region}

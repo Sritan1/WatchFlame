@@ -1,18 +1,16 @@
 'use client';
 
-// Canvas-driven animated waves background — ported from background-waves.jsx.
-// Risk-aware palette (low: cool sage/teal; high/extreme: warm ember/red).
-// Respects prefers-reduced-motion: paints once and freezes.
+// The animated waves behind Status. The palette follows the risk, cool and green
+// when things are calm and warm when they aren't. With reduced motion on, it
+// paints one frame and stops.
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { useAesthetic } from '@/lib/aesthetic';
 import { type RiskLevel } from '@/lib/theme';
 
-// Runs before paint, so the first/resumed frame is drawn before the browser
-// shows the canvas — no blank flash when Status remounts. Falls back to
-// useEffect during SSR to avoid React's "useLayoutEffect does nothing on the
-// server" warning.
+// Runs before paint, so a remount never flashes an empty canvas. Falls back to a
+// plain effect on the server, which React warns about otherwise.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 interface Color { r: number; g: number; b: number }
@@ -30,9 +28,8 @@ interface Blob {
   phx: number; phy: number;
   color: Color; alpha: number;
   breathFreq: number; breathPhase: number;
-  // Per-mount caches (rebuilt on resize, tied to the current canvas context;
-  // NOT part of the persisted phase state): radius in px + a radial gradient
-  // centered at the local origin, reused via ctx.translate/scale each frame.
+  // Rebuilt on resize and tied to this canvas, so they don't travel with the saved
+  // animation state.
   _R?: number; _grad?: CanvasGradient;
 }
 
@@ -43,14 +40,12 @@ interface Wave {
   phase1: number; phase2: number;
   thickness: number;
   color: Color; alpha: number; edgeAlpha: number;
-  // Per-mount caches (rebuilt on resize): band centerline, half-thickness, and
-  // the static vertical fill gradient.
+  // Also rebuilt on resize, the band's centerline, its thickness and its fill.
   _yMid?: number; _half?: number; _vgrad?: CanvasGradient;
 }
 
-// Module-level so the wave simulation survives unmount (route navigation) and
-// resumes in place on return instead of re-seeding random phases. Keyed by
-// risk+pulseSpeed. Tiny memory; burns no CPU while unmounted (the loop is gone).
+// Kept outside the component so the waves survive navigating away and pick up
+// where they left off. Costs nothing while unmounted, the loop is gone.
 let persistedSim: { key: string; blobs: Blob[]; waves: Wave[] } | null = null;
 
 export function WavesBackground({
@@ -60,9 +55,8 @@ export function WavesBackground({
 }: {
   risk?: RiskLevel;
   pulseSpeed?: number;
-  /** When false the rAF loop stops and the canvas freezes IN PLACE; flipping
-   *  back to true resumes from the same phase (no restart). Lets the parent
-   *  pause it off-screen / tab-hidden / behind a modal to cut idle CPU. */
+  /** False freezes the canvas where it is, and true picks it up from the same
+   *  place. The parent stops it when nobody is looking. */
   active?: boolean;
 }) {
   const { ae } = useAesthetic();
@@ -86,9 +80,7 @@ export function WavesBackground({
     const intensity = isCalm ? 0.4 : risk === 'moderate' ? 0.75 : 1.0;
     const speedMult = 0.4 + (pulseSpeed / 100) * 1.0;
 
-    // Reuse the persisted simulation when the config matches (returning to
-    // Status after navigating away) so the waves resume in place; otherwise
-    // seed fresh and store it.
+    // Reusing the saved waves is what makes returning to Status resume, not restart.
     const simKey = `${risk}|${pulseSpeed}`;
     let blobs: Blob[];
     let waves: Wave[];
@@ -139,11 +131,8 @@ export function WavesBackground({
       persistedSim = { key: simKey, blobs, waves };
     }
 
-    // Gradients depend only on canvas size, not animation phase, so build them
-    // once per resize instead of every frame. Blob gradients sit at the local
-    // origin and are positioned/breathed via ctx.translate/scale at draw time.
-    // These caches are tied to THIS canvas context, so they're rebuilt on every
-    // mount via resize() — they are deliberately NOT part of the persisted sim.
+    // Gradients only depend on the canvas size, so build them on resize instead of
+    // sixty times a second.
     const buildCaches = () => {
       const Rmax = Math.max(W, H);
       for (const b of blobs) {
@@ -169,10 +158,9 @@ export function WavesBackground({
     };
 
     const resize = () => {
-      // Cap at 1.5× device pixels (not 2×): the waves are all soft gradients +
-      // glow with no sharp edges, so 1.5× is visually indistinguishable from 2×
-      // but pushes ~44% fewer pixels per frame on retina screens. (1× was a step
-      // too far — the upscale smoothing spread the soft glow visibly wider.)
+      // Well short of full retina. These are soft gradients with no hard edges, so
+      // the difference is invisible while the pixel count drops by nearly half.
+      // Going lower did show, spreading the glow.
       DPR = Math.min(window.devicePixelRatio || 1, 1.5);
       W = canvas.clientWidth;
       H = canvas.clientHeight;
@@ -187,8 +175,7 @@ export function WavesBackground({
       ctx.clearRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'lighter';
 
-      // Blobs — cached radial gradient positioned + breathed via transform
-      // (no per-frame createRadialGradient).
+      // The blobs, drawn from a cached gradient and moved with a transform.
       for (const b of blobs) {
         b.phx += b.fx * dt;
         b.phy += b.fy * dt;
@@ -206,9 +193,8 @@ export function WavesBackground({
         ctx.restore();
       }
 
-      // Waves — cached vertical fill gradient + a glowing centerline faked with
-      // layered additive strokes (no per-frame shadowBlur; see below). Path step
-      // widened 8→12 (still smooth at this amplitude, fewer points to compute).
+      // The waves themselves. The path steps in twelves, not eights. Still smooth at
+      // this scale and cheaper.
       const step = 12;
       for (const w of waves) {
         w.phase1 += w.speed1 * dt;
@@ -234,11 +220,8 @@ export function WavesBackground({
         ctx.fillStyle = w._vgrad!;
         ctx.fill();
 
-        // Glowing centerline — soft halo faked with a few layered additive
-        // strokes (8px faint → 3px → 1px crisp core) under 'lighter' compositing
-        // instead of a per-frame shadowBlur Gaussian. The glow reads a touch
-        // wider than shadowBlur, but there's no per-pixel blur pass — chosen for
-        // the lower CPU (this is the version that hit ~18–25%).
+        // Three stacked strokes standing in for a real blur. Comes out slightly
+        // wider and costs a fraction of the CPU.
         ctx.beginPath();
         for (let x = -20; x <= W + 20; x += step) {
           const off = Math.sin(x * w.freq1 + w.phase1) * w.amp1
@@ -261,14 +244,11 @@ export function WavesBackground({
       }
     };
 
-    // Cap the canvas to ~30fps: the rAF chain still fires at the display rate,
-    // but we only redraw every ~33ms — roughly halving the (expensive) render
-    // work. Skipped ticks just early-return. Motion speed is unchanged because
-    // render() advances the phases by the ACTUAL elapsed time, not a fixed step.
+    // Half what the display asks for, which halves the work. The motion doesn't
+    // slow down. Each frame advances by real elapsed time.
     const FRAME_MS = 1000 / 30;
     const frame = (t: number) => {
-      // Paused (off-screen / tab-hidden / modal) → stop the chain and freeze in
-      // place; phases live in the blobs/waves arrays so they're preserved.
+      // Paused, so stop and freeze. The wave state lives in the arrays and keeps.
       if (!activeRef.current) { looping = false; return; }
       raf = requestAnimationFrame(frame);
       const elapsed = t - lastT;
@@ -280,14 +260,13 @@ export function WavesBackground({
     const start = () => {
       if (looping || reduced) return;
       looping = true;
-      lastT = performance.now(); // reset the clock so the pause gap isn't applied as one big dt
+      lastT = performance.now(); // reset, or the whole pause lands as one giant step
       raf = requestAnimationFrame(frame);
     };
     wakeRef.current = start;
 
-    // On any size change, re-fit the backing store; if the loop isn't currently
-    // painting (paused / reduced-motion / frozen), repaint the current frame so
-    // the canvas doesn't sit blank or stretched after a resize.
+    // Refit on any size change. The repaint covers a stopped loop, or the canvas
+    // is left blank or stretched.
     const onResize = () => {
       resize();
       if (!looping) render(0);
@@ -295,12 +274,10 @@ export function WavesBackground({
 
     resize();
     window.addEventListener('resize', onResize);
-    // Also observe the canvas box directly so container-driven size changes that
-    // don't fire a window resize (panel toggles, layout shifts) still re-fit.
+    // Watch the element too. A panel opening resizes it without touching window.
     const ro = new ResizeObserver(onResize);
     ro.observe(canvas);
-    // Draw the current (possibly resumed) frame synchronously before paint so a
-    // remount never flashes a blank canvas before the loop's first rAF tick.
+    // Draw one frame now, so a remount never flashes an empty canvas.
     render(0);
     if (!reduced && activeRef.current) {
       start();
@@ -315,8 +292,7 @@ export function WavesBackground({
     };
   }, [risk, pulseSpeed]);
 
-  // Pause/resume from the parent WITHOUT rebuilding the simulation (which would
-  // reset the random phases). Stop on inactive; wake the frozen loop on active.
+  // Pause and resume without rebuilding anything, which would re-seed the waves.
   useEffect(() => {
     activeRef.current = active;
     if (active) wakeRef.current();

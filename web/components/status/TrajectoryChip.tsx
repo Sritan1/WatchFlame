@@ -1,34 +1,23 @@
 'use client';
 
-// Trajectory chip — short-term forward-looking signal sits next to the
-// confidence chip below the Status hero subtitle. Three tiers driven by
-// the backend's projected fire-weather-score delta over the next 6 hours:
-//
-//   RISING  — conditions deteriorating; orange tone, arrow-up glyph
-//   STEADY  — no material change; muted tone, dash glyph
-//   FALLING — conditions improving; green tone, arrow-down glyph
-//
-// Single tight string per design constraint we established for the
-// confidence chip. Reason/context (e.g. "VPD +18% by 3pm") lives in the
-// upcoming phase-space modal triggered separately — keeps this chip
-// readable at a glance.
+// The chip beside the confidence one, saying whether the next few hours look worse,
+// the same or better. One short phrase. The reasoning lives in the phase-space
+// modal this opens.
 
 import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useAesthetic } from '@/lib/aesthetic';
 import type { TrajectoryResponse, TrajectoryTier } from '@/lib/api';
 
-// Tone palette — orange/grey/green, deliberately desaturated vs the
-// risk-level palette so trajectory reads as direction (a vector), not
-// a tier (a level). The composite tier color comes from the orb pill
-// next to it; trajectory adds the second dimension.
+// Duller than the risk palette. This is a direction, not a severity. The pill next
+// to it carries the tier.
 const TONE: Record<
   TrajectoryTier,
   { color: string; rgb: string; label: string; glyph: string }
 > = {
-  rising:  { color: '#FF7A3A', rgb: '255, 122, 58',  label: 'Rising',  glyph: '↑' /* ↑ */ },
-  steady:  { color: '#9ca3af', rgb: '156, 163, 175', label: 'Steady',  glyph: '→' /* → */ },
-  falling: { color: '#3FB68B', rgb: '63, 182, 139',  label: 'Falling', glyph: '↓' /* ↓ */ },
+  rising:  { color: '#FF7A3A', rgb: '255, 122, 58',  label: 'Rising',  glyph: '↑' },
+  steady:  { color: '#9ca3af', rgb: '156, 163, 175', label: 'Steady',  glyph: '→' },
+  falling: { color: '#3FB68B', rgb: '63, 182, 139',  label: 'Falling', glyph: '↓' },
 };
 
 export function TrajectoryChip({
@@ -39,23 +28,16 @@ export function TrajectoryChip({
 }: {
   trajectory: TrajectoryResponse | null | undefined;
   isLoading: boolean;
-  /** The /trajectory query errored (HTTP/network). Trajectory is an additive
-   *  signal — hide the chip, same as the backend-null case, rather than
-   *  skeleton forever (data is `undefined` on error, which the skeleton
-   *  check below would otherwise treat as "still loading"). */
+  /** The forecast is an extra signal, so on failure the chip steps aside instead of
+   *  skeletoning forever. */
   isError?: boolean;
-  /** Opens the 2D phase-space modal where the projection arrow + driver
-   *  context live. */
+  /** Opens the phase-space modal, where the reasoning lives. */
   onOpen: () => void;
 }) {
   const { ae } = useAesthetic();
 
-  // No forecast to show — either the /trajectory query errored (HTTP/network)
-  // or the backend returned null because Open-Meteo's forecast feed was
-  // unavailable for this location. Either way, show an explicit, clickable
-  // "Forecast unavailable" chip (slate, not a risk tier) rather than letting
-  // the chip silently vanish. Clicking opens the phase-space modal, which
-  // explains it. The composite tier from /risk stays valid regardless.
+  // No forecast, from either a failure or nothing available here. Say so in grey
+  // and stay clickable. Vanishing would be worse.
   if (isError || trajectory === null) {
     const SLATE = '148, 163, 184';
     return (
@@ -89,11 +71,8 @@ export function TrajectoryChip({
     );
   }
 
-  // Skeleton when the chip can't render anything determinate yet.
-  // Two cases: TanStack hasn't started the query (data === undefined)
-  // or it's actively fetching (isLoading === true). Either way the user
-  // should see SOMETHING in the chip slot rather than the chip silently
-  // disappearing — that was confusing during location switches.
+  // The slot has to hold something while the query settles, or the chip appears
+  // to come and go during a location switch.
   if (isLoading || trajectory === undefined) {
     return <Skeleton width={132} height={26} rounded="full" />;
   }

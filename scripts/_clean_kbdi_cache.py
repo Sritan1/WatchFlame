@@ -1,11 +1,8 @@
-"""Drop only the failed (None-valued) `days=365` entries from the
-Open-Meteo cache so the next calibration run can re-fetch them.
+"""Clear the failed year-long entries out of the weather cache so the next
+calibration run can try them again. Successes stay, and so does everything from
+the shorter windows.
 
-Preserves: every successful (non-None) entry, AND every `days=60` entry
-from the validation notebook. Only purges the 365-day failures created
-during the rate-limited initial KBDI run.
-
-Run from project root:  python -m scripts._clean_kbdi_cache
+Run from the project root with python -m scripts._clean_kbdi_cache
 """
 import sys
 from pathlib import Path
@@ -26,9 +23,8 @@ def main():
     )
     print(f"cache: {n_before:,} total, {n_none:,} None entries ({n_none_365:,} are days=365)")
 
-    # The cache key format is "lat|lon|YYYY-MM-DD|days" (see _key in openmeteo.py).
-    # We only purge None entries with `|365` suffix to leave 60-day notebook
-    # data and any other window sizes alone.
+    # Keys end in their window length, so match on that and leave every other
+    # window size alone.
     keep = {k: v for k, v in cache.items() if not (v is None and k.endswith("|365"))}
     removed = n_before - len(keep)
     print(f"removing {removed:,} entries; keeping {len(keep):,}")

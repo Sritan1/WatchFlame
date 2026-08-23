@@ -1,11 +1,8 @@
-"""Regression tests for defensive parsing of upstream feeds.
+"""Defensive parsing of the upstream feeds.
 
-Pins the fix where a single malformed row (present-but-null geometry) used to
-raise out of the whole parse loop. Because /incidents/near and /shelters
-swallow service exceptions via gather(return_exceptions=True), one bad row
-silently dropped the ENTIRE feed. The parser must skip the bad row instead.
-
-Network-free: we stub httpx.AsyncClient with a canned ArcGIS payload.
+One row with null geometry used to raise out of the whole parse loop, and the routes
+swallow service exceptions, so a single bad row dropped the entire feed. The parser
+skips that row instead. httpx is stubbed with a canned ArcGIS payload.
 """
 from __future__ import annotations
 
@@ -52,16 +49,15 @@ def _patch_client(monkeypatch, payload: dict) -> None:
 
 
 def test_nifc_skips_null_geometry_row_keeps_the_rest(monkeypatch):
-    """A WFIGS feature with coordinates [null, null] must not abort the parse;
-    the good rows survive and the null-geometry row falls back to / is skipped
-    rather than raising TypeError out of the whole feed."""
+    """Coordinates of [null, null] must not abort the parse. The good rows
+    survive, and the bad one either falls back or gets skipped."""
     payload = {
         "features": [
-            {  # 1. clean geometry → kept
+            {  # clean geometry, kept
                 "geometry": {"coordinates": [-120.0, 38.0]},
                 "properties": {"IncidentName": "Good Fire", "IrwinID": "A1"},
             },
-            {  # 2. null geometry but Initial lat/lon present → kept via fallback
+            {  # no geometry, but the fallback fields carry it
                 "geometry": {"coordinates": [None, None]},
                 "properties": {
                     "IncidentName": "Fallback Fire",
@@ -70,7 +66,7 @@ def test_nifc_skips_null_geometry_row_keeps_the_rest(monkeypatch):
                     "InitialLongitude": -121.0,
                 },
             },
-            {  # 3. null geometry, no fallback fields → skipped, not a crash
+            {  # nothing at all, so skipped rather than crashing
                 "geometry": {"coordinates": [None, None]},
                 "properties": {"IncidentName": "Ghost Fire", "IrwinID": "A3"},
             },
@@ -89,13 +85,12 @@ def test_nifc_skips_null_geometry_row_keeps_the_rest(monkeypatch):
 
 
 def test_iso_from_arcgis_handles_out_of_range_epoch():
-    """A garbage/out-of-range epoch must not abort the feed parse. On some
-    platforms (notably Windows) datetime.fromtimestamp raises OSError/
-    OverflowError for an absurd value; the converter degrades to None instead of
-    raising, and does not leak the raw millisecond integer as the timestamp."""
+    """An absurd epoch must not abort the parse. datetime.fromtimestamp raises
+    on Windows for a value that far out, so the converter returns None instead
+    of raising or leaking the raw milliseconds as a timestamp."""
     # A valid epoch-ms still converts.
     assert nifc._iso_from_arcgis(0) == "1970-01-01T00:00:00+00:00"
-    # An out-of-range epoch degrades to None (no crash, no raw-ms leak).
+    # An out-of-range epoch degrades to None, with no crash and no raw-ms leak.
     assert nifc._iso_from_arcgis(10**23) is None
     # A pre-formatted ISO string still passes through unchanged.
     assert nifc._iso_from_arcgis("2024-01-01T00:00:00Z") == "2024-01-01T00:00:00Z"
@@ -103,9 +98,8 @@ def test_iso_from_arcgis_handles_out_of_range_epoch():
 
 
 def test_nifc_non_json_200_degrades_to_outage(monkeypatch):
-    """A 200 whose body is not JSON (resp.json() raises ValueError) is a real
-    upstream problem, not a silently-empty feed: nifc raises SourceUnavailable so
-    the route reports `down` rather than "no fires nearby"."""
+    """A 200 whose body isn't JSON is a real upstream problem, not an empty
+    feed, so nifc raises and the route says down instead of "no fires nearby"."""
 
     class _BadJsonResp:
         def raise_for_status(self) -> None:
@@ -131,7 +125,7 @@ def test_nifc_non_json_200_degrades_to_outage(monkeypatch):
         asyncio.run(nifc.fetch_all_incidents(force=True))
 
 
-# ─── FIRMS multi-source merge / dedup / hardening ────────────────────────────
+# FIRMS multi-source merge, dedup and hardening
 
 _FIRMS_HEADER = (
     "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,"
@@ -145,8 +139,8 @@ def _firms_row(lat: float, lon: float, bright: float) -> str:
 
 def _firms_client(bodies: dict[str, str]):
     """Fake httpx.AsyncClient factory. `bodies` maps a FIRMS source name to the
-    CSV/text body it should return; a source absent from the map raises a
-    connect error (simulating that one satellite being down)."""
+    body it returns. A source missing from the map raises a connect error,
+    which stands in for that satellite being down."""
 
     class _Resp:
         def __init__(self, text: str) -> None:
@@ -163,7 +157,7 @@ def _firms_client(bodies: dict[str, str]):
             return False
 
         async def get(self, url):
-            # url = https://.../api/area/csv/<key>/<SOURCE>/<area>/<days>
+            # The source name is the third-from-last path segment.
             source = url.split("/csv/")[1].split("/")[1]
             if source not in bodies:
                 raise httpx.ConnectError(f"simulated {source} outage")
@@ -173,10 +167,9 @@ def _firms_client(bodies: dict[str, str]):
 
 
 def test_firms_non_csv_200_body_reports_down(monkeypatch):
-    """FIRMS returns HTTP 200 with a plaintext error ('Invalid MAP_KEY.', quota
-    exceeded) for a bad key / blown quota. That must surface as an outage
-    (SourceUnavailable → firms=down), NOT parse to zero rows and read as a
-    genuine map-wide 'no fires'."""
+    """FIRMS answers a bad key or a blown quota with a 200 and a plaintext
+    error. That has to read as an outage, not parse to zero rows and look like
+    a genuine map-wide "no fires"."""
     monkeypatch.setenv("NASA_FIRMS_API_KEY", "test-key")
     monkeypatch.setenv("FIRMS_SOURCES", "VIIRS_NOAA20_NRT,VIIRS_SNPP_NRT")
     firms._CACHE.clear()
@@ -191,15 +184,15 @@ def test_firms_non_csv_200_body_reports_down(monkeypatch):
 
 
 def test_firms_merges_sources_and_dedups_keeping_brightest(monkeypatch):
-    """The two satellites are merged, and the same fire seen by both (near-equal
-    coords) collapses to a single feature — keeping the brighter pixel so the
-    downstream brightest-first cap still surfaces the strongest detection."""
+    """The two satellites merge, and a fire both of them saw collapses into one
+    feature. The brighter pixel wins so the brightest-first cap downstream still
+    surfaces the strongest detection."""
     monkeypatch.setenv("NASA_FIRMS_API_KEY", "test-key")
     monkeypatch.setenv("FIRMS_SOURCES", "VIIRS_NOAA20_NRT,VIIRS_SNPP_NRT")
     firms._CACHE.clear()
     firms._FAIL_CACHE.clear()
     n20 = "\n".join([_FIRMS_HEADER, _firms_row(38.0, -120.0, 300), _firms_row(39.0, -121.0, 310)])
-    # SNPP sees the SAME 38,-120 fire ~11 m away and BRIGHTER (330).
+    # SNPP sees the same fire about 14 m away and brighter.
     snpp = "\n".join([_FIRMS_HEADER, _firms_row(38.0001, -120.0001, 330)])
     monkeypatch.setattr(
         firms.httpx, "AsyncClient",
@@ -207,21 +200,21 @@ def test_firms_merges_sources_and_dedups_keeping_brightest(monkeypatch):
     )
     fc = asyncio.run(firms.fetch_fires_geojson(days=1, bbox="-121,37,-119,40"))
     feats = fc["features"]
-    assert len(feats) == 2  # 3 raw → the two at ~38,-120 collapse to one
+    assert len(feats) == 2  # three raw, and the two near 38,-120 collapse to one
     near = [f for f in feats if round(f["properties"]["lat"], 3) == 38.0]
     assert len(near) == 1
     assert near[0]["properties"]["brightness"] == 330.0  # kept the brighter pixel
 
 
 def test_firms_partial_success_is_not_an_outage(monkeypatch):
-    """One satellite down + one returning data is NOT an outage: the available
+    """One satellite down while another returns data is not an outage. The available
     detections are returned (partial coverage beats a false all-clear)."""
     monkeypatch.setenv("NASA_FIRMS_API_KEY", "test-key")
     monkeypatch.setenv("FIRMS_SOURCES", "VIIRS_NOAA20_NRT,VIIRS_SNPP_NRT")
     firms._CACHE.clear()
     firms._FAIL_CACHE.clear()
     n20 = "\n".join([_FIRMS_HEADER, _firms_row(38.0, -120.0, 300)])
-    # SNPP omitted → the fake client raises a connect error for it (down).
+    # Only one satellite answers. The fake client fails the other.
     monkeypatch.setattr(firms.httpx, "AsyncClient", _firms_client({"VIIRS_NOAA20_NRT": n20}))
     fc = asyncio.run(firms.fetch_fires_geojson(days=1, bbox="-121,37,-119,40"))
     assert len(fc["features"]) == 1

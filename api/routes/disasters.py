@@ -11,15 +11,9 @@ router = APIRouter(prefix="/disasters", tags=["disasters"])
 
 logger = logging.getLogger(__name__)
 
-# Why this second filter exists (don't remove it): the upstream query treats
-# "incidentEndDate is null" as ongoing, but ~95% of FEMA's null-end records are
-# zombies — old Fire Management declarations (some from 1998-99) whose end date
-# was simply never logged. Filtering on incidentBeginDate within the last year
-# drops that decades-old backlog. Real active fires are always recent (FM
-# declarations are short-lived), so the cutoff sits in a wide empty gap and
-# never drops a genuinely-active disaster. Null begin dates (currently 0 records
-# on the live feed) are also dropped, which is fine — they're part of the same
-# stale backlog.
+# Don't remove this second filter. Upstream counts a missing end date as ongoing,
+# but about 95% of those are old declarations nobody closed out. Fire declarations
+# are short-lived, so this cutoff sits in a wide empty gap between the two groups.
 _MAX_AGE_DAYS = 365
 
 
@@ -29,26 +23,11 @@ async def get_disasters_near(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
 ):
-    """Return active FEMA disaster declarations covering the user's county.
-
-    Two-step lookup:
-      1. Census Geocoder reverses lat/lon to a county.
-      2. OpenFEMA Disaster Declarations Summary returns active declarations
-         (no end date OR ended within last 30 days) for that state + county.
-
-    Empty list outside the US, on Census/FEMA failure, or when no active
-    declaration covers the user's county.
-
-    Response shape:
-      {
-        county: { state, name, fips } | null,
-        active: [...],
-      }
-    """
-    # County lookup. A real Census outage (SourceUnavailable) is reported as
-    # `census: down`; that also means FEMA can't be queried, so FEMA is marked
-    # down too. `info is None` with census ok just means the point is outside a
-    # US county — not a failure, so nothing is flagged.
+    """Active FEMA declarations covering the user's county. Census turns coordinates
+    into a county, then OpenFEMA says what is declared there. Empty outside the US,
+    when either source is down, or when nothing is declared."""
+    # Losing Census means losing FEMA too, with no county to ask about. A None
+    # county with Census healthy just means the point isn't in one.
     try:
         info = await reverse_geocode(lat, lon)
     except SourceUnavailable:
@@ -106,9 +85,9 @@ async def get_disasters_near(
 
 
 def _is_independent_city(county_fips: str | None) -> bool:
-    """FIPS convention: county codes 500+ are reserved for independent cities
-    (e.g. Fairfax city VA 51600 vs Fairfax County VA 51059). Lets us match FEMA's
-    "(City)" rows to a city user and "(County)" rows to a county user."""
+    """FIPS reserves county codes from 500 up for independent cities, so Fairfax
+    city is 51600 while Fairfax County is 51059. FEMA's "(City)" and "(County)"
+    rows have to match the right one."""
     if not county_fips or len(county_fips) < 5:
         return False
     tail = county_fips[-3:]
@@ -119,7 +98,7 @@ def _within_window(iso: str | None, cutoff: datetime) -> bool:
     if not iso:
         return False
     try:
-        # FEMA returns dates like "2026-04-21T00:00:00.000Z"
+        # FEMA dates look like "2026-04-21T00:00:00.000Z".
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         return dt >= cutoff
     except (TypeError, ValueError):

@@ -1,10 +1,6 @@
-"""Security regression tests.
-
-Covers the trust-boundary behavior added in the security pass: config fail-fast,
-bbox/param validation, body-size + rate limits, safe error responses, and the
-security headers. Rate limiting is disabled for the main app during the suite
-(see conftest), so the 429 behavior is exercised on an isolated app here.
-"""
+"""Security regression tests. Covers the trust boundary, so config fail-fast, param
+validation, body-size and rate limits, safe errors, and the security headers.
+conftest disables rate limiting, so the 429 path runs on an isolated app here."""
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -19,7 +15,7 @@ from api.main import app
 client = TestClient(app)
 
 
-# ── Config fail-fast ─────────────────────────────────────────────────────────
+# Config fail-fast
 def test_prod_rejects_wildcard_origin():
     s = Settings(
         environment="prod",
@@ -56,7 +52,7 @@ def test_dev_is_permissive():
     assert Settings(environment="dev", allowed_origins="*").startup_problems() == []
 
 
-# ── Rate-limit key: X-Forwarded-For spoofing ─────────────────────────────────
+# Rate-limit key, X-Forwarded-For spoofing
 def _req(xff: str | None = None, client_host: str = "10.0.0.1") -> Request:
     headers = []
     if xff is not None:
@@ -72,17 +68,17 @@ def _req(xff: str | None = None, client_host: str = "10.0.0.1") -> Request:
 
 
 def test_rate_limit_key_uses_proxy_appended_entry():
-    """With one trusted proxy (Railway), the key is the RIGHTMOST XFF entry —
-    the IP the proxy appended — not the client-controlled leftmost one."""
+    """With one trusted proxy the key is the rightmost XFF entry, the address the
+    proxy appended, not the leftmost one the client controls."""
     from api.core.rate_limit import client_ip
 
-    r = _req("1.1.1.1, 2.2.2.2, 3.3.3.3")  # client spoofs 1.1.1.1; proxy appended 3.3.3.3
+    r = _req("1.1.1.1, 2.2.2.2, 3.3.3.3")  # the client spoofs 1.1.1.1, the proxy appended 3.3.3.3
     assert client_ip(r) == "3.3.3.3"
 
 
 def test_rate_limit_key_ignores_spoofed_leftmost():
-    """Two requests that differ only in the client-supplied (leftmost) XFF value
-    must land in the SAME bucket — otherwise the per-IP cap is bypassable."""
+    """Two requests differing only in the client-supplied leftmost XFF value must
+    land in the same bucket, or the per-IP cap can be walked around."""
     from api.core.rate_limit import client_ip
 
     r1 = _req("9.9.9.9, 3.3.3.3")
@@ -96,7 +92,7 @@ def test_rate_limit_key_falls_back_to_peer_without_xff():
     assert client_ip(_req(None, client_host="5.5.5.5")) == "5.5.5.5"
 
 
-# ── Input validation / injection ─────────────────────────────────────────────
+# Input validation and injection
 def test_fires_rejects_malformed_bbox():
     for bad in ("world/../etc", "1,2,3", "abc,2,3,4", "200,2,3,4", "1,2,1,2"):
         assert client.get(f"/fires?bbox={bad}").status_code == 422, bad
@@ -119,7 +115,7 @@ def test_trajectory_rejects_out_of_range():
     assert client.get("/trajectory?lat=0&lon=999").status_code == 422
 
 
-# ── Body size guard ──────────────────────────────────────────────────────────
+# Body size guard
 def test_oversized_body_rejected():
     body = {
         "temperature": 30.0,
@@ -136,7 +132,7 @@ def test_oversized_streamed_body_rejected():
     """A chunked body with NO Content-Length must still be capped (the cap is
     enforced as bytes arrive, not just from the header)."""
     def gen():
-        # 80 KiB, well over the 16 KiB cap; httpx streams this chunked with no
+        # Well over the cap, and httpx streams this chunked with no
         # Content-Length header.
         for _ in range(10):
             yield b"x" * 8192
@@ -147,7 +143,7 @@ def test_oversized_streamed_body_rejected():
     assert r.status_code == 413
 
 
-# ── Safe failure ─────────────────────────────────────────────────────────────
+# Safe failure
 def test_unhandled_error_is_generic(monkeypatch):
     async def boom(*a, **k):
         raise ValueError("sensitive internal detail")
@@ -163,7 +159,7 @@ def test_unhandled_error_is_generic(monkeypatch):
 
 
 def test_unhandled_error_keeps_cors_header(monkeypatch):
-    """A 500 must still carry Access-Control-Allow-Origin — otherwise the browser
+    """A 500 must still carry Access-Control-Allow-Origin, otherwise the browser
     reports it as a CORS error and masks the real failure."""
     async def boom(*a, **k):
         raise ValueError("boom")
@@ -175,11 +171,11 @@ def test_unhandled_error_keeps_cors_header(monkeypatch):
     )
     assert r.status_code == 500
     assert "access-control-allow-origin" in r.headers
-    # Security headers wrap it too (it went through the inner->outer stack).
+    # The security headers wrap it too. It travelled the whole stack.
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
-# ── Security headers ─────────────────────────────────────────────────────────
+# Security headers
 def test_security_headers_present():
     r = client.get("/healthz")
     assert r.headers["x-content-type-options"] == "nosniff"
@@ -188,7 +184,7 @@ def test_security_headers_present():
     assert "content-security-policy" in r.headers
 
 
-# ── Rate limiting (isolated app with the same wiring as main.py) ──────────────
+# Rate limiting, on an isolated app with the same wiring as main.py
 def test_rate_limit_returns_429():
     limiter = Limiter(key_func=get_remote_address, default_limits=["2/minute"], enabled=True)
     iso = FastAPI()
@@ -210,10 +206,8 @@ def test_rate_limit_returns_429():
 
 
 def test_decorated_route_does_not_500_when_limiting_enabled(monkeypatch):
-    # Regression: the suite disables rate limiting, so a decorated route's
-    # ENABLED path was never exercised — and slowapi's header injection 500'd
-    # every rate-limited endpoint in real dev (no `response` param). Enable the
-    # real limiter and confirm a normal request still succeeds.
+    # The suite disables rate limiting, so the enabled path never ran and slowapi's
+    # header injection 500'd every limited endpoint in real dev.
     from api.core import rate_limit
 
     async def fake_weather(lat, lon):

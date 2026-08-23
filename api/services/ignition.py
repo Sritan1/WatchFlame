@@ -1,19 +1,8 @@
-"""Serve the fire-ignition-likelihood model.
+"""Serve the ignition-likelihood model.
 
-Two halves:
-  * score_features(row)        - pure: run the trained model on a feature dict,
-                                 return a percentile index (no network).
-  * ignition_for_location(...)  - async: fetch a fresh weather window and build
-                                 that feature dict with PARITY to training.
-
-Training/serving parity is the load-bearing part: the live features are computed
-with the SAME daily-aggregate logic used to build the training set (the pure
-function summarize_window_with_kbdi), from the SAME Open-Meteo archive source.
-The archive lags ~6 days - acceptable for a drought-dominated ignition index.
-
-Graceful degradation: returns None if the model artifact is missing, the upstream
-fetch fails, or the window is too sparse - the route then serves null and the UI
-hides the chip, matching the rest of the API.
+The whole thing rests on building features the same way training did. Same
+aggregation function, same archive, same window. The archive lags about 6 days,
+which is fine for something drought-dominated. Failures return None and hide the chip.
 """
 from __future__ import annotations
 
@@ -38,15 +27,10 @@ WINDOW_DAYS = 365
 ARCHIVE_LAG_DAYS = 6
 _CORE = ("temperature_c", "humidity_pct", "wind_kph", "days_since_rain")
 
-# Symmetric days_since_rain ceiling. In training, a fire's same-location
-# negatives sit EARLIER in the shared 365-day window than the fire day, so their
-# days_since_rain is structurally capped at their window position (min 90 =
-# KBDI warm-up), while the positive — and this live server, which always scores
-# the window END — can reach ~365. Left unclipped, the model separates the two
-# classes partly on that positional artifact and then, because serving always
-# presents the positive-like ceiling, over-flags arid locations. Clipping every
-# example (training rows AND this serve path) to the common reachable ceiling
-# removes the artifact. Must stay in sync with build_ignition_dataset.py.
+# Ceiling on days_since_rain. build_ignition_dataset.py imports this, so training
+# clips the same way. Negatives sit earlier in the window than the fire, so they cap
+# out lower while the fire and this server reach a full year. Left alone the model
+# learns that gap as a tell and over-flags dry places.
 DAYS_SINCE_RAIN_CAP = 90
 
 _cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
@@ -58,9 +42,7 @@ def _ttl() -> int:
 
 
 def _fail_ttl() -> int:
-    # A None result (transient fetch failure or too-sparse window) is cached only
-    # briefly, so a blip doesn't hide the chip for the full 6h success TTL — the
-    # next request re-probes once the upstream/quota recovers.
+    # Brief, so one bad fetch doesn't hide the chip for the six hours a success gets.
     return int(os.getenv("IGNITION_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
@@ -84,7 +66,7 @@ def _level(percentile: float) -> str:
 
 
 def _load_artifact() -> dict[str, Any] | None:
-    """Load the trained model once (lazy). Returns None if it isn't present."""
+    """Load the model on first use, or None if the file isn't there."""
     global _artifact
     if _artifact is None and _MODEL_PATH.exists():
         import joblib
@@ -93,33 +75,26 @@ def _load_artifact() -> dict[str, Any] | None:
 
 
 def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
-    """Score a single feature dict. Pure (no network). The dict must carry the
-    core weather fields; vpd/season/month are derived here if absent."""
+    """Score one feature dict, no network. VPD and land cover default when absent,
+    but the caller has to supply season and month."""
     art = _load_artifact()
     if art is None:
         return None
     if any(row.get(c) is None for c in _CORE):
         return None
-    # KBDI is a model feature the training set always carried (100% coverage), so
-    # a None here (a window too sparse for the integrator) would reach the trees
-    # as an unseen NaN and be routed arbitrarily. Degrade to null (hide the chip)
-    # rather than emit an untrustworthy score.
+    # Every training row had a KBDI, so a missing one arrives at the trees as a NaN
+    # they have never seen and gets routed at random.
     if row.get("kbdi") is None:
         return None
     feat = dict(row)
-    # Parity with training: clip days_since_rain to the common ceiling so the
-    # serve-time value can't exceed what a negative example could express.
     feat["days_since_rain"] = min(feat["days_since_rain"], DAYS_SINCE_RAIN_CAP)
     feat.setdefault("vpd_hpa", _vpd(feat["temperature_c"], feat["humidity_pct"]))
-    # land_cover is a model feature; when a caller can't supply it (lookup failed,
-    # offshore, older test fixture) fall back to "unknown" — a class the model saw
-    # in training — so scoring degrades to weather-only instead of erroring.
+    # The model saw "unknown" land cover in training, so a failed lookup scores on
+    # weather alone rather than erroring.
     feat.setdefault("land_cover", "unknown")
     X = pd.DataFrame([feat])[art["features"]]
-    # Production model = base GBM (trained on all rows) + an isotonic calibrator
-    # fit on GROUPED out-of-fold scores, so the calibrated probability + the
-    # percentile below are free of the same-location sibling leakage a single
-    # in-sample CalibratedClassifierCV(cv=3) would bake in.
+    # A booster plus a calibrator fitted on out-of-fold scores, grouped by location.
+    # In-sample would let a location's own rows flatter its probability.
     raw = float(art["base_model"].predict_proba(X)[0, 1])
     prob = float(art["calibrator"].transform([raw])[0])
     ref = art["ref_scores"]
@@ -129,14 +104,9 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
-    """Fetch the daily window (parity vars) for the location.
-
-    Matches training EXACTLY so the served features are computed over the same
-    span: openmeteo.fetch_window(days=WINDOW_DAYS) pulls start = end - WINDOW_DAYS
-    (WINDOW_DAYS + 1 inclusive days) at 3-decimal coords, so we mirror both here.
-    Otherwise the served KBDI / mean-annual-precip would come from a different
-    window length + grid cell than every training row.
-    """
+    """Fetch the daily weather window for a location. The span and the coordinate
+    rounding both copy training. Get either wrong and the served KBDI comes from a
+    different window or grid cell than every row the model learned from."""
     end = date.today() - timedelta(days=ARCHIVE_LAG_DAYS)
     start = end - timedelta(days=WINDOW_DAYS)
     params = {
@@ -157,15 +127,14 @@ async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+        ValueError,  # a 200 carrying something that isn't JSON
     ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[ignition] upstream {status} for {lat},{lon} "
               f"({type(e).__name__}); returning None")
         return None
-    # A 200 whose body isn't a JSON object (a list, or an error page proxied as a
-    # 200) would crash the dict access downstream; degrade to None so the
-    # graceful-null path handles it like any other failure.
+    # A 200 carrying a list, or an error page dressed as success, would break the
+    # dict access below.
     if not isinstance(data, dict):
         print(f"[ignition] non-object body for {lat},{lon}; returning None")
         return None
@@ -173,33 +142,30 @@ async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
 
 
 async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None:
-    """Live ignition-likelihood index for a location, or None on any failure."""
+    """The ignition index for a location, or None if anything went wrong."""
     if _load_artifact() is None:
         return None
     key = _grid_key(lat, lon)
     now = time.time()
     cached = _cache.get(key)
     if cached:
-        # Successes persist for the full TTL; a cached None recovers quickly.
         ttl = _ttl() if cached[1] is not None else _fail_ttl()
         if now - cached[0] < ttl:
             return cached[1]
 
     raw = await _fetch_window(lat, lon)
     result: dict[str, Any] | None = None
-    # raw is a dict or None (see _fetch_window); `daily` can still be null on an
-    # odd/sparse response, so guard it before indexing `time` — never crash here.
+    # `daily` can come back null on a thin response.
     times = (raw.get("daily") or {}).get("time", []) if isinstance(raw, dict) else []
     try:
-        target = date.fromisoformat(times[-1]) if times else None  # latest archived day
+        target = date.fromisoformat(times[-1]) if times else None  # last archived day
     except (TypeError, ValueError):
-        target = None  # malformed time entry → degrade to null, per contract
+        target = None
     if raw is not None and target is not None:
-        s = summarize_window_with_kbdi(raw, target)  # SAME function as training
+        s = summarize_window_with_kbdi(raw, target)  # the function training used
         if all(s.get(c) is not None for c in _CORE):
             doy = target.timetuple().tm_yday
-            # Land cover is static per place → parity with training. None (lookup
-            # failed / offshore) becomes "unknown" inside score_features.
+            # A failed lookup becomes "unknown" inside score_features.
             land_cover = await land_cover_class(lat, lon) or "unknown"
             scored = score_features({
                 "temperature_c": s["temperature_c"],

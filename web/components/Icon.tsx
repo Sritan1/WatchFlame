@@ -1,6 +1,5 @@
-// Custom line-based icon set — 24px viewBox, 1.6 default stroke.
-// Ported from primitives.jsx so visual identity matches the reference exactly
-// (Lucide drifts on a few of these — especially flame, warn, and navArrow).
+// The icon set, drawn by hand. Lucide's flame, warning and nav arrow are all a
+// little off from what this needs.
 
 import type { ReactNode } from 'react';
 

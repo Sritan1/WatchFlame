@@ -1,4 +1,4 @@
-"""Tests for api/core/trajectory.py — pure-function trajectory computation."""
+"""Tests for api/core/trajectory.py, pure-function trajectory computation."""
 from __future__ import annotations
 
 from api.core.trajectory import (
@@ -9,9 +9,6 @@ from api.core.trajectory import (
     _vpd_proxy,
     compute_trajectory,
 )
-
-
-# ─── Helpers ─────────────────────────────────────────────────────────────
 
 
 def _make_forecast(
@@ -32,12 +29,8 @@ def _make_forecast(
     }
 
 
-# ─── Pure helpers ────────────────────────────────────────────────────────
-
-
 def test_percent_change_handles_near_zero():
-    # Near-zero baseline shouldn't blow up to inf — small absolute moves
-    # aren't operationally meaningful at that scale.
+    # A near-zero baseline shouldn't blow up to inf.
     assert _percent_change(0.0, 0.5) == 0.0
     assert _percent_change(0.0005, 1.0) == 0.0
 
@@ -65,14 +58,12 @@ def test_pick_hour_index_unknown_iso_falls_back_to_zero():
 
 
 def test_pick_hour_index_tolerates_format_drift():
-    """Regression: an exact-string-only match silently anchored 'now' at
-    midnight whenever current.time wasn't byte-identical to an hourly slot
-    (e.g. a seconds suffix). The hour-prefix fallback must still find the
-    right hour."""
+    """An exact-string-only match silently anchored 'now' at midnight whenever
+    current.time wasn't byte-identical to an hourly slot."""
     times = [f"2026-05-30T{h:02d}:00" for h in range(12)]
-    # current.time carrying a seconds suffix → must match hour 5, not fall to 0.
+    # A seconds suffix still has to land on hour 5 rather than falling to 0.
     assert _pick_hour_index(times, "2026-05-30T05:00:00", 0) == 5
-    # and the +offset still applies from the matched anchor (clamped to last).
+    # The offset still applies from the matched anchor, landing on the last slot.
     assert _pick_hour_index(times, "2026-05-30T05:00:00", 6) == 11
 
 
@@ -82,11 +73,11 @@ def test_vpd_proxy_dry_air_is_higher_than_humid():
     assert dry > humid
 
 
-# ─── compute_trajectory ──────────────────────────────────────────────────
+# compute_trajectory
 
 
 def test_trajectory_steady_when_conditions_flat():
-    # Same weather across 12 hr → score steady → tier = 'steady'.
+    # Unchanging weather all day, so the score holds and the tier reads steady.
     forecast = _make_forecast(
         temps=[25.0] * 12,
         rhs=[50.0] * 12,
@@ -100,7 +91,7 @@ def test_trajectory_steady_when_conditions_flat():
 
 
 def test_trajectory_rising_when_conditions_deteriorate():
-    # Hot, dry, windy by hour 6 → score rises > 10% → tier = 'rising'.
+    # Hot, dry and windy by the sixth hour, which should read as rising.
     forecast = _make_forecast(
         temps=[20.0, 22.0, 24.0, 26.0, 28.0, 30.0, 35.0, 36.0, 37.0, 38.0, 38.0, 38.0],
         rhs=  [70.0, 65.0, 60.0, 55.0, 50.0, 45.0, 25.0, 22.0, 20.0, 18.0, 18.0, 18.0],
@@ -115,7 +106,7 @@ def test_trajectory_rising_when_conditions_deteriorate():
 
 
 def test_trajectory_falling_when_conditions_improve():
-    # Hot/dry now, cool/wet by hour 6 → tier = 'falling'.
+    # Hot and dry now, cool and damp by the sixth hour. The other direction.
     forecast = _make_forecast(
         temps=[35.0, 33.0, 30.0, 27.0, 24.0, 22.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0],
         rhs=  [20.0, 25.0, 30.0, 35.0, 45.0, 55.0, 70.0, 75.0, 80.0, 85.0, 85.0, 85.0],
@@ -129,14 +120,13 @@ def test_trajectory_falling_when_conditions_improve():
 
 
 def test_trajectory_returns_none_on_sparse_forecast():
-    # Fewer than horizon+1 samples → can't project → None.
+    # Too few hours to project across, so there's no answer to give.
     forecast = _make_forecast(temps=[25.0, 26.0], rhs=[50.0, 50.0], winds=[10.0, 10.0])
     assert compute_trajectory(forecast) is None
 
 
 def test_trajectory_returns_none_on_mismatched_arrays():
-    # If Open-Meteo returns inconsistent array lengths, refuse rather
-    # than guess at alignment.
+    # Inconsistent array lengths mean refusing rather than guessing at alignment.
     forecast = {
         "time": ["2026-05-30T00:00"] * 12,
         "temperature_2m": [25.0] * 12,
@@ -148,8 +138,8 @@ def test_trajectory_returns_none_on_mismatched_arrays():
 
 
 def test_trajectory_handles_null_entries_via_carry_forward():
-    # Open-Meteo can return null for unreported stations. We carry-forward
-    # from neighboring valid samples rather than failing.
+    # Open-Meteo returns null for unreported stations, so neighboring samples carry
+    # forward rather than the whole thing failing.
     forecast = _make_forecast(
         temps=[25.0, 26.0, None, None, 28.0, 29.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0],  # type: ignore[list-item]
         rhs=[50.0] * 12,
@@ -157,20 +147,17 @@ def test_trajectory_handles_null_entries_via_carry_forward():
     )
     result = compute_trajectory(forecast, kbdi=300.0, ndvi_anomaly=0.0)
     assert result is not None
-    # now-frame (index 0) is 25.0 and projected (index 6) is 30.0 — both real
-    # source values, no NaN propagation.
+    # The first and last frames hold real values, with no NaN spreading.
     assert result.now.temperature_c == 25.0
     assert result.projected.temperature_c == 30.0
-    # The behavior this test exists to pin: the nulled indices 2 and 3 must
-    # carry FORWARD the last valid sample (index 1's 26.0), not collapse to the
-    # hard 20.0 fallback. Asserting the intermediate frames directly — index 0
-    # and 6 were never null, so they can't catch a broken walk-back.
+    # The two nulled hours have to borrow the last real value rather than fall back
+    # to the hardcoded default. Asserting on the ends would pass regardless.
     assert result.frames[2].temperature_c == 26.0
     assert result.frames[3].temperature_c == 26.0
 
 
 def test_trajectory_identifies_dominant_driver():
-    # Wind doubles, humidity and VPD barely move → wind is the driver.
+    # Wind doubles while everything else barely moves, so wind is the driver.
     forecast = _make_forecast(
         temps=[25.0] * 12,
         rhs=[50.0] * 12,
@@ -182,7 +169,7 @@ def test_trajectory_identifies_dominant_driver():
 
 
 def test_trajectory_respects_custom_horizon():
-    # Use a 2-hour horizon; result.horizon_hours should reflect it.
+    # A 2-hour horizon, which result.horizon_hours has to reflect.
     forecast = _make_forecast(
         temps=[20.0, 25.0, 30.0, 32.0, 34.0, 35.0, 35.0, 35.0],
         rhs=[60.0, 50.0, 40.0, 35.0, 30.0, 25.0, 25.0, 25.0],

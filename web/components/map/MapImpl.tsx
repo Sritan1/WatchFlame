@@ -1,8 +1,7 @@
 'use client';
 
-// Leaflet + MapTiler — must stay behind `next/dynamic({ ssr: false })` because
-// leaflet touches `window` at module load. The screen orchestrator (MapScreen)
-// is the only place that should import this.
+// The actual leaflet map. Must stay lazily loaded, because leaflet reaches for
+// window the moment it is imported.
 
 import L, { type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -23,21 +22,18 @@ import {
 } from '@/lib/map-tiles';
 import { getRisk, hexToRgb, type RiskLevel } from '@/lib/theme';
 
-/** Two-kind selection: named-incident from NIFC/Cal Fire OR a single
- *  FIRMS satellite hot-pixel. Mirrors mobile's `SelectedItem` discriminator. */
+/** What's selected, either a named incident or a single satellite pixel. */
 export type MapSelection =
   | { kind: 'incident'; id: string }
   | { kind: 'fire'; feature: FireFeature };
 
-// Mobile uses MIN_INCIDENT_RADIUS_M = 500 so small fires stay clickable; we
-// match that here so the visual reads identically.
+// A floor on the circle size, so a small fire is still big enough to click.
 const MIN_INCIDENT_RADIUS_M = 500;
 const DEFAULT_INCIDENT_ACRES = 100;
 
-/** Convert acres → circle radius in meters. Same formula as
- *  app/lib/geo.ts's acresToRadiusMeters: r = sqrt(area / π). */
+/** Acres to a circle radius in meters, treating the fire as round. */
 function acresToRadiusMeters(acres: number): number {
-  const sqMeters = Math.max(0, acres) * 4046.86; // acres → m²
+  const sqMeters = Math.max(0, acres) * 4046.86;
   return Math.sqrt(sqMeters / Math.PI);
 }
 
@@ -63,10 +59,8 @@ function userIcon(): L.DivIcon {
   });
 }
 
-/** Fire energy used to rank detections for the bloom tier. FRP (fire radiative
- *  power) is the truest measure; brightness (Kelvin, ~300 baseline) is the
- *  fallback when a source omits FRP. Both land in a roughly comparable 0-100+
- *  range for active fire. The flame icon itself lives in ./flame-marker. */
+/** How fierce a detection is. Radiative power is the real measure, with
+ *  brightness as the fallback when a satellite doesn't report it. */
 function satIntensity(s: FireFeature): number {
   const f = s.properties.frp;
   if (f != null) return f;
@@ -74,14 +68,9 @@ function satIntensity(s: FireFeature): number {
   return b != null ? b - 300 : 0;
 }
 
-/** Custom leaflet panes so the satellite flames layer predictably against the
- *  incident markers, instead of relying on marker zIndexOffset (which competes
- *  with leaflet's latitude-derived z and can lose). Panes are separate stacking
- *  contexts, so their z-index wins outright:
- *    firms      (550) — non-selected flames: above the perimeter circles
- *                       (overlayPane 400), below the incident markers (600).
- *    firms-top  (620) — the selected flame: above the incident markers so its
- *                       sparks read, still below tooltips (650). */
+/** Our own panes, so the flames stack predictably against the incident markers.
+ *  Leaflet's per-marker offsets fight its own latitude ordering and lose, while a
+ *  pane is its own stacking context and simply wins. */
 function MapPanes() {
   const map = useMap();
   useEffect(() => {
@@ -93,11 +82,9 @@ function MapPanes() {
   return null;
 }
 
-/** Imperative camera helper — pans/zooms when the selection OR the user's
- *  watched-location center changes. The key folds `center` in for the
- *  no-selection branch so switching saved locations actually flies the map;
- *  previously the key was just `null` for "nothing selected" and a center
- *  change went unnoticed. */
+/** Moves the camera on a selection or location change. The key includes the
+ *  center, or switching saved locations with nothing selected leaves the map
+ *  sitting where it was. */
 function CameraController({
   center,
   selection,
@@ -146,17 +133,16 @@ export function MapImpl({
   maptilerKey,
 }: {
   center: [number, number];
-  /** Named (tracked) incidents from NIFC + Cal Fire. */
+  /** The named incidents. */
   fires: NamedIncident[];
-  /** Satellite hot-pixel detections from NASA FIRMS. Rendered as flame glyphs
-   *  (divIcon — fixed pixel size regardless of zoom). */
+  /** Drawn as flames that stay the same size at any zoom. */
   satellites: FireFeature[];
   severityOf: (f: NamedIncident) => RiskLevel;
   selection: MapSelection | null;
   onSelect: (sel: MapSelection | null) => void;
   maptilerKey: string;
 }) {
-  // Memoize icons so leaflet doesn't recreate DOM on every render.
+  // Hold onto the icons, or leaflet rebuilds their DOM every render.
   const icons = useMemo(() => {
     const map = new Map<string, L.DivIcon>();
     for (const f of fires) {
@@ -174,10 +160,8 @@ export function MapImpl({
   const selectedFire = selectedIncidentId ? fires.find((f) => f.id === selectedIncidentId) : null;
   const selectedSeverity = selectedFire ? severityOf(selectedFire) : null;
 
-  // The "hottest few" detections that earn the pulsing bloom. Top ~15% by fire
-  // energy, capped at 6 and floored so a cluster of weak pixels gets none — this
-  // is what bounds the number of expensive (glow) animations regardless of how
-  // many detections come back.
+  // Capped, with a floor so a cluster of weak pixels gets none. Keeps the number
+  // of expensive animations bounded however many detections arrive.
   const bloomKeys = useMemo(() => {
     const set = new Set<string>();
     if (satellites.length === 0) return set;
@@ -191,9 +175,8 @@ export function MapImpl({
     return set;
   }, [satellites]);
 
-  // Non-selected flame icons, memoized per detection so leaflet doesn't rebuild
-  // DOM every render. Selection is handled separately (below) so toggling a
-  // selection doesn't invalidate this whole map.
+  // The selected one is built separately below, so selecting a fire doesn't
+  // rebuild every other flame.
   const satIcons = useMemo(() => {
     const m = new Map<string, L.DivIcon>();
     for (const s of satellites) {
@@ -203,7 +186,7 @@ export function MapImpl({
     return m;
   }, [satellites, bloomKeys]);
 
-  // The single selected detection's icon (adds sparks + enlarges). At most one.
+  // The selected one, which is bigger and throws sparks. Never more than one.
   const selectedFlameIcon = useMemo(
     () =>
       selectedSatKey
@@ -214,11 +197,10 @@ export function MapImpl({
 
   const mapRef = useRef<LeafletMap | null>(null);
 
-  // Client-side MapTiler/OSM tile-outage watcher, shared with the mini-map.
+  // Watches for a tile outage, shared with the mini-map.
   const { showTilesNote, tileEventHandlers } = useTileHealth();
 
-  // Expose imperative zoom controls via global event so the floating buttons
-  // (which sit outside MapContainer's tree) can call into the map.
+  // The zoom buttons float outside the map's tree, so they reach it by event.
   useEffect(() => {
     const onZoom = (e: Event) => {
       const detail = (e as CustomEvent<{ delta: number }>).detail;
@@ -228,19 +210,13 @@ export function MapImpl({
     return () => window.removeEventListener('ember-map-zoom', onZoom);
   }, []);
 
-  // Broadcast current center + zoom whenever they change. MapScreen reads
-  // this to draw the scale bar (which depends on latitude + zoom). The first
-  // emit runs once on mount so the bar isn't blank before the first move.
-
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
     <FlameGradientDef />
     <MapContainer
       ref={mapRef}
       center={center}
-      // Zoom 8 ~ regional view (~150 mi diameter) — matches mobile's
-      // latitudeDelta=4 initial framing so the user lands seeing the same
-      // neighborhood-cluster context, not a city-level crop.
+      // Wide enough to open on the region instead of a single city.
       zoom={8}
       zoomControl={false}
       attributionControl={false}
@@ -256,15 +232,9 @@ export function MapImpl({
 
       <Marker position={center} icon={userMarker} />
 
-      {/* Render order (bottom → top within the SVG pane):
-       *   1. Incident perimeter circles (largest, lowest priority)
-       *   2. Dashed selection halo
-       *   3. Satellite hot-pixels (small but on top so they stay clickable
-       *      even when inside an incident circle — mobile-equivalent UX)
-       *   4. Incident divIcon markers (markerPane — always on top)
-       *
-       *  Within a leaflet pane, later JSX renders are visually + click-priority
-       *  higher. So we render incident Circles first, then satellites on top. */}
+      {/* Order matters, because whatever renders later sits on top and wins the click.
+          Circles first, then the halo, then the satellite pixels, which are small
+          and must stay clickable even inside a circle. */}
 
       {fires.map((f) => {
         const sev = severityOf(f);
@@ -303,13 +273,7 @@ export function MapImpl({
         />
       ) : null}
 
-      {/* FIRMS satellite hot-pixel detections — flame glyphs (see
-       *  satelliteFlameIcon). Each is a ~375m thermal anomaly from Suomi NPP /
-       *  NOAA-20 / Aqua / Terra in the last 24h. Custom panes (see MapPanes) do
-       *  the layering: the 'firms' pane sits beneath the named-incident markers
-       *  (the primary layer), and the selected one moves to the 'firms-top' pane
-       *  so its sparks read above everything. Panes beat marker zIndexOffset,
-       *  which competes with leaflet's latitude-derived z and can't be trusted. */}
+      {/* Satellite detections, each a roughly 375m hot spot from the last day. */}
       {satellites.map((s, i) => {
         const lat = s.properties.lat;
         const lon = s.properties.lon;
@@ -374,8 +338,7 @@ export function MapImpl({
   );
 }
 
-/** Watches the leaflet map and dispatches `ember-map-state` whenever the
- *  center or zoom changes. Used by MapScreen's floating scale bar. */
+/** Announces the view whenever it moves, for the floating scale bar. */
 function ZoomBroadcaster() {
   const map = useMap();
   useEffect(() => {
@@ -389,6 +352,7 @@ function ZoomBroadcaster() {
     };
     map.on('zoomend', emit);
     map.on('moveend', emit);
+    // Once on mount as well, or the scale bar stays blank until something moves.
     emit();
     return () => {
       map.off('zoomend', emit);

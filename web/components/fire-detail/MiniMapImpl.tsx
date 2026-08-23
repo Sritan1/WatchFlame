@@ -1,9 +1,7 @@
 'use client';
 
-// Non-interactive mini-map for the Fire Detail screen. Mirrors the embedded
-// MapView in mobile app/fire-detail.tsx — one bright fire marker + a cluster
-// of smaller FIRMS dots from the surrounding 8 mi / 7 days. No pan/zoom; the
-// screen is for inspection, not navigation.
+// The small map on the fire-detail screen. It doesn't pan or zoom. This screen is
+// for looking at one fire, not navigating around.
 
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo } from 'react';
@@ -23,11 +21,9 @@ import {
 } from '@/lib/map-tiles';
 import type { RiskLevel } from '@/lib/theme';
 
-/** react-leaflet's MapContainer only applies `center`/`zoom` on mount. The
- *  fire-detail screen stays mounted across client navigation between two fires,
- *  so without this the basemap would stay framed on the previous fire while the
- *  markers jumped to the new coordinates (off the visible tiles). Recenter on
- *  the primitive lat/lon so it only pans when they actually change. */
+/** Leaflet reads the center once, at mount, and this screen stays mounted across
+ *  a fire-to-fire nav. Without this the map keeps the old framing while the
+ *  markers jump off the visible tiles. */
 function Recenter({ lat, lon }: { lat: number; lon: number }) {
   const map = useMap();
   useEffect(() => {
@@ -47,37 +43,26 @@ export function MiniMapImpl({
   center: [number, number];
   nearby: FireFeature[];
   maptilerKey: string;
-  /** True when this detail is a satellite-only detection (a FIRMS pixel with no
-   *  matched named incident). The main marker then becomes the flame glyph —
-   *  the hero (bloom + sparks) variant. A named incident, or a pixel that also
-   *  matches one ("both"), gets the incident nucleus marker instead. */
+  /** A satellite detection with no incident behind it, which gets the flame. Any
+   *  named incident gets the nucleus marker instead. */
   flame?: boolean;
-  /** Whether we yet KNOW which main marker to show. False while the incident
-   *  match is still resolving for a satellite detection — the main marker is
-   *  withheld until then, so it never appears as the wrong kind and swaps. The
-   *  surrounding cluster + tiles still render. Non-FIRMS pages pass true (the
-   *  incident marker is known up front). */
+  /** False while the incident match is still resolving. The marker is withheld
+   *  until then, so it never appears as the wrong kind and swaps. */
   mainMarkerReady?: boolean;
-  /** Severity tint for the incident nucleus (the non-flame main marker), so it
-   *  matches how the same incident is coloured on the Live Map. Defaults to the
-   *  red "extreme" tone, which also fits the fire-detail screen's red identity. */
+  /** So the same fire looks the same here as on the main map. Falls back to red. */
   incidentSeverity?: RiskLevel;
 }) {
-  // Same tile-health watch as the main MapImpl (shared hook).
+  // The same tile-outage watch the main map uses.
   const { showTilesNote, tileEventHandlers } = useTileHealth();
 
-  // One hero flame for the fire being inspected. Only built when `flame` is on.
-  // Keyed on the primitive lat/lon (not the `center` array, which the parent
-  // recreates each render) so the icon identity stays stable — otherwise a new
-  // icon every render would recreate the marker DOM and restart the animation.
+  // Keyed on the coordinates, not the array the parent rebuilds each render, or
+  // leaflet tears the marker down and restarts its animation every time.
   const [centerLat, centerLon] = center;
   const mainFlameIcon = useMemo(
     () => (flame ? satelliteFlameIcon('bloom', true, `${centerLat},${centerLon}`) : null),
     [flame, centerLat, centerLon],
   );
-  // The non-flame main marker: the same incident nucleus used on the Live Map,
-  // as the hero (enlarged) variant since it's the focus of the screen. Skipped
-  // for a satellite-only detail, where the flame is shown instead.
+  // The other kind of marker, enlarged because it's the subject of the screen.
   const incidentIcon = useMemo(
     () => (flame ? null : incidentNucleusIcon(incidentSeverity, true)),
     [flame, incidentSeverity],
@@ -107,7 +92,7 @@ export function MiniMapImpl({
         eventHandlers={tileEventHandlers}
       />
 
-      {/* Surrounding cluster — small high-severity dots, capped at 50 */}
+      {/* Surrounding cluster, small high-severity dots, capped at 50 */}
       {nearby.slice(0, 50).map((f, i) => (
         <CircleMarker
           key={`mini-${i}-${f.properties.lat},${f.properties.lon}`}
@@ -124,11 +109,8 @@ export function MiniMapImpl({
         />
       ))}
 
-      {/* Main fire. Withheld until `mainMarkerReady` so it never shows the wrong
-       *  kind first. A satellite-only detection then gets the flame glyph (hero
-       *  bloom + sparks); a named incident (or a pixel matching one) gets the
-       *  incident nucleus marker. Both are non-interactive — this map is for
-       *  inspection, not clicking. */}
+      {/* Held back until the marker kind is known, so it never draws the wrong one
+          first. Neither is clickable. */}
       {!mainMarkerReady ? null : flame && mainFlameIcon ? (
         <Marker position={center} icon={mainFlameIcon} interactive={false} />
       ) : incidentIcon ? (
@@ -160,5 +142,5 @@ export function MiniMapImpl({
   );
 }
 
-// Re-export so the screen can dynamic-import without inspecting leaflet types.
+// Re-exported so the screen can lazy-import this without touching leaflet types.
 export type { FireFeature };

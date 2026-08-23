@@ -1,4 +1,4 @@
-"""Single-request probe to check Open-Meteo quota status."""
+"""One request, to see whether we still have quota."""
 import sys
 from datetime import date, timedelta
 from pathlib import Path

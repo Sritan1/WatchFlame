@@ -1,7 +1,6 @@
 'use client';
 
-// Semicircle progress indicator — fills the upper-half arc from left to right
-// based on value/total. Used by ChecklistCard to show prep progress.
+// Semicircle progress indicator, filling left to right. Used by the checklist.
 
 import { useAesthetic } from '@/lib/aesthetic';
 
@@ -47,8 +46,8 @@ export function ProgressArc({
           fill="none"
           stroke={color}
           strokeWidth="4"
-          // A round cap on a zero-length dash still paints a dot (a stray glow at
-          // 0% progress), so use a butt cap until there is something to show.
+          // A round cap on a zero-length dash still paints a dot, so use a butt cap
+          // until there is something to show.
           strokeLinecap={dash > 0 ? 'round' : 'butt'}
           strokeDasharray={`${dash} ${arcLen}`}
           style={{

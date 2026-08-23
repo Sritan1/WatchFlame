@@ -1,14 +1,8 @@
 'use client';
 
-// The cinematic instrument-panel orb that anchors the Status hero.
-// Composition (radii from interactions.jsx HeroOrb):
-//   - outer tick ring at r=96 (60 ticks, every 6th elongated → 10 long ticks)
-//   - risk arc at r=86 with linear-gradient stroke; arc LENGTH = the actual
-//     numeric risk score (0–1), regionally re-mapped when thresholds are
-//     supplied so the dial agrees with the regional level pill
-//   - counter-rotating dashed ring at r=72 (slow spin)
-//   - scanner sweep when alarming (high/extreme), spinning at 6s
-//   - glassy core (86px) with icon — shield when calm, flame when alarming
+// The orb at the heart of the Status hero. Ticks outermost, then the arc whose
+// length is the score re-mapped against the local thresholds so it agrees with the
+// pill, then a counter-rotating ring and a glassy core.
 
 import { Icon } from '@/components/Icon';
 import { CursorParallax } from '@/components/ui/CursorParallax';
@@ -21,15 +15,13 @@ const RING_R = 96;
 const ARC_R = 86;
 const DASH_R = 72;
 const SCAN_R = 80;
-// Floor so the endpoint dot is always visible even when score is tiny.
+// A floor, so the endpoint dot stays visible even at a tiny score.
 const ARC_MIN_FRACTION = 0.04;
 
-// Round trig outputs so SSR and client produce the same SVG attribute strings
-// (V8 in Node and browsers stringify some floats differently — pure cosmetic
-// hydration mismatch otherwise).
+// Round these, or the server and the browser write the same coordinate slightly
+// differently and React reports a hydration mismatch.
 const round = (n: number): number => Math.round(n * 1000) / 1000;
-// Fallback arc fractions for callers that only know the LEVEL, not the score
-// (e.g. transitional / loading state where /risk hasn't returned yet).
+// How full to draw the arc when all we have is a tier and not a number.
 const FALLBACK_RATIO: Record<RiskLevel, number> = {
   low: 0.18,
   moderate: 0.45,
@@ -37,11 +29,8 @@ const FALLBACK_RATIO: Record<RiskLevel, number> = {
   extreme: 0.95,
 };
 
-/** Map an absolute 0–1 risk score to the arc fraction the dial should show.
- *  Ported from mobile (app/components/ui/HeroOrb.tsx scoreToFraction):
- *  piecewise linear so each bucket boundary lands at a meaningful visual
- *  position when regional thresholds are present. Without thresholds, raw
- *  score is the fraction. */
+/** How far round the dial fills, interpolated between the local thresholds so each
+ *  tier boundary lands somewhere meaningful. */
 function scoreToFraction(score: number, t: RegionalThresholds | null | undefined): number {
   if (!t) return score;
   if (!(t.low > 0 && t.moderate > t.low && t.extreme > t.moderate && t.score_max >= t.extreme)) {
@@ -65,20 +54,14 @@ export function HeroOrb({
   loading = false,
 }: {
   risk: RiskLevel;
-  /** Actual numeric risk score 0–1. When provided, drives the arc fill so
-   *  the dial reflects the real percentile, not just the bucket. Falls back
-   *  to FALLBACK_RATIO[risk] when omitted (transitional loading state). */
+  /** The real score, which fills the arc precisely rather than by tier. */
   score?: number | null;
-  /** Per-state cutoffs from /risk. When present, the arc maps regionally so
-   *  it agrees with the regional-level pill (e.g. Florida's 97th percentile
-   *  pegs the dial at 97% even though absolute score is lower). */
+  /** The local cutoffs, so the dial agrees with the pill beside it. */
   thresholds?: RegionalThresholds | null;
   pulseSpeed?: number;
-  /** Text alternative for assistive tech. When set, the orb is announced as a
-   *  single labeled image (role="img") instead of its meaningless SVG tree. */
+  /** What a screen reader should say. Without it, they'd read the SVG. */
   ariaLabel?: string;
-  /** Indeterminate spinner while /risk is still resolving — a short arc
-   *  segment orbits the track instead of showing a fixed value. */
+  /** Spins a short arc around the track while the score is still loading. */
   loading?: boolean;
 }) {
   const { ae, accent } = useAesthetic();
@@ -89,17 +72,14 @@ export function HeroOrb({
   const cx = SIZE / 2;
   const cy = SIZE / 2;
   const arcLen = 2 * Math.PI * ARC_R;
-  // Arc fraction — derived from real score when available (with regional
-  // re-mapping), else falls back to the per-level constant so the orb still
-  // has visual presence during the brief load window before /risk lands.
+  // The per-tier default keeps the orb looking like something during the wait.
   const ratio =
     score != null
       ? Math.max(ARC_MIN_FRACTION, Math.min(1, scoreToFraction(score, thresholds)))
       : FALLBACK_RATIO[risk];
 
-  // Outer tick ring — 60 ticks total, every 6th elongated, yielding 10
-  // prominent ticks at 36° intervals. Matches mobile (was every 5th = 12
-  // long ticks, which read as a clock face). Total density unchanged.
+  // Every sixth tick long, giving ten major marks. Every fifth gave twelve, which
+  // looked like a clock face.
   const ticks: React.ReactElement[] = [];
   const N = 60;
   for (let i = 0; i < N; i++) {
@@ -121,7 +101,7 @@ export function HeroOrb({
     );
   }
 
-  // Endpoint dot — where the arc ends
+  // Where the arc ends.
   const endA = -Math.PI / 2 + ratio * Math.PI * 2;
   const endX = cx + Math.cos(endA) * ARC_R;
   const endY = cy + Math.sin(endA) * ARC_R;
@@ -141,7 +121,7 @@ export function HeroOrb({
           margin: '0 auto',
         }}
       >
-        {/* Pulse rings — only when alarming */}
+        {/* Pulse rings, only when alarming */}
         {isAlarming
           ? [0, 1, 2].map((i) => (
               <div
@@ -207,8 +187,8 @@ export function HeroOrb({
           <circle cx={cx} cy={cy} r={ARC_R} fill="none" stroke={ae.line} strokeWidth="2" />
 
           {loading ? (
-            /* Indeterminate spinner — a short bright arc segment orbits the
-               track while /risk resolves, then snaps to the value arc below. */
+            /* The loading spinner. A short bright segment orbits the track
+               while /risk resolves, then snaps to the value arc below. */
             <g style={{ transformOrigin: `${cx}px ${cy}px`, animation: 'px-slow-rot 1.4s linear infinite' }}>
               <circle
                 cx={cx}
@@ -270,7 +250,7 @@ export function HeroOrb({
             />
           </g>
 
-          {/* Scanner sweep — only when alarming */}
+          {/* Scanner sweep, only when alarming */}
           {isAlarming ? (
             <g style={{ transformOrigin: `${cx}px ${cy}px`, animation: 'px-slow-rot 6s linear infinite' }}>
               <path

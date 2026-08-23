@@ -4,10 +4,9 @@ import type { ReactNode } from 'react';
 import { Shell } from '@/components/Shell';
 import { PageSection } from '@/components/ui/PageSection';
 
-/** Shared layout for the Terms / Privacy / Accessibility documents: the normal
- *  app Shell (nav stays reachable) + a readable prose column. Content is plain
- *  semantic markup (h2/p/ul) styled by `.legal-prose` in globals.css — which
- *  keeps it screen-reader-friendly. */
+/** Shared layout for the legal documents, the normal Shell so nav stays reachable,
+ *  plus a prose column. The content is plain semantic markup styled by .legal-prose,
+ *  which keeps it readable to a screen reader. */
 export function LegalLayout({
   title,
   lastUpdated,

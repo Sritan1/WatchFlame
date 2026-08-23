@@ -1,14 +1,8 @@
 'use client';
 
-// Drought Signal panel — mirrors VegetationPanel's structure. Mode toggle at
-// the top, then either the KBDI slider (0-800) or the Days Since Rain slider
-// (0-30). The backend accepts either: when `kbdi` is provided it wins, and
-// the request omits kbdi for the days-only path so the algorithm falls back
-// to the days_since_rain exponential proxy.
-//
-// Both modes auto-seed from the same upstream (Open-Meteo Archive). When the
-// fetch fails, the parent passes a footer warning that applies to whichever
-// mode is active.
+// The drought panel, shaped like the vegetation one, with a toggle, then either the
+// KBDI slider or days since rain. Both come from the same upstream, so on failure
+// the parent hands down one warning that fits whichever mode is open.
 
 import { useState, type ReactNode } from 'react';
 
@@ -41,15 +35,12 @@ export function DroughtPanel({
   color: string;
   glowRgb: string;
   isLoading?: boolean;
-  /** Warning rendered inside the active mode's InputPanel when local data
-   *  is unavailable (e.g. Open-Meteo Archive fetch failed). Shared across
-   *  modes because both signals derive from the same upstream. */
+  /** Shown inside whichever slider is open when the local data didn't arrive. */
   footer?: ReactNode;
 }) {
   const { ae } = useAesthetic();
   const [dismissed, setDismissed] = useState(false);
-  // Once the callout is dismissed in days mode, center the slider in the
-  // freed-up vertical space instead of leaving a gap at the bottom.
+  // With the callout dismissed, center the slider in the space it left.
   const centerContent = mode === 'days' && dismissed;
 
   return (
@@ -122,9 +113,7 @@ export function DroughtPanel({
       )}
       </div>
 
-      {/* Mode explainer — only shown in days mode since KBDI is the canonical
-       *  drought input. Shares the dismissible backup-estimate callout with
-       *  VegetationPanel. */}
+      {/* Days mode only. KBDI is the real measure and needs no explaining. */}
       {mode === 'days' && !dismissed ? (
         <BackupEstimateCallout
           onDismiss={() => setDismissed(true)}

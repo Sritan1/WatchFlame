@@ -1,10 +1,7 @@
 'use client';
 
-// Active focus point for the app. Resolves to:
-//   1. The user's selected saved location (if any), OR
-//   2. The device's GPS coords (if granted), OR
-//   3. Berkeley, CA as fallback.
-// The mobile equivalent is lib/hooks.ts's useActiveLocation.
+// Where the app is currently looking. A saved location if one is selected, the
+// device's GPS fix if we have it, or Berkeley, CA as a last resort.
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
@@ -16,14 +13,13 @@ export type LocationPermission = 'unknown' | 'pending' | 'granted' | 'denied' | 
 
 export interface LocationState {
   coords: LatLon;
-  /** Human-readable label, e.g. "Berkeley, CA" or "My Location". */
+  /** What to call it on screen, like "Berkeley, CA" or "My Location". */
   label: string;
-  /** True when coords come from the Berkeley fallback rather than the device. */
+  /** These are the fallback coords, not the device's. */
   isFallback: boolean;
-  /** True when coords come from a saved location selection (overrides GPS). */
+  /** A saved location is overriding GPS. */
   isSaved: boolean;
-  /** True when the device GPS resolved outside the US and we fell back to the
-   *  default — the app's incident / shelter / FEMA data is US-only. */
+  /** GPS put us outside the US, so we fell back. The data is all US-only. */
   outsideUs: boolean;
   permission: LocationPermission;
 }
@@ -33,7 +29,7 @@ const FALLBACK_COORDS: LatLon = { lat: BERKELEY.lat, lon: BERKELEY.lon };
 interface GpsState {
   coords: LatLon;
   isFallback: boolean;
-  /** GPS resolved to a location outside the US, so we fell back to the default. */
+  /** GPS landed outside the US, so we fell back to the default. */
   outsideUs: boolean;
   permission: LocationPermission;
 }
@@ -45,11 +41,8 @@ const INITIAL_GPS: GpsState = {
   permission: 'pending',
 };
 
-/** Coarse US-membership check (CONUS + Alaska + Hawaii boxes). The app's
- *  incident / shelter / FEMA / calibration data is US-only, so a device GPS fix
- *  outside these boxes is unusable and we fall back to the default. The boxes
- *  overlap a little into southern Canada / northern Mexico — an accepted edge,
- *  since the US-only data degrades gracefully there anyway. */
+/** Rough "are we in the US" check against three boxes. They spill a little into
+ *  Canada and Mexico, which is fine since the data just thins out there. */
 function isInUS(lat: number, lon: number): boolean {
   if (lat >= 24.4 && lat <= 49.5 && lon >= -125.0 && lon <= -66.9) return true; // CONUS
   if (lat >= 51.0 && lat <= 71.6 && lon >= -170.0 && lon <= -129.0) return true; // Alaska
@@ -57,13 +50,9 @@ function isInUS(lat: number, lon: number): boolean {
   return false;
 }
 
-// ─── Shared device-GPS store ────────────────────────────────────────────────
-// A SINGLE navigator.geolocation lookup, shared across every useUserLocation()
-// caller (Shell, Status, Risk, ...). Backed by a module store (like
-// source-health / modal-state) rather than per-hook useState, so multiple
-// callers never fire duplicate permission prompts or resolve to two different
-// positions that then disagree (e.g. the Shell "location is off" banner vs the
-// coords actually feeding the queries).
+// One geolocation lookup for the whole app. A module store rather than per-hook
+// state, so callers can't each prompt for permission or land on two positions
+// that disagree.
 
 let gpsState: GpsState = INITIAL_GPS;
 const gpsListeners = new Set<() => void>();
@@ -74,14 +63,11 @@ function setGpsState(next: GpsState): void {
   gpsListeners.forEach((l) => l());
 }
 
-/** Kick off the geolocation lookup. Runs at most one lookup at a time, and skips
- *  entirely once we already hold a granted fix (it's cached and reused, never
- *  re-prompted). It DOES retry when the last attempt failed (permission 'denied'
- *  / 'unavailable') — so if the user grants access after an initial denial and
- *  switches back to "My Location", the fix is picked up without a page reload. */
+/** Start the geolocation lookup, one at a time. It retries after a failure, so
+ *  granting access following an earlier denial works without a page reload. */
 function ensureGpsLookup(): void {
   if (gpsInFlight) return;
-  if (gpsState.permission === 'granted') return; // already have a usable fix
+  if (gpsState.permission === 'granted') return; // already have a fix
   gpsInFlight = true;
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     gpsInFlight = false;
@@ -96,9 +82,8 @@ function ensureGpsLookup(): void {
       if (isInUS(lat, lon)) {
         setGpsState({ coords: { lat, lon }, isFallback: false, outsideUs: false, permission: 'granted' });
       } else {
-        // Foreign GPS fix — the app's US-only data (incidents, shelters, FEMA,
-        // calibration) would be a broken half-experience, so fall back to the
-        // default and flag it so the Shell can explain.
+        // Abroad, where every data source comes up empty. Flag it so the Shell
+        // can say why.
         setGpsState({ coords: FALLBACK_COORDS, isFallback: true, outsideUs: true, permission: 'granted' });
       }
     },
@@ -124,11 +109,9 @@ function getGpsSnapshot(): GpsState {
   return gpsState;
 }
 
-/** Internal hook — shared navigator.geolocation state (no saved-locations
- *  layer). `enabled` is false when a saved location is overriding GPS, so we
- *  don't fire a permission prompt whose result would just be discarded. The
- *  underlying lookup is shared + deduped across all enabled callers and reused
- *  once a fix is granted; see ensureGpsLookup for the retry-on-failure rule. */
+/** The raw GPS state, without the saved-location layer on top. Pass enabled false
+ *  when a saved location already overrides GPS, so no permission prompt fires for
+ *  an answer that would be thrown away. */
 function useDeviceGps(enabled: boolean): GpsState {
   const state = useSyncExternalStore(subscribeGps, getGpsSnapshot, getGpsSnapshot);
   useEffect(() => {
@@ -137,27 +120,22 @@ function useDeviceGps(enabled: boolean): GpsState {
   return state;
 }
 
-/** What every screen should call. Honors saved-location override, else GPS, else fallback.
- *
- *  Coords identity must stay stable across renders when nothing actually changed —
- *  consumers downstream use `loc.coords` as a `useMemo` dependency (threat aggregation,
- *  confidence calc, etc.). Without memoization here, the saved-location branch returned
- *  a fresh `{ lat, lon }` literal on every render, invalidating every dependent memo
- *  in the tree and re-running threat aggregation on each tick. */
+/** What every screen calls. Saved location first, then GPS, then the fallback.
+ *  coords has to keep the same identity between renders when nothing moved. Half
+ *  the app memos on it, and a fresh literal re-runs threat aggregation every tick. */
 export function useUserLocation(): LocationState {
   const { items, activeId } = useSavedLocations();
 
   const active = activeId ? items.find((i) => i.id === activeId) : undefined;
   const savedLat = active?.lat;
   const savedLon = active?.lon;
-  // Memoize by primitive (lat/lon) so identity only changes when coords change.
+  // Keyed on the numbers, so identity only changes when the position does.
   const savedCoords = useMemo<LatLon | null>(
     () => (savedLat != null && savedLon != null ? { lat: savedLat, lon: savedLon } : null),
     [savedLat, savedLon],
   );
 
-  // Only reach for GPS when no saved location is overriding it — otherwise the
-  // GPS result is discarded anyway and the permission prompt is pure friction.
+  // No point prompting for GPS we would only discard.
   const gps = useDeviceGps(!(active && savedCoords));
 
   if (active && savedCoords) {

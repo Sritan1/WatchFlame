@@ -1,14 +1,8 @@
-"""Regression tests for cdse._get_token — auth must degrade to None, never raise.
+"""cdse._get_token has to degrade to None and never raise.
 
-Pins the fix where the token JSON was parsed OUTSIDE the try/except, so a 200
-response with an unexpected shape (an OAuth error object returned with status
-200, a proxy/captive-portal JSON page, or a non-numeric expires_in) raised
-KeyError/ValueError. That escaped get_ndvi_current into /trajectory's gather
-(which does not swallow exceptions) and 500-ed the route. _get_token must return
-None on ANY auth failure so /risk and /trajectory fall back to the season
-multiplier instead.
-
-Network-free: we stub httpx.AsyncClient with a canned token response.
+The token JSON used to be parsed outside the try, so a 200 with an odd shape raised.
+That escaped get_ndvi_current into /trajectory's gather, which doesn't swallow, and
+500'd the route. httpx is stubbed with a canned token response.
 """
 from __future__ import annotations
 
@@ -44,10 +38,10 @@ class _StubAsyncClient:
 
 
 def _patch(monkeypatch, payload: dict) -> None:
-    # Real credentials so _client_id/_client_secret don't raise before the POST.
+    # Both set, or _client_id/_client_secret raise before the POST ever happens.
     monkeypatch.setenv("CDSE_CLIENT_ID", "test-id")
     monkeypatch.setenv("CDSE_CLIENT_SECRET", "test-secret")
-    # Fresh cache + lock so the fetch path runs and we don't cross event loops.
+    # Fresh cache and lock so the fetch path runs and we don't cross event loops.
     monkeypatch.setattr(cdse, "_token_cache", {"token": "", "expires_at": 0.0})
     monkeypatch.setattr(cdse, "_token_lock", asyncio.Lock())
     monkeypatch.setattr(
@@ -56,8 +50,7 @@ def _patch(monkeypatch, payload: dict) -> None:
 
 
 def test_token_missing_access_token_returns_none(monkeypatch):
-    """A 200 whose JSON lacks access_token (e.g. {"error": "invalid_client"}
-    some gateways return with status 200) must degrade to None, not KeyError."""
+    """Some gateways return an error body with a 200, so this must not KeyError."""
     _patch(monkeypatch, {"error": "invalid_client"})
     assert asyncio.run(cdse._get_token()) is None
 
@@ -69,7 +62,6 @@ def test_token_non_numeric_expires_in_returns_none(monkeypatch):
 
 
 def test_token_valid_response_returns_token(monkeypatch):
-    """A well-formed response still yields the token (guards against the fix
-    over-degrading the happy path)."""
+    """Guards the happy path against the degrade-to-None branches above."""
     _patch(monkeypatch, {"access_token": "good-token", "expires_in": 3600})
     assert asyncio.run(cdse._get_token()) == "good-token"

@@ -1,8 +1,7 @@
 'use client';
 
-// Full-width FEMA banner for the Safety screen (24x32 padding, 80px icon box)
-// with two action CTAs: Show on Map and FEMA Page. Only shown when there's an
-// active declaration.
+// The federal-declaration banner on Safety, with buttons through to the map and
+// to FEMA. Only appears when something is actually declared.
 
 import { useRouter } from 'next/navigation';
 
@@ -22,19 +21,14 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
   const { ae } = useAesthetic();
   const router = useRouter();
 
-  // Gate the Show-on-Map button on whether the map will actually find the
-  // FEMA-declared incident. We run the SAME query MapScreen runs (100mi /
-  // 30-limit) so the cache entry is shared — when the user clicks through,
-  // the map gets the data instantly and its own match check agrees with
-  // ours. Without this gate, the button always showed but clicking it
-  // either selected a random nearby fire (the old bug) or selected nothing
-  // (after the bug fix) — both of which left the user confused.
+  // Only offer the map button if the map will actually find the fire. Running the
+  // same query means they share a cache entry and reach the same conclusion.
+  // Without it the button always showed, then selected a random fire or nothing.
   const loc = useUserLocation();
   const incidentsQ = useNamedIncidentsNear(loc.coords, 100, 30);
   const incidents = incidentsQ.data ?? [];
   const matched = matchIncidentByFemaTitle(disaster.title, incidents);
-  // Hide the button while the query is in flight too — pops in once we
-  // confirm there's something to select. Avoids flash-of-button-then-no-op.
+  // Hidden while the query runs too, so it never appears and then stops working.
   const canShowOnMap = !incidentsQ.isLoading && matched !== null;
 
   const showOnMap = () => {
@@ -50,8 +44,8 @@ export function FemaBanner({ disaster }: { disaster: ActiveDisaster }) {
       style={{
         position: 'relative',
         overflow: 'hidden',
-        // Matte-glass surface (matches the Safety cards) with an amber tint so
-        // the federal-alert identity stays distinct from the neutral cards.
+        // The same glass as its siblings, tinted amber so a federal declaration
+        // stands apart.
         background: `linear-gradient(180deg, rgba(${AMBER_RGB},0.10), rgba(${AMBER_RGB},0.035)), linear-gradient(180deg, rgba(17,21,27,0.62), rgba(13,17,23,0.55))`,
         border: `0.5px solid rgba(${AMBER_RGB}, 0.34)`,
         borderRadius: ae.radiusLg,

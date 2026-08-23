@@ -2,8 +2,7 @@
 
 import { useAesthetic } from '@/lib/aesthetic';
 
-/** Eyebrow + optional right-side meta — the section divider used above every
- *  page block (e.g. "STATUS · Berkeley, CA … Updated 2m ago · FIRMS · NIFC"). */
+/** The section divider above every page block, with optional right-side meta. */
 export function SectionEyebrow({
   children,
   color,
@@ -47,9 +46,8 @@ export function SectionEyebrow({
           {children}
         </span>
       </div>
-      {/* Editorial-magazine hairline rule between the eyebrow and the
-       *  right-aligned meta. Gradient fades to transparent at the ends so
-       *  the rule reads as "a section break" rather than a hard border. */}
+      {/* Hairline between the eyebrow and the meta, fading to transparent at the
+          ends so it marks a section break instead of drawing a border. */}
       <span
         aria-hidden="true"
         style={{
@@ -58,8 +56,7 @@ export function SectionEyebrow({
           background:
             'linear-gradient(90deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 60%, transparent 100%)',
           minWidth: 24,
-          // Decorative hairline must not block clicks on adjacent buttons
-          // (e.g. the "Reset to my area" button passed into the `right` slot).
+          // The hairline must not block clicks on a button in the `right` slot.
           pointerEvents: 'none',
         }}
       />

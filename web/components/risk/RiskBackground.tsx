@@ -1,24 +1,16 @@
 'use client';
 
-// "Forecast Terrain" — the Risk (Fire-Weather What-If) page backdrop. Ported
-// from the Claude-Design reference (atmos-engine.jsx + atmos-systems-risk.jsx):
-// a self-animating, art-directed wireframe landscape you drift forward through,
-// with a glowing horizon and ignited crests. Risk-aware palette tinted toward
-// the page's cool/amber "risk" identity (warms as the what-if score climbs).
-//
-// Kept to the reference's perf budget: a single canvas, ~30fps throttle, DPR≤1.5,
-// a static paint under prefers-reduced-motion, and pause when the tab is hidden /
-// a modal is open (via the `active` prop, like the Status + Safety backdrops).
-// Pinned `fixed` behind the page content; the solid cards scroll over it and it
-// shows through the gaps.
+// The backdrop behind the what-if screen, a wireframe landscape you drift forward
+// through, warming as the score climbs. One canvas at thirty frames a second, capped
+// resolution, static under reduced motion, paused whenever nothing can see it.
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { useAesthetic } from '@/lib/aesthetic';
 import { type RiskLevel } from '@/lib/theme';
 
-// Runs before paint so a remount/resume never flashes a blank canvas; falls back
-// to useEffect during SSR to avoid React's server warning.
+// Runs before paint, so a remount never flashes an empty canvas. Falls back to a
+// plain effect on the server, which React warns about otherwise.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 interface Color { r: number; g: number; b: number }
@@ -30,8 +22,7 @@ const mix = (a: Color, b: Color, t: number): Color => ({
 });
 const rgba = (c: Color, a: number) => `rgba(${c.r}, ${c.g}, ${c.b}, ${a})`;
 
-// Risk-aware base palette (the shared "meaning" seed), tinted toward the cool/
-// amber "risk" identity so calm reads cool-blue and extreme reads hot.
+// One palette per tier. A calm day comes out cool and blue, a bad one hot.
 const AE_BASE: Record<RiskLevel, [Color, Color, Color]> = {
   low:      [{ r: 90, g: 160, b: 200 }, { r: 110, g: 200, b: 180 }, { r: 80, g: 130, b: 170 }],
   moderate: [{ r: 232, g: 179, b: 57 }, { r: 220, g: 130, b: 60 }, { r: 180, g: 100, b: 70 }],
@@ -53,29 +44,26 @@ interface TerrainOpts {
   isAlarming: boolean;
 }
 
-// Persisted across route remounts so the camera resumes in place instead of
-// snapping back to the start of the drift.
+// Kept across navigation, so the camera resumes instead of snapping back.
 const persisted = { t: 0, curOffset: 0 };
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
-/** Terrain draw options derived from the current risk band. */
+/** How to draw the terrain at a given risk tier. */
 function optsForRisk(risk: RiskLevel): TerrainOpts {
   const isCalm = risk === 'low';
   const isAlarming = risk === 'high' || risk === 'extreme';
   return {
     colors: aePalette(risk),
     intensity: isCalm ? 0.45 : risk === 'moderate' ? 0.78 : 1.0,
-    speedMult: 1.1, // 0.4 + (pulseSpeed 70 / 100)
+    speedMult: 1.1,
     isAlarming,
   };
 }
 
-/** The "terrain" draw system: one coherent sculpted heightfield drawn as draped
- *  contour rows + a translucent surface fill, drifting forward autonomously. */
+/** One height field drawn as contour rows over a translucent surface. */
 function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
-  // Mutable so a risk-band change can be pushed in via setOpts() without
-  // rebuilding the whole system (see the component's mount effect).
+  // Mutable, so a change of tier can be pushed in without rebuilding it all.
   let [cCool, cMid, cHot] = initial.colors;
   let { intensity, speedMult, isAlarming } = initial;
   let cValley = mix(cCool, { r: 8, g: 12, b: 24 }, 0.55);
@@ -89,7 +77,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
   let horizonGrad: CanvasGradient | null = null;
   let sunGrad: CanvasGradient | null = null;
 
-  // One smooth low-frequency heightfield → broad ridges and valleys.
+  // A single smooth field, which gives broad ridges and valleys.
   const heightAt = (gx: number, wz: number) =>
       0.90 * Math.sin(gx * 1.70 + wz * 0.50)
     + 0.58 * Math.sin(wz * 0.72 + gx * 0.95 + 1.3)
@@ -110,7 +98,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
     sunGrad.addColorStop(1, rgba(cMid, 0));
   };
 
-  // Per-row geometry caches — built once per frame, read by both passes.
+  // Row geometry, worked out once a frame and read by both passes.
   const gX: Float32Array[] = [];
   const gY: Float32Array[] = [];
   const gH: Float32Array[] = [];
@@ -131,7 +119,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
       [cCool, cMid, cHot] = next.colors;
       cValley = mix(cCool, { r: 8, g: 12, b: 24 }, 0.55);
       ({ intensity, speedMult, isAlarming } = next);
-      build(); // refresh the cached gradients for the new palette/intensity
+      build(); // rebuild the gradients for the new palette
     },
     draw(dt: number) {
       t += dt;
@@ -140,14 +128,14 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
       persisted.curOffset = curOffset;
       const swell = Math.sin(t * 0.00012) * 0.06 + 1;
 
-      // Horizon bloom + glow band (additive).
+      // The glow along the horizon.
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = sunGrad!;
       ctx.fillRect(0, 0, W, horizonY + H * 0.2);
       ctx.fillStyle = horizonGrad!;
       ctx.fillRect(0, horizonY - H * 0.20, W, H * 0.36);
 
-      // Build all row geometry once.
+      // Work out every row before drawing any of them.
       let prevRowY = horizonY;
       for (let r = 0; r < ROWS; r++) {
         const d = r / (ROWS - 1), dd = Math.pow(d, 1.9);
@@ -165,7 +153,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
           X[c] = W * 0.5 + gx * (W * 0.60) * sprd;
           Y[c] = rowY - hgt * ampPx;
         }
-        // never overlap: clamp each line to stay below the one behind it.
+        // Keep each line below the one behind it, so they never cross.
         if (r > 0) {
           const pY = gY[r - 1], minGap = (rowY - prevRowY) * 0.30;
           for (let c = 0; c < COLS; c++) {
@@ -177,7 +165,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
         rowHeat[r] = rowMax;
       }
 
-      // Pass 1: translucent surface fill (gives the wireframe a body).
+      // First the surface, which gives the wireframe something to sit on.
       ctx.globalCompositeOperation = 'source-over';
       for (let r = 1; r < ROWS; r++) {
         const d = r / (ROWS - 1);
@@ -194,7 +182,7 @@ function makeTerrain(ctx: CanvasRenderingContext2D, initial: TerrainOpts) {
         ctx.fill();
       }
 
-      // Pass 2: wireframe + ignited crests (additive).
+      // Then the lines themselves, with the ridges lit.
       ctx.globalCompositeOperation = 'lighter';
       ctx.lineJoin = 'round';
       for (let r = 0; r < ROWS; r++) {
@@ -240,9 +228,8 @@ export function RiskBackground({
   active = true,
 }: {
   risk?: RiskLevel;
-  /** When false the rAF loop stops and the canvas freezes IN PLACE; flipping
-   *  back to true resumes. Lets the parent pause it off-screen / tab-hidden /
-   *  behind a modal to cut idle CPU. */
+  /** False freezes the canvas where it is. The parent stops it when nobody is
+   *  looking. */
   active?: boolean;
 }) {
   const { ae } = useAesthetic();
@@ -250,12 +237,10 @@ export function RiskBackground({
   const activeRef = useRef(active);
   const wakeRef = useRef<() => void>(() => {});
   const setOptsRef = useRef<(o: TerrainOpts) => void>(() => {});
-  // Forces a single static repaint (used when the risk band changes while the
-  // rAF loop isn't running — reduced-motion / paused).
+  // Repaints once, for when the tier changes while the loop isn't running.
   const repaintRef = useRef<() => void>(() => {});
-  // Captures the risk at mount for the initial palette, so the mount effect
-  // doesn't need `risk` as a dependency (which would rebuild the whole system).
-  // Later changes flow through the risk-sync effect via setOpts, not this ref.
+  // The tier at mount, only for the first palette. Depending on it directly would
+  // rebuild the terrain on every change, so later ones go through setOpts.
   const riskRef = useRef(risk);
 
   useIsoLayoutEffect(() => {
@@ -268,9 +253,8 @@ export function RiskBackground({
     let reduced = motionQuery.matches;
     const FRAME_MS = 1000 / 30;
 
-    // Built once on mount; later risk-band changes are pushed in via
-    // sys.setOpts (the risk-sync effect below) so a slider drag that crosses a
-    // band doesn't tear down and re-allocate the whole terrain mid-interaction.
+    // Built once. Dragging a slider across a tier boundary must not tear the
+    // landscape down mid-gesture.
     const sys = makeTerrain(ctx, optsForRisk(riskRef.current));
     setOptsRef.current = sys.setOpts;
 
@@ -293,7 +277,7 @@ export function RiskBackground({
     };
 
     const frame = (now: number) => {
-      // Paused (inactive) → stop the chain and freeze in place.
+      // Paused, so stop and freeze.
       if (!activeRef.current) { running = false; return; }
       raf = requestAnimationFrame(frame);
       const elapsed = now - last;
@@ -313,11 +297,8 @@ export function RiskBackground({
       running = false;
       cancelAnimationFrame(raf);
     };
-    // Draw a single static frame with the current palette. Used to refresh the
-    // backdrop when the risk band changes while the rAF loop is NOT running
-    // (prefers-reduced-motion, or paused) — without it the terrain would stay
-    // frozen at its mount-time color and contradict the score. No-op while
-    // running, since the loop already repaints every frame.
+    // One frame for when the tier changes with the loop stopped. Without it the
+    // terrain keeps its mount-time color and contradicts the score.
     const repaint = () => {
       if (!running) render(0);
     };
@@ -327,9 +308,8 @@ export function RiskBackground({
     resize();
     window.addEventListener('resize', resize);
 
-    // React to a live prefers-reduced-motion change (OS setting toggled while
-    // the page is open): stop + freeze when it turns on, resume when it turns
-    // off. Without this, `reduced` would stay stuck at its mount-time value.
+    // Reduced motion can be turned on while the page is open, so listen for it
+    // instead of reading it once at mount.
     const onMotionChange = (e: MediaQueryListEvent) => {
       reduced = e.matches;
       if (reduced) stop();
@@ -337,7 +317,7 @@ export function RiskBackground({
     };
     motionQuery.addEventListener('change', onMotionChange);
 
-    // Draw the current (possibly resumed) frame synchronously before paint.
+    // Draw one frame now, before the browser paints.
     render(0);
     if (!reduced && activeRef.current) start();
 
@@ -351,22 +331,20 @@ export function RiskBackground({
     };
   }, []);
 
-  // Pause/resume from the parent without rebuilding the system.
+  // Pause and resume without rebuilding anything.
   useEffect(() => {
     activeRef.current = active;
     if (active) wakeRef.current();
   }, [active]);
 
-  // Push palette/intensity changes into the running system instead of
-  // rebuilding it, so dragging the sliders across a band boundary stays smooth.
-  // Then force a static repaint so the new palette shows even when the rAF loop
-  // isn't running (prefers-reduced-motion / paused); it's a no-op while running.
+  // Hand the new palette to the running system instead of rebuilding, so a slider
+  // crossing a tier stays smooth. The repaint covers a stopped loop.
   useEffect(() => {
     setOptsRef.current(optsForRisk(risk));
     repaintRef.current();
   }, [risk]);
 
-  // Static ambience — risk-tuned, behind the canvas.
+  // Still glows behind the canvas, tinted to the tier.
   const [c0, c1, c2] = aePalette(risk);
   const isAlarming = risk === 'high' || risk === 'extreme';
   const topGlow = rgba(c0, isAlarming ? 0.13 : 0.09);
@@ -406,7 +384,7 @@ export function RiskBackground({
           background: 'radial-gradient(ellipse 90% 70% at 50% 45%, transparent 30%, rgba(0,0,0,0.50) 95%)',
         }}
       />
-      {/* Top + bottom scrims. */}
+      {/* Top and bottom scrims. */}
       <div
         style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: 160,

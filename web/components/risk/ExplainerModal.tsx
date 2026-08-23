@@ -1,7 +1,6 @@
 'use client';
 
-// "How is this calculated?" — opens from FactorBreakdown's footer.
-// Plain-English methodology overview matching the mobile app's ExplainerModal.
+// The methodology explainer, opened from the footer of the factor breakdown.
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';

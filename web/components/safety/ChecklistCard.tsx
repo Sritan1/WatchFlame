@@ -1,8 +1,7 @@
 'use client';
 
-// "Immediate Preparation" — 6 prep actions with custom checkboxes, a numeric
-// index, and a ProgressArc header showing X/6 complete. Matte-glass surface +
-// roomy rows per the reference design.
+// The preparation checklist, six things to do, each numbered, with an arc across
+// the top showing how many are done.
 
 import { useMemo, useState } from 'react';
 
@@ -27,8 +26,7 @@ const CHECKLIST: ChecklistItem[] = [
   { id: 'meds',    label: 'Gather essential medications',      desc: '7-day supply of prescriptions and basics.' },
 ];
 
-// Completion ticks read green (done = good), independent of the page's
-// risk-driven section accent.
+// Completion ticks stay green whatever the page's risk accent is doing.
 const GREEN = RISK_LEVELS.low;
 
 export function ChecklistCard({ riskLevel }: { riskLevel: RiskLevel }) {

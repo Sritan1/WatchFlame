@@ -80,9 +80,8 @@ describe('fireThreatFactor', () => {
     );
   });
   it('wind aligned toward the fire bearing raises threat above wind opposed to it', () => {
-    // base.bearingToFireDeg = 0, so windDeg 0 is aligned (delta 0 → ×(1+WIND_REL))
-    // and windDeg 180 is opposed (delta 180 → ×(1-WIND_REL)). Asserting direction,
-    // not just inequality, catches a flipped cos sign.
+    // The fire lies due north, so a north wind blows straight at you. Asserting
+    // the direction and not just the inequality is what catches a flipped sign.
     const aligned = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 0, windSpeedKph: 30 });
     const opposed = fireThreatFactor({ ...base, distanceMi: 10, windDeg: 180, windSpeedKph: 30 });
     expect(aligned).toBeGreaterThan(opposed);
@@ -142,11 +141,9 @@ describe('compositeSubtitle', () => {
   const threats: (RiskLevel | null)[] = [null, 'low', 'moderate', 'high', 'extreme'];
 
   it('never contradicts the headline tier (call to action matches the orb)', () => {
-    // Drive the subtitle across every (weather, ignition, threat) combination
-    // and assert the call to action tracks the SAME tier the orb shows:
-    // Review your plan on HIGH/EXTREME, Stay aware on MODERATE, neither on LOW.
-    // The old subtitle keyed on raw weather and could understate an
-    // ignition-escalated headline; this guards that it can't.
+    // Every combination. The call to action has to track the tier the orb shows.
+    // An earlier subtitle keyed off raw weather and could talk the headline down
+    // when ignition had escalated it.
     for (const weatherBucket of tiers) {
       for (const ignitionBucket of tiers) {
         const envBucket = envFromBuckets(weatherBucket, ignitionBucket)!;
@@ -168,7 +165,7 @@ describe('compositeSubtitle', () => {
   });
 
   it('names ignition as the driver when it escalates the environment', () => {
-    // weather MODERATE but ignition EXTREME -> env HIGH -> headline HIGH.
+    // Moderate weather with extreme ignition lands on a HIGH headline.
     const envBucket = envFromBuckets('moderate', 'extreme')!;
     expect(envBucket).toBe('high');
     const s = compositeSubtitle({
@@ -190,5 +187,31 @@ describe('compositeSubtitle', () => {
     });
     expect(s).toContain('no active fires are nearby');
     expect(s).toContain('Stay aware');
+  });
+
+  it('does not name ignition when there is no ignition reading', () => {
+    // envFromBuckets hands back extreme weather untouched when the model is
+    // unavailable, and the subtitle used to read that as both axes being extreme.
+    const envBucket = envFromBuckets('extreme', null)!;
+    expect(envBucket).toBe('extreme');
+
+    const s = compositeSubtitle({
+      envBucket,
+      weatherBucket: 'extreme',
+      ignitionBucket: null,
+      threatBucket: null,
+    });
+    expect(s).toContain('Fire conditions are extreme');
+    expect(s).not.toContain('ignition');
+
+    // The weather really is extreme, so a fire in range still escalates the ask.
+    const withFire = compositeSubtitle({
+      envBucket,
+      weatherBucket: 'extreme',
+      ignitionBucket: null,
+      threatBucket: 'low',
+    });
+    expect(withFire).not.toContain('ignition');
+    expect(withFire).toContain('Review your plan');
   });
 });

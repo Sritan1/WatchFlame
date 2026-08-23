@@ -1,7 +1,6 @@
-"""End-to-end smoke test: call the /risk handler directly with lat/lon
-and confirm KBDI is plumbed through the response.
+"""Call the /risk handler with coordinates and check KBDI comes back through it.
 
-Run from project root:  python -m scripts._smoke_risk_e2e
+Run from the project root with python -m scripts._smoke_risk_e2e
 """
 import asyncio
 import sys

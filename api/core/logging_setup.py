@@ -1,10 +1,7 @@
-"""Centralized logging with secret redaction.
+"""Logging setup with secret redaction.
 
-Service-level logs are already written to avoid secrets, but the global
-exception handler logs tracebacks — and an uncaught httpx error's traceback can
-contain the request URL, and the FIRMS URL embeds the API key in its path. This
-filter scrubs any known secret value out of both log messages and formatted
-tracebacks as a defense-in-depth backstop, so a key can never reach the logs.
+Our log lines avoid secrets, but the global exception handler logs tracebacks, and
+an httpx traceback carries the request URL. The FIRMS key sits in that path.
 """
 from __future__ import annotations
 
@@ -32,9 +29,8 @@ class SecretRedactionFilter(logging.Filter):
         if redacted != msg:
             record.msg = redacted
             record.args = ()
-        # Scrub the traceback too. Pre-format it into exc_text (which the
-        # handler's formatter prefers) and drop exc_info so the raw, unredacted
-        # traceback is never re-formatted downstream.
+        # Formatting into exc_text and dropping exc_info stops anything downstream
+        # from re-rendering the raw traceback.
         if record.exc_info:
             text = record.exc_text or logging.Formatter().formatException(record.exc_info)
             for s in self._secrets:
@@ -49,8 +45,7 @@ _configured = False
 
 
 def configure_logging() -> None:
-    """Install a stream handler on the root logger with the redaction filter.
-    Idempotent — safe to call once at app startup."""
+    """Put a redaction-filtered handler on the root logger. Safe to call twice."""
     global _configured
     if _configured:
         return
@@ -70,7 +65,7 @@ def configure_logging() -> None:
     if not root.handlers:
         root.addHandler(handler)
     else:
-        # Attach the filter to whatever handlers already exist (e.g. uvicorn's).
+        # Also filter whatever handlers are already there, like uvicorn's.
         for h in root.handlers:
             h.addFilter(redaction)
         root.addHandler(handler)

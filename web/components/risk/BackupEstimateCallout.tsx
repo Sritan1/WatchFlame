@@ -1,11 +1,8 @@
 'use client';
 
-// The dismissible amber "Backup estimate" callout shared by the Drought and
-// Vegetation panels — identical chrome, only the body sentence differs (it was
-// copy-pasted in both). The PARENT owns the `dismissed` state, because it also
-// drives the panel's center-content layout when the callout is gone, so this
-// is a pure presentational block: render it only while shown, and call
-// `onDismiss` to hide it.
+// The dismissible amber callout, shared by the drought and vegetation panels. Only
+// the sentence inside differs. The parent tracks dismissal because it also re-centers
+// its own content once this goes away.
 
 import type { ReactNode } from 'react';
 

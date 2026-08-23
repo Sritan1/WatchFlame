@@ -1,19 +1,8 @@
-"""Async Open-Meteo Archive client used at request time (not at notebook time).
+"""Weather-archive client for live requests, the drought half of the score.
 
-Fetches 365 days of daily max-temp + precipitation for a lat/lon, runs the
-KBDI series, and returns today's KBDI value plus the underlying mean annual
-precipitation (handy for diagnostics and as a poor-man's climatology).
-
-Heavy caching by design: KBDI walks change slowly (the integral averages out
-single-day weather noise), so a 6-hour in-process TTL is plenty. The grid is
-rounded to 0.1° (~7 mi at mid-latitudes) so two users in the same metro area
-share one cache entry.
-
-Open-Meteo Archive is free and unkeyed; the only failure modes are network
-hiccups and the upstream returning a sparse/empty `daily` block for very
-recent dates (their archive lags real-time by ~5 days). On any failure we
-return None rather than raising, mirroring the firms.py "graceful degrade"
-pattern so the /risk endpoint stays responsive.
+Pulls a year of daily highs and rainfall, runs the KBDI integrator over it, and
+returns today's value with the mean annual precipitation it used. Cached hard, as a
+year-long integral barely moves in a day. Failures return None instead of raising.
 """
 from __future__ import annotations
 
@@ -30,7 +19,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 WINDOW_DAYS = 365
-ARCHIVE_LAG_DAYS = 6  # Open-Meteo Archive trails real-time by ~5 days
+ARCHIVE_LAG_DAYS = 6  # Open-Meteo Archive trails real-time by about 5 days
 
 
 def _ttl() -> int:
@@ -42,8 +31,8 @@ def _grid_key(lat: float, lon: float) -> str:
 
 
 async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
-    """Return {kbdi, mean_annual_precip_mm, end_date, n_days} for the grid
-    cell containing (lat, lon), or None on upstream failure."""
+    """Today's KBDI for the grid cell around a point, or None if the fetch
+    failed. Comes with the precipitation and window it was computed from."""
     cache_key = _grid_key(lat, lon)
     now = time.time()
     cached = _CACHE.get(cache_key)
@@ -71,7 +60,7 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[kbdi] upstream {status} for {lat},{lon} ({type(e).__name__}); returning None")
@@ -81,20 +70,18 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
     temps_raw: list[float | None] = daily.get("temperature_2m_max") or []
     precs_raw: list[float | None] = daily.get("precipitation_sum") or []
     if len(temps_raw) < 30 or len(precs_raw) < 30:
-        # Sparse response — not enough history to compute a stable KBDI.
+        # Too little history to settle the integrator.
         print(f"[kbdi] sparse archive response for {lat},{lon} (n={len(temps_raw)}); skipping")
         return None
     if len(temps_raw) != len(precs_raw):
-        # Misaligned arrays (partial upstream response) would make
-        # compute_kbdi_series raise; degrade to None instead.
+        # Arrays of different lengths would make the integrator raise.
         print(
             f"[kbdi] misaligned archive arrays for {lat},{lon} "
             f"(temps={len(temps_raw)}, precs={len(precs_raw)}); skipping"
         )
         return None
 
-    # Open-Meteo occasionally returns null for missing days; use simple
-    # carry-forward / zero-fill so the integrator never sees a None.
+    # Missing days come back null, so fill them before the integrator sees them.
     last_t = 15.0
     temps: list[float] = []
     for v in temps_raw:
@@ -118,14 +105,10 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
     return out
 
 
-# ─── Recent days-since-rain (Forecast API, no archive lag) ────────────────
-#
-# The Archive API trails real-time by ~6 days, so any rain within the user's
-# most recent week is invisible there. The Forecast endpoint's `past_days`
-# parameter exposes the same daily precipitation field through today (or
-# yesterday depending on station upload cadence) — no lag. We use a separate
-# cache key + a shorter TTL since recent precip changes faster than a
-# 365-day KBDI integration.
+# Days since rain comes from the forecast endpoint, not the archive. The archive
+# trails about six days, so rain this week is invisible to it, while the forecast
+# endpoint hands back recent actuals with no lag. Separate cache and a shorter life,
+# because this moves faster than a year-long integral.
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 RECENT_WINDOW_DAYS = 30
@@ -134,19 +117,13 @@ _RECENT_CACHE: dict[str, tuple[float, int]] = {}
 
 
 def _recent_ttl() -> int:
-    # 1-hour TTL — recent precip changes faster than the KBDI integration,
-    # and a stale value of "0 days ago" reads as wrong after a dry day.
+    # An hour. A stale "rained today" reads as wrong the next dry morning.
     return int(os.getenv("RECENT_PRECIP_CACHE_TTL_SECONDS", str(3600)))
 
 
 async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
-    """Days since the last day with >= 1 mm of precipitation at (lat, lon),
-    measured against the Forecast API's lag-free recent-actuals window.
-
-    Returns the integer days count (0 = rained today), or None on upstream
-    failure. Caller is free to display None as "unknown" — same convention
-    as fetch_kbdi_today.
-    """
+    """How long since it last rained properly here, where 0 means today. None if
+    the fetch failed, which callers can show as unknown."""
     cache_key = _grid_key(lat, lon)
     now = time.time()
     cached = _RECENT_CACHE.get(cache_key)
@@ -156,9 +133,8 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
     params = {
         "latitude": round(lat, 2),
         "longitude": round(lon, 2),
-        # past_days returns actual measurements (not forecast) for the last N
-        # days INCLUDING today. forecast_days=1 is required by Open-Meteo
-        # even though we won't use it — leaving it at 0 errors the request.
+        # past_days gives real measurements through today. The forecast day is
+        # required even though we ignore it, and asking for 0 errors out.
         "past_days": RECENT_WINDOW_DAYS,
         "forecast_days": 1,
         "daily": "precipitation_sum",
@@ -174,7 +150,7 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; degrade to None
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
@@ -189,14 +165,12 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
     if not times or not precs_raw:
         return None
 
-    # Find "today" by ISO date so we walk back from the correct anchor — the
-    # array also contains the +1 forecast day, which we want to skip.
+    # Find today by date. The array also holds tomorrow's forecast.
     today_str = date.today().isoformat()
     today_idx = next((i for i, t in enumerate(times) if t == today_str), -1)
     if today_idx == -1:
-        # Today isn't in the response (e.g. upload lag at the station). Use
-        # the last actual day before any future-dated entries we recognize.
-        # Falling back to len-1 also handles the "all past" case.
+        # Today is missing, probably station upload lag, so take the last real
+        # day before anything future-dated.
         today_idx = len(times) - 1
 
     precs: list[float] = [float(v) if v is not None else 0.0 for v in precs_raw]
@@ -207,8 +181,8 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
             days = today_idx - i
             break
     if days is None:
-        # No qualifying rain anywhere in the window — report the window
-        # length so the slider lands near "very dry" rather than at 0.
+        # No rain anywhere in the window, so report its full length. Otherwise
+        # the slider would land on 0 and read as though it rained today.
         days = today_idx + 1
 
     _RECENT_CACHE[cache_key] = (now, days)

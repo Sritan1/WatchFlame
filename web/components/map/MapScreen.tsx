@@ -1,9 +1,7 @@
 'use client';
 
-// Live Map orchestrator. Owns: selected fire id, active filter, layout grid
-// (1fr map + 380px rail). Loads MapImpl behind next/dynamic so leaflet stays
-// off the server bundle. Renders a friendly placeholder when MAPTILER_KEY
-// is missing instead of broken tiles.
+// The map screen. Owns the selection, the filter and the two-column layout, and
+// loads the map lazily so leaflet never reaches the server bundle.
 
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
@@ -21,19 +19,13 @@ import type { RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { useUnits, type DistanceUnit } from '@/lib/use-units';
 
-// FIRMS satellite hits can number in the hundreds for a busy region. Mobile
-// caps at ~100 markers; we do the same to keep the leaflet layer light.
+// A busy region returns hundreds of detections, so cap what we draw.
 const MAX_FIRMS_MARKERS = 120;
-// Named incidents: backend returns up to `INCIDENT_LIMIT` within
-// `INCIDENT_RADIUS_MI`. Mobile uses (100, 30) and the map should match so
-// drilling out of Bronson, FL shows the same set. The rail renders every
-// returned incident in distance order so a map pin click always corresponds
-// to a card in the list (previously the rail was capped at 20 and the
-// selected-but-out-of-view incident was spliced in out of order).
+// The rail lists every one in distance order, so a pin always has a card to match.
 const INCIDENT_RADIUS_MI = 100;
 const INCIDENT_LIMIT = 30;
 
-// Behind dynamic({ ssr: false }) — leaflet touches window at import time.
+// Loaded lazily. Leaflet reaches for window the moment it's imported.
 const MapImpl = dynamic(() => import('./MapImpl').then((m) => m.MapImpl), {
   ssr: false,
   loading: () => (
@@ -64,9 +56,9 @@ export function MapScreen() {
   const loc = useUserLocation();
   const units = useUnits();
   const incidentsQ = useNamedIncidentsNear(loc.coords, INCIDENT_RADIUS_MI, INCIDENT_LIMIT);
-  const firesQ = useFiresAroundMe(loc.coords, 250); // NASA FIRMS, last 24h
+  const firesQ = useFiresAroundMe(loc.coords, 250); // satellite, last 24h
   const fires = useMemo(() => incidentsQ.data ?? [], [incidentsQ.data]);
-  // Cap at MAX_FIRMS_MARKERS, prefer brightest detections (matches mobile).
+  // Keep the brightest, up to the cap.
   const satellites = useMemo(() => {
     const all = firesQ.data?.features ?? [];
     if (all.length <= MAX_FIRMS_MARKERS) return all;
@@ -78,13 +70,11 @@ export function MapScreen() {
 
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [filter, setFilter] = useState<FireFilter>('all');
-  // Which feed the right rail's list is showing. Lifted here (not local to the
-  // rail) so a selection made ON THE MAP can surface the matching tab.
+  // Kept up here so a click on the map can open the matching tab.
   const [railTab, setRailTab] = useState<RailTab>('incidents');
 
-  // Map state for the floating scale bar. Defaults to MapImpl's initial
-  // (zoom 8 at the user's center) so the bar renders correctly even before
-  // the first `ember-map-state` event lands.
+  // Seeded with the view the map opens on, so the scale bar is right before the
+  // first event arrives.
   const [mapState, setMapState] = useState<{ lat: number; zoom: number }>({
     lat: loc.coords.lat,
     zoom: 8,
@@ -102,18 +92,9 @@ export function MapScreen() {
     [mapState, units.distance],
   );
 
-  // Intent handoff from Safety's "Show on Map" — when ?from=fema is present,
-  // try to auto-select the named incident that matches the FEMA disaster's
-  // title (e.g. "FM-5605 Canyon Fire" → an incident named "Canyon"). If
-  // there's no plausible match we DON'T auto-select — better to open the map
-  // with nothing selected than to mislabel a random nearby fire as the FEMA
-  // incident, which was the prior behavior. Handled exactly once per
-  // query-param change.
-  // Track the last FEMA title we acted on (not just a boolean) so a SECOND
-  // "Show on Map" handoff for a different disaster still fires — keying on a
-  // bare boolean latched the effect after the first intent for the whole
-  // mount, swallowing every subsequent handoff. Leaving the fema intent (no
-  // ?from=fema) resets it so re-opening the same disaster works too.
+  // Arriving from Safety's "Show on Map". With no convincing match, select nothing.
+  // Opening on the wrong fire labelled as the declared one is worse. Remember which
+  // title we acted on, or one latched boolean swallows every handoff after the first.
   const lastIntentRef = useRef<string | null>(null);
   useEffect(() => {
     if (searchParams.get('from') !== 'fema') {
@@ -129,12 +110,11 @@ export function MapScreen() {
       setSelection({ kind: 'incident', id: match.id });
       lastIntentRef.current = intentKey;
     } else if (!title) {
-      // No title to match on — nothing to retry, so mark this intent handled.
+      // Nothing to match against, so nothing to retry.
       lastIntentRef.current = intentKey;
     }
-    // A title with no match yet: leave the ref unset so a later `fires` update
-    // (e.g. GPS resolves and the incident feed refetches nearer the disaster)
-    // gets another chance instead of latching on the empty first result.
+    // A title with no match yet gets another chance once GPS resolves and the
+    // incident feed refetches nearer the disaster.
   }, [fires, searchParams]);
 
   const counts: Record<FireFilter, number> = useMemo(() => {
@@ -148,15 +128,9 @@ export function MapScreen() {
     [fires, filter],
   );
 
-  // Clear a selection that's no longer valid for the current data. Done in an
-  // effect (not a render-phase queueMicrotask) so it doesn't schedule a
-  // setState on every render while the condition holds.
-  //   - incident: cleared when it's filtered out of `visibleFires`.
-  //   - satellite ('fire'): cleared when its pixel is no longer in the FIRMS
-  //     feed — e.g. after changing location. Without this the detail footer
-  //     lingers with a distance measured to the OLD pixel from the NEW
-  //     location (thousands of miles). Matched by coordinate since a refetch
-  //     returns fresh FireFeature objects (no reference equality).
+  // Drop a selection the current data no longer contains, or the footer sits
+  // there reporting a distance of several thousand miles after a location change.
+  // Matched on coordinates. A refetch hands back new objects.
   useEffect(() => {
     if (!selection) return;
     if (selection.kind === 'incident') {
@@ -170,20 +144,14 @@ export function MapScreen() {
     if (!stillPresent) setSelection(null);
   }, [selection, visibleFires, satellites]);
 
-  // Surface the rail tab that matches what's selected on the map, so the
-  // selected item's card is in view (and gets auto-scrolled into focus). Only
-  // reacts to an actual selection change — tapping the rail tabs to browse
-  // still wins, since that doesn't alter `selection`.
+  // Only fires on a real selection change, so browsing the tabs by hand wins.
   useEffect(() => {
     if (selection?.kind === 'fire') setRailTab('hotspots');
     else if (selection?.kind === 'incident') setRailTab('incidents');
   }, [selection]);
 
-  // Manually switching the rail's feed tab clears the current selection: the
-  // detail footer belongs to the feed you were viewing, so it'd be stale (and
-  // the wrong kind) against the feed you just switched to. Map-pin selections
-  // surface their tab via the effect above — NOT through this handler — so they
-  // keep their selection.
+  // Switching tabs by hand clears the selection, because the footer belongs to the
+  // feed you just left. Map clicks go through the effect above and keep theirs.
   const changeRailTab = (t: RailTab) => {
     if (t !== railTab) setSelection(null);
     setRailTab(t);
@@ -202,7 +170,7 @@ export function MapScreen() {
         gridTemplateColumns: '1fr 380px',
       }}
     >
-      {/* MAP CANVAS */}
+      {/* Map canvas */}
       <div style={{ position: 'relative', overflow: 'hidden' }}>
         {MAPTILER_KEY ? (
           <MapImpl
@@ -218,12 +186,12 @@ export function MapScreen() {
           <MissingKeyPlaceholder />
         )}
 
-        {/* Filter chips — top-left */}
+        {/* Filter chips, top left */}
         <div className="app-map-filter-bar" style={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 8 }}>
           <FilterChips active={filter} onChange={setFilter} counts={counts} />
         </div>
 
-        {/* Zoom controls — right */}
+        {/* Zoom controls, right side */}
         <div
           style={{
             position: 'absolute',
@@ -240,7 +208,7 @@ export function MapScreen() {
           <ZoomButton dir={-1} />
         </div>
 
-        {/* Scale indicator — bottom-left, lifted above the required MapTiler logo. */}
+        {/* Scale indicator, bottom left, lifted above the MapTiler logo. */}
         <div
           style={{
             position: 'absolute',
@@ -268,7 +236,7 @@ export function MapScreen() {
             Scale
           </div>
           <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Bar with tick caps at both ends — width tracks the current zoom. */}
+            {/* Bar with tick caps at both ends. Width tracks the zoom. */}
             <div
               style={{
                 position: 'relative',
@@ -326,7 +294,7 @@ export function MapScreen() {
         </div>
       </div>
 
-      {/* RIGHT RAIL */}
+      {/* Right rail */}
       <IncidentsRail
         fires={visibleFires}
         selection={selection}
@@ -334,10 +302,8 @@ export function MapScreen() {
         locationLabel={loc.label}
         severityOf={severityOf}
         isLoading={incidentsQ.isLoading}
-        // Independent feeds: the incident feed (NIFC/Cal Fire) and the FIRMS
-        // satellite feed fail separately, so the rail surfaces each on its own —
-        // one being down still shows the other (the map layers are independent
-        // too). Only both-down reads as a full fire-data outage.
+        // The two feeds fail separately. One being down still leaves the
+        // other worth showing. Only losing both counts as an outage.
         incidentsError={incidentsQ.isError}
         satellitesError={firesQ.isError}
         onRetry={() => {
@@ -357,14 +323,12 @@ export function MapScreen() {
   );
 }
 
-// Standard web-Mercator resolution at zoom 0 (meters per pixel at the equator).
-// Same constant `L.Control.Scale` uses internally.
+// Meters per pixel at the equator, fully zoomed out. Leaflet's own scale control
+// uses the same number.
 const MERCATOR_RES_Z0 = 156543.03392;
 const METERS_PER_MILE = 1609.344;
 
-/** Pick a "nice" round value for a scale bar — 1/2/5 × power-of-10. Aiming
- *  for ~80px-wide bar on screen, then return the actual chosen tick and the
- *  pixel width it'll occupy at the current zoom + latitude. */
+/** A round number for the scale bar, aiming for about 80 pixels wide. */
 function computeScale(
   lat: number,
   zoom: number,
@@ -376,8 +340,7 @@ function computeScale(
   const targetPx = 80;
   const targetUnits = (targetPx * metersPerPx) / unitMeters;
 
-  // 1/2/5 × 10^n ticks across a wide range so we work from neighborhood
-  // (~0.05 mi) to continent (~2500 mi) zoom levels.
+  // Enough ticks to cover everything from a street to a continent.
   const ticks = [
     0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000,
   ];

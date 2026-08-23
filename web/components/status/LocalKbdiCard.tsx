@@ -1,8 +1,6 @@
 'use client';
 
-// "Your area today" — real KBDI (Keetch-Byram Drought Index, 0–800).
-// Premium chrome: TiltCard + corner glow + GridPattern + 4-segment gauge
-// with current marker, matching the Score Breakdown row visually.
+// The drought card. Real KBDI where the user is, on a four-band gauge.
 
 import { LevelPill } from '@/components/status/LevelPill';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
@@ -18,9 +16,8 @@ interface Bucket {
   rgb: string;
 }
 
-/** Standard KBDI buckets (Keetch & Byram 1968). Single source of truth —
- *  `kbdiBucket()` looks up by raw value (0–800), `KbdiBar` derives the same
- *  segments from this same array so threshold + color drift is impossible. */
+/** The standard KBDI bands, from Keetch and Byram. Both the lookup and the bar
+ *  read from this, so their thresholds and colors can't drift apart. */
 export const KBDI_BUCKETS: ReadonlyArray<Bucket & { until: number }> = [
   { until: 200, label: 'Moist',    color: '#7ee787', rgb: '126, 231, 135' },
   { until: 400, label: 'Dry',      color: '#fbbf24', rgb: '251, 191, 36'  },
@@ -185,18 +182,16 @@ export function LocalKbdiCard({
                 background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
-            {/* Gauge tier-label row skeleton — the loaded KbdiBar draws a row of
-             *  band labels under the bar, so without this the card grows a row
-             *  taller when the data lands. */}
+            {/* The real bar has labels under it, so without these the card grows a
+                row taller when the data lands. */}
             <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ height: 9, width: 44, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
               <div style={{ height: 9, width: 38, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
               <div style={{ height: 9, width: 56, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
               <div style={{ height: 9, width: 60, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
             </div>
-            {/* Caption skeleton — mirrors the two-line description footprint
-             *  (incl. its top divider) so the text doesn't flash in fully
-             *  while the number + bar are still loading. */}
+            {/* Same shape as the caption, divider included, so it doesn't flash in
+                while the number is still loading. */}
             <div
               style={{
                 margin: '20px 0 0',
@@ -242,9 +237,7 @@ export function LocalKbdiCard({
   );
 }
 
-/** 4-segment KBDI gauge with marker dot at the current value. Segments are
- *  derived from the shared KBDI_BUCKETS constant so labels + colors stay in
- *  lockstep with kbdiBucket(). */
+/** The gauge, with a dot at the current value, segmented by the same bands. */
 function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; value: number }) {
   const max = KBDI_BUCKETS[KBDI_BUCKETS.length - 1].until;
   const pct = Math.min(1, Math.max(0, value / max));
@@ -254,8 +247,7 @@ function KbdiBar({ ae, value }: { ae: ReturnType<typeof useAesthetic>['ae']; val
     lbl: b.label,
   }));
 
-  // Marker color = the segment the current value sits in. Compute once;
-  // re-used for both the border and box-shadow below.
+  // The dot takes the color of the band it sits in.
   const markerColor =
     segments.find((s, i) => pct >= (i === 0 ? 0 : segments[i - 1].until) && pct < s.until)?.color
     ?? segments[segments.length - 1].color;

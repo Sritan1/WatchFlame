@@ -1,16 +1,8 @@
 'use client';
 
-// Horizontal arc gauge — 4 risk zones laid side-by-side, with a marker
-// triangle indicating the current score's position.
-// Each zone's width = (next_threshold - prev_threshold). Marker x = score.
-//
-// Per api/core/regional_calibration.py, the four bucket boundaries are
-//   LOW < thresholds.low           (50th percentile)
-//   MODERATE < thresholds.moderate (75th)
-//   HIGH < thresholds.extreme      (97th — *not* thresholds.high which is 90th)
-//   EXTREME ≥ thresholds.extreme
-// thresholds.high (90th) is informational only; mobile ScoreGauge has the
-// same note. Don't mix it into the boundary math.
+// The four tier zones side by side with a marker at the current score. Each zone is
+// as wide as the gap between its thresholds. The high threshold is informational and
+// never a boundary. Don't let it into the math here.
 
 import { useAesthetic } from '@/lib/aesthetic';
 import { getRisk, hexToRgb, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
@@ -22,8 +14,7 @@ interface Zone {
   label: string;
 }
 
-/** Fire-weather global defaults from api/core/risk_algorithm.py._bucket — used when
- *  the user isn't in a fitted state and the backend returns null thresholds. */
+/** The global cutoffs, for when the user isn't in a fitted state. */
 export const GLOBAL_THRESHOLDS = { low: 0.3, moderate: 0.6, extreme: 0.8 } as const;
 
 export function ScoreGauge({
@@ -55,15 +46,14 @@ export function ScoreGauge({
 
   const markerX = pad + Math.min(1, Math.max(0, score)) * innerW;
 
-  // Which band the score lands in — for the text alternative. Mirrors the
-  // boundary math above (LOW < low, MOD < moderate, HIGH < extreme, else EXT).
+  // Which band it lands in, for the screen-reader label.
   const activeZone =
     zones.find((z) => score < z.until) ?? zones[zones.length - 1];
 
   return (
     <div style={{ position: 'relative', width: W, maxWidth: '100%', height: H, margin: '0 auto' }}>
-      {/* role="img" + aria-label collapses the SVG's loose LOW/MOD/HIGH/EXT/SCORE
-          text fragments into one meaningful announcement for screen readers. */}
+      {/* The role and label collapse the SVG's loose text fragments into one
+          meaningful announcement for screen readers. */}
       <svg
         width="100%"
         height={H}

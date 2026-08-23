@@ -2,8 +2,7 @@
 
 import { useId } from 'react';
 
-/** Faint grid pattern overlay — for "technical/measured" feel on featured
- *  cards (active-incident dashboard, score panels). */
+/** Faint grid overlay, giving featured cards a measured, technical texture. */
 export function GridPattern({
   opacity = 0.04,
   color = '#fff',
@@ -11,10 +10,9 @@ export function GridPattern({
   opacity?: number;
   color?: string;
 }) {
-  // Unique per instance: many GridPatterns mount on one page with different
-  // opacities, and a shared id would make every url(#…) resolve to the first
-  // one document-wide. Strip the colons useId() emits so the id is safe inside
-  // a url(#…) reference.
+  // Per-instance, because many of these mount on one page at different opacities and
+  // a shared id resolves document-wide to the first. Strip the colons useId emits,
+  // they're invalid inside a url() reference.
   const id = `grid-${useId().replace(/:/g, '')}`;
   return (
     <svg
