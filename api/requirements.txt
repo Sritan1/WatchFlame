@@ -15,7 +15,7 @@ geojson>=3.1
 # which needs pandas, numpy and a joblib'd scikit-learn model.
 pandas>=2.2.4
 numpy>=2.2
-scikit-learn>=1.5
+scikit-learn>=1.9.0
 joblib>=1.4
 
 # Floors for transitive deps pip-audit flagged. Starlette is FastAPI's ASGI core.
