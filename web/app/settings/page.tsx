@@ -1,4 +1,4 @@
-// Settings route — preferences + safety disclaimer.
+// Preferences and the safety disclaimer.
 
 import { Shell } from '@/components/Shell';
 import { SettingsScreen } from '@/components/settings/SettingsScreen';

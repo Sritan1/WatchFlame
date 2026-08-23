@@ -1,18 +1,8 @@
 'use client';
 
-// Wildfire Intelligence — the three "brain" cards of the Status screen,
-// art-directed as the visual centerpiece. Translated from the reference design
-// (web-hero-systems.jsx) into the app's real primitives + live data:
-//   • HeroScoreCard  — Fire Weather / Active Fire Threat, a 270° instrument gauge
-//                      with a calibrated zone arc + readout (real risk_score /
-//                      threat signal + regional zone boundaries).
-//   • IgnitionCoreCard — the ML "intelligence core": orbiting neural rings, a
-//                      predictive distribution curve, and a HUD readout, driven
-//                      by the /ignition model output.
-//   • IntelligenceSystem — wraps all three in one shared atmospheric stage.
-//
-// Everything preserves the underlying data; only the presentation is elevated.
-// Loading + failed/unavailable states are handled per card.
+// The three instrument cards at the heart of Status. Two gauges with zone arcs from
+// the user's own calibration, and the ignition model with its rings and distribution
+// curve. Real numbers, dressed-up presentation, each card handles its own failure.
 
 import { useId, useMemo, useState } from 'react';
 
@@ -37,10 +27,8 @@ import {
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
-// Per design, MODERATE is the base visual theme: a card reading `low` or `none`
-// still renders with the moderate (amber) chrome rather than green / grey. Only
-// the small level chip + the active zone label reflect the true tier (so LOW
-// still reads green there). High + extreme pass through unchanged.
+// Amber is the base, so a calm card still looks warm and not green or grey. The
+// level chip and zone label carry the real tier, where LOW still shows green.
 function chromeBucketOf(bucket: RiskLevel | null): RiskLevel {
   return bucket && bucket !== 'low' ? bucket : 'moderate';
 }
@@ -52,7 +40,7 @@ const LEVEL_LABEL: Record<RiskLevel, string> = {
   extreme: 'EXTREME',
 };
 
-// Glossy nucleus highlight per level (keeps the "molten core" look across tiers).
+// The highlight on the core, per tier, so it stays molten-looking throughout.
 const CORE_HIGHLIGHT: Record<RiskLevel, string> = {
   low: '#86E6B8',
   moderate: '#FFD66B',
@@ -70,11 +58,9 @@ function ordinalSuffix(n: number): string {
   return (['th', 'st', 'nd', 'rd'][v % 10] as string) || 'th';
 }
 
-// ── geometry helpers (deg: 0 = top, clockwise positive) ──────────────────────
-// Round trig outputs so the server (x86 Node) and client (e.g. an ARM phone)
-// stringify SVG coordinate attributes identically. Math.sin/cos aren't
-// bit-identical across CPU architectures, so unrounded tick/endpoint coords
-// otherwise trip a hydration mismatch on the gauge. Same technique as HeroOrb.
+// Geometry, with zero degrees at the top. Results are rounded because sin and cos
+// aren't bit-identical across chips, and a phone disagreeing with the server on the
+// last decimal of every tick is a hydration mismatch.
 const hsRound = (n: number): number => Math.round(n * 1000) / 1000;
 function hsPolar(cx: number, cy: number, r: number, deg: number): [number, number] {
   const t = (deg * Math.PI) / 180;
@@ -87,7 +73,7 @@ function hsArc(cx: number, cy: number, r: number, a0: number, a1: number): strin
   return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
 }
 
-// ── shared cinematic chrome ──────────────────────────────────────────────────
+// Chrome the three cards share.
 function HsBeam({ color }: { color: string }) {
   return (
     <div
@@ -129,10 +115,8 @@ function HsAtmosphere({ glow }: { glow: string }) {
           background: `radial-gradient(120% 80% at 50% -10%, rgba(${glow}, 0.16), transparent 60%), radial-gradient(90% 60% at 110% 120%, rgba(${glow}, 0.10), transparent 60%)`,
         }}
       />
-      {/* These soft glow blobs are FROZEN (no drift animation): an animated
-          blur(60px) forces the browser to re-rasterize the entire blur every
-          frame, whereas a static one is rasterized once and cached. A still glow
-          is visually identical to a slowly-drifting one at any given instant. */}
+      {/* These glow blobs are frozen. An animated blur re-rasterizes every frame
+          where a static one is cached, and at any instant the two look identical. */}
       <div
         style={{
           position: 'absolute',
@@ -203,7 +187,7 @@ function HsToneChip({ ae, color, glow, label, dot = true }: { ae: Ae; color: str
   );
 }
 
-// ── HsRiskGauge — 270° instrument gauge with calibrated zone arc + readout ────
+// The gauge, with its zone arc and readout.
 type Zone = { to: number; color: string; lbl: string };
 
 function HsRiskGauge({
@@ -252,16 +236,14 @@ function HsRiskGauge({
     );
   }
 
-  // Each zone arc runs from the previous zone's `to` (0 for the first) to its
-  // own — derived from the index rather than a mutable accumulator (matches the
-  // zone-meter pattern below and avoids reassigning across the render).
+  // Each arc starts where the previous ended, taken from the index. A running total
+  // would be reassigned mid-render.
   const segs = zones.map((z, i) => ({
     d: hsArc(cx, cy, r, deg(i === 0 ? 0 : zones[i - 1].to), deg(z.to)),
     c: z.color,
   }));
   const activeArc = hsArc(cx, cy, r, A0, scoreDeg);
-  // Per-instance gradient id (colons stripped for url() safety) so the two
-  // gauges on the page never resolve each other's gradient via a shared id.
+  // Its own gradient id, or the two gauges borrow each other's.
   const gid = `hs-g-${gaugeId.replace(/:/g, '')}`;
 
   return (
@@ -361,7 +343,7 @@ function HsRiskGauge({
   );
 }
 
-// ── HeroScoreCard — Fire Weather / Active Fire Threat ────────────────────────
+// The two score cards.
 export function HeroScoreCard({
   label,
   icon,
@@ -385,17 +367,15 @@ export function HeroScoreCard({
   caption: string;
   emptyText?: string;
   isLoading?: boolean;
-  /** When set, renders a "How it's calculated" button that navigates here. */
+  /** Where the "How it's calculated" button goes, if there is one. */
   howCalculatedHref?: string;
-  /** When both are set, renders a "Calibrated for <state>" trigger that opens
-   *  the calibration modal — placed here (next to the fire-weather score it
-   *  describes) rather than by the composite headline, where it misleadingly
-   *  read as explaining the composite tier. */
+  /** Together these add the "Calibrated for" trigger. It belongs beside the score it
+   *  describes. Up by the headline it looked like it explained the whole tier. */
   calibrationLabel?: string;
   onCalibration?: () => void;
 }) {
   const { ae, accent } = useAesthetic();
-  // Chrome floors to moderate (amber base); the chip shows the true tier.
+  // The card stays amber, the chip carries the real tier.
   const palette = paletteFor(chromeBucketOf(bucket), accent);
   const chipTone = bucket ? paletteFor(bucket, accent) : null;
   const hasScore = !isLoading && score != null;
@@ -456,7 +436,7 @@ export function HeroScoreCard({
           ) : null}
         </div>
 
-        {/* body: gauge + readout */}
+        {/* gauge and readout */}
         <div className="app-stack" style={{ flex: 1, marginTop: 10, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 22, alignItems: 'center' }}>
           <HsRiskGauge
             ae={ae}
@@ -597,7 +577,7 @@ export function HeroScoreCard({
   );
 }
 
-// ── HsAICore — orbiting neural rings + glowing nucleus ───────────────────────
+// The orbiting rings and the core they circle.
 function HsAICore({
   ae,
   value,
@@ -619,8 +599,7 @@ function HsAICore({
 }) {
   const size = 300;
   const c = size / 2;
-  // Revolution period (s) per orbit — slow enough to be graceful, fast enough to
-  // still read as circling.
+  // Slow, but not so slow the rings look still.
   const orbits = [
     { r: 124, n: 7, speed: 28, dir: 1, dot: 2.4 },
     { r: 92, n: 5, speed: 21, dir: -1, dot: 2.0 },
@@ -692,8 +671,7 @@ function HsAICore({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          // Orb scale ("getting bigger") frozen per request; the halo/aura
-          // behind it keeps pulsing (hs-halopulse).
+          // The orb doesn't swell. Only the halo pulses.
           overflow: 'hidden',
         }}
       >
@@ -732,10 +710,9 @@ function HsAICore({
   );
 }
 
-// ── HsDistribution — predictive density curve with TODAY marker ──────────────
+// The distribution curve, with today marked on it.
 function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; tone: RiskTone; highlight: string }) {
-  // Per-instance gradient ids (colons stripped for url() safety) so a second
-  // distribution on the page can't collapse to this one's fills via shared ids.
+  // Its own gradient ids, or a second curve would borrow this one's fills.
   const gp = useId().replace(/:/g, '');
   const areaId = `hs-dist-area-${gp}`;
   const cumId = `hs-dist-cum-${gp}`;
@@ -812,7 +789,7 @@ function HsDistribution({ ae, pct, tone, highlight }: { ae: Ae; pct: number; ton
   );
 }
 
-// ── IgnitionCoreCard — the ML intelligence core ──────────────────────────────
+// The ignition card.
 export function IgnitionCoreCard({
   data,
   isLoading = false,
@@ -827,8 +804,7 @@ export function IgnitionCoreCard({
   const { ae } = useAesthetic();
   const [infoOpen, setInfoOpen] = useState(false);
 
-  // Failed / unavailable — neutral-slate error (never a tinted risk verdict),
-  // matching the rest of the app + the prior IgnitionCard behavior.
+  // Grey when it fails. A failure must never look like a risk verdict.
   if (isError || data === null) {
     return (
       <DataErrorState
@@ -841,9 +817,9 @@ export function IgnitionCoreCard({
 
   const loading = isLoading || data === undefined;
   const level: RiskLevel = data ? data.level : 'moderate';
-  const chromeLevel = chromeBucketOf(level); // floor low → moderate for the chrome
-  const tone = RISK_LEVELS[chromeLevel]; // card + core (amber base)
-  const trueTone = RISK_LEVELS[level]; // true tier → band chip + assessment
+  const chromeLevel = chromeBucketOf(level);
+  const tone = RISK_LEVELS[chromeLevel]; // the card and the core
+  const trueTone = RISK_LEVELS[level]; // the chip and the assessment
   const highlight = CORE_HIGHLIGHT[chromeLevel];
   const pctNum = data ? data.percentile : 0;
   const band = LEVEL_LABEL[level];
@@ -951,7 +927,7 @@ export function IgnitionCoreCard({
           </div>
         </div>
 
-        {/* main: core + distribution */}
+        {/* core and distribution */}
         <div className="app-stack" style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'minmax(260px, 320px) 1fr', gap: 30, alignItems: 'center' }}>
           <HsAICore ae={ae} value={pctNum} suffix={ordinalSuffix(pctNum)} tone={tone} highlight={highlight} band={band} bandTone={trueTone} loading={loading} />
 
@@ -962,8 +938,7 @@ export function IgnitionCoreCard({
               </span>
             </div>
             {loading ? (
-              // Match the distribution graph's footprint (560×188) so there's no
-              // layout shift when the real curve replaces it.
+              // Exactly the size of the real curve, so nothing shifts on arrival.
               <div style={{ width: '100%', aspectRatio: '560 / 188' }}>
                 <Skeleton width="100%" height={188} rounded="md" style={{ width: '100%', height: '100%', display: 'block' }} />
               </div>
@@ -983,7 +958,7 @@ export function IgnitionCoreCard({
   );
 }
 
-// ── HsSystemField — one shared atmosphere flowing behind all three modules ───
+// One atmosphere behind all three.
 function HsSystemField({ tone, leftTone, rightTone }: { tone: RiskTone; leftTone: RiskTone; rightTone: RiskTone }) {
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, borderRadius: 'inherit', overflow: 'hidden', pointerEvents: 'none' }}>
@@ -994,8 +969,7 @@ function HsSystemField({ tone, leftTone, rightTone }: { tone: RiskTone; leftTone
           background: `radial-gradient(55% 46% at 20% 8%, rgba(${leftTone.glow}, 0.15), transparent 62%), radial-gradient(55% 46% at 80% 8%, rgba(${rightTone.glow}, 0.15), transparent 62%), radial-gradient(60% 52% at 50% 100%, rgba(${tone.glow}, 0.16), transparent 62%), radial-gradient(52% 42% at 50% 50%, rgba(${tone.glow}, 0.08), transparent 66%), linear-gradient(180deg, rgba(10,8,6,0), rgba(7,9,13,0.30))`,
         }}
       />
-      {/* Frozen (no drift) — same reasoning as the per-card blobs: a static
-          blur(80px) is rasterized once instead of re-blurred every frame. */}
+      {/* Frozen, for the same reason as the per-card blobs. */}
       <div style={{ position: 'absolute', bottom: '-22%', left: '28%', width: '48%', height: '74%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${tone.glow}, 0.16), transparent 70%)` }} />
       <div style={{ position: 'absolute', top: '-26%', left: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${leftTone.glow}, 0.14), transparent 70%)` }} />
       <div style={{ position: 'absolute', top: '-26%', right: '0%', width: '36%', height: '72%', borderRadius: '50%', filter: 'blur(80px)', background: `radial-gradient(circle, rgba(${rightTone.glow}, 0.14), transparent 70%)` }} />
@@ -1005,7 +979,7 @@ function HsSystemField({ tone, leftTone, rightTone }: { tone: RiskTone; leftTone
   );
 }
 
-// ── IntelligenceSystem — the three modules unified into one cinematic stage ──
+// The three of them on one stage.
 export function IntelligenceSystem({
   ae,
   fireWeather,
@@ -1037,8 +1011,7 @@ export function IntelligenceSystem({
   ignition: { data: IgnitionResponse | null | undefined; isLoading: boolean; isError: boolean; onRetry?: () => void };
 }) {
   const { accent } = useAesthetic();
-  // Shared-field tones floor to moderate too, so low / none read as the moderate
-  // (amber) base rather than green / grey.
+  // The shared backdrop floors to amber as well, for the same reason.
   const fwPal = paletteFor(chromeBucketOf(fireWeather.bucket), accent);
   const thPal = paletteFor(chromeBucketOf(threat.bucket), accent);
   const coreTone = RISK_LEVELS[chromeBucketOf(ignition.data ? ignition.data.level : null)];

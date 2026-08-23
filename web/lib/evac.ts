@@ -1,14 +1,6 @@
-// Away-from-fire destination resolution for the Safety EvacuationCard.
-//
-// The naive route is a point `distMi` straight opposite the fire. Near a coast
-// that can land in open water (Google Maps can't route there), so we resolve a
-// sensible destination through a fallback chain, using the coarse land check in
-// landmask.ts:
-//   1. primary   — the straight-away point, if it's on land
-//   2. rotated   — the point at ±arc° of the away bearing, if on land
-//   3. shelter   — the nearest shelter whose bearing is within ±arc° of "away"
-//                  (so we never send someone toward the fire)
-//   4. direction — nothing routable: show a heading only, no drive-to point
+// Where "away from the fire" actually points, for the Safety card. Straight opposite
+// is obvious but on a coast lands you in the ocean, so it falls back through
+// swung-aside points, a shelter in that arc, then a bare heading. Never at the fire.
 
 import type { LatLon, Shelter } from '@/lib/api';
 import { bearingTo } from '@/lib/composite-risk';
@@ -20,9 +12,9 @@ export type EvacResolution =
   | { kind: 'shelter'; bearing: number; dest: LatLon; shelter: Shelter }
   | { kind: 'direction'; bearing: number };
 
-/** Destination lat/lon `distMi` from `origin` along `bearingDeg` (great-circle). */
+/** The point that far from the origin along that bearing. */
 export function destPoint(origin: LatLon, bearingDeg: number, distMi: number): LatLon {
-  const R = 3958.8; // Earth radius, miles
+  const R = 3958.8; // earth radius in miles
   const d = distMi / R;
   const t = (bearingDeg * Math.PI) / 180;
   const p1 = (origin.lat * Math.PI) / 180;
@@ -33,15 +25,14 @@ export function destPoint(origin: LatLon, bearingDeg: number, distMi: number): L
   return { lat: (p2 * 180) / Math.PI, lon: (l2 * 180) / Math.PI };
 }
 
-/** Smallest absolute difference between two bearings, 0..180. */
+/** Smallest angle between two bearings, 0 to 180. */
 function angleDiff(a: number, b: number): number {
   const d = Math.abs(a - b) % 360;
   return d > 180 ? 360 - d : d;
 }
 
-/** Resolve the away-from-fire destination, avoiding open water. `escapeBearing`
- *  is the direction to flee (opposite the fire). `shelters` may be undefined
- *  while loading — the caller distinguishes that from a real 'direction' result. */
+/** Pick somewhere to go, keeping off the water. shelters can be undefined while
+ *  they load, which the caller reads differently from a real 'direction' answer. */
 export function resolveEvacDestination(
   origin: LatLon,
   escapeBearing: number,
@@ -49,14 +40,12 @@ export function resolveEvacDestination(
   shelters: Shelter[] | undefined,
   arcDeg = 60,
 ): EvacResolution {
-  // 1. straight away from the fire
   const primary = destPoint(origin, escapeBearing, distMi);
   if (isOnLand(primary.lat, primary.lon)) {
     return { kind: 'primary', bearing: escapeBearing, dest: primary };
   }
 
-  // 2. rotate ±arc° (check +arc, then -arc; first on land wins — both are
-  //    equally "away", so order is arbitrary per the design)
+  // Swing either side of it. Both count as away, so first on land wins.
   for (const rot of [arcDeg, -arcDeg]) {
     const bearing = (escapeBearing + rot + 360) % 360;
     const dest = destPoint(origin, bearing, distMi);
@@ -65,7 +54,7 @@ export function resolveEvacDestination(
     }
   }
 
-  // 3. nearest shelter within the ±arc° "away" arc (never toward the fire)
+  // Nearest shelter that still sits within the away arc.
   const shelter = (shelters ?? [])
     .filter(
       (s) => angleDiff(bearingTo(origin, { lat: s.lat, lon: s.lon }), escapeBearing) <= arcDeg,
@@ -76,6 +65,6 @@ export function resolveEvacDestination(
     return { kind: 'shelter', bearing: bearingTo(origin, dest), dest, shelter };
   }
 
-  // 4. nothing routable
+  // Nowhere to send them, so hand back a heading and nothing else.
   return { kind: 'direction', bearing: escapeBearing };
 }

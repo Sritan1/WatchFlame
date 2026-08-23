@@ -1,29 +1,9 @@
-"""Copernicus Data Space Ecosystem (CDSE) — Sentinel Hub Statistical API client.
+"""Sentinel-2 vegetation readings from ESA's free Copernicus portal.
 
-CDSE is ESA's free Sentinel-2 portal; it runs the Sentinel Hub APIs licensed
-from Sinergise, so the request shape matches the Sentinel Hub docs exactly.
-Only the base URL differs from a paid Sentinel Hub account.
-
-We use the **Statistical API** (`/api/v1/statistics`) rather than the Process
-API because we want a single aggregate number (mean NDVI over a 1 km bbox)
-rather than a raster — Statistical API returns JSON with per-band stats,
-no binary image parsing needed.
-
-Two public fetchers:
-  - fetch_ndvi_current(lat, lon)         → mean NDVI over the last ~16d
-  - fetch_ndvi_climatology(lat, lon, m, years=None) → mean NDVI for
-                                           calendar month m, averaged across
-                                           the given years (default 2018–2025)
-
-The live /risk path uses a 3-year climatology window (2023–2025) via the
-cache wrapper in services/ndvi_cache.py — keeps cold-cache latency
-manageable (3 CDSE calls vs. 8, each gated by the 2.5s rate-limit throttle).
-The full 8-year default is reserved for the one-time regional re-calibration
-job which can take its time. Both return a float in [-1, 1], or None if no
-usable observations land in the requested window (heavy cloud cover, etc.).
-Callers fall back to season_mult in that case.
-
-Auth: OAuth2 client_credentials. Token is cached in-process until expiry.
+Copernicus runs the Sentinel Hub APIs under license, so requests match those docs
+and only the base URL differs. Uses the Statistical API, not Process, for one average
+NDVI over a square kilometre instead of a raster. Both fetchers return -1 to 1, or
+None when clouds left nothing usable.
 """
 
 from __future__ import annotations
@@ -39,41 +19,29 @@ import httpx
 _AUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 _STATISTICS_URL_PATH = "/api/v1/statistics"
 
-# CDSE free tier throttles aggressively. Observed: ~36 sustained 1.2s-spaced
-# calls before 429s start hitting, suggesting a per-minute bucket tighter
-# than 1 req/sec. 2.5s minimum interval (~24 req/min) seems to stay clear.
-# Tunable via env if a paid plan or trial relaxes the limit.
+# The free tier throttles hard. About 36 calls spaced 1.2s apart before the 429s
+# start, so the real budget is under one a second. 2.5s stays clear of it.
 _MIN_REQUEST_INTERVAL_S = float(os.getenv("CDSE_MIN_REQUEST_INTERVAL_S", "2.5"))
 _MAX_RETRIES_429 = int(os.getenv("CDSE_MAX_RETRIES_429", "4"))
 
-# Print one line per statistics POST so long climatology runs are visibly
-# progressing (otherwise a minute of silence looks like a hang).
+# A line per request, so a long climatology run doesn't look like a hang.
 _VERBOSE = os.getenv("CDSE_VERBOSE", "0") == "1"
 
-# 1 km buffer (~0.009° at the equator; widens slightly with latitude but
-# good enough at GPS accuracy). Bbox is a square centered on lat/lon.
+# Half-width of the square we sample, about a kilometre. It stretches a little
+# toward the poles, which is fine at GPS accuracy.
 _BBOX_HALF_DEG = 0.009
 
-# Spatial resolution for the aggregation, expressed in DEGREES because we
-# use CRS84 (lat/lon). 0.0009° ≈ 100 m at the equator, giving ~20x20 pixels
-# per 2 km bbox — fine enough for vegetation aggregation, cheap on PUs.
-# (Sentinel Hub interprets resx/resy in the CRS's units; meters only for
-# projected CRSs like EPSG:3857.)
+# Sampling resolution in degrees, roughly 100m, so about 20 by 20 pixels across the
+# box. Sentinel Hub only reads this as meters for projected coordinates.
 _RES_DEG = 0.0009
 
-# Climatology window — Sentinel-2 ran with only one satellite until 2017,
-# so 2018+ gives consistent two-satellite revisits.
+# Sentinel-2 flew with one satellite until 2017, so start at 2018 for consistent
+# revisit times.
 _CLIMATOLOGY_YEARS = list(range(2018, 2026))
 
-# Evalscript: emit NDVI plus a dataMask so cloudy / saturated / shadow
-# pixels are excluded from the Statistical API's mean. Sen2Cor SCL classes:
-#   4 vegetation, 5 bare soil, 6 water, 7 unclassified  → trust
-#   3 cloud shadow, 8/9 clouds, 10 thin cirrus, 11 snow → mask out
-#
-# Single input group (shorthand list of band names) — using the multi-group
-# object form would require matching each group to a data source via id,
-# which we don't need here. Defaults per-band: B04/B08 = REFLECTANCE,
-# SCL = DN classification.
+# Runs on their servers, returning NDVI plus a mask. The trusted scene classes are
+# vegetation, bare soil, water and unclassified, so cloud, shadow, cirrus and snow
+# stay out of the average.
 _EVALSCRIPT = """
 //VERSION=3
 function setup() {
@@ -98,13 +66,10 @@ function evaluatePixel(s) {
 """
 
 
-# ---- OAuth ------------------------------------------------------------------
-
 _token_cache: dict[str, float | str] = {"token": "", "expires_at": 0.0}
 _token_lock = asyncio.Lock()
 
-# Rate-limit gate: serializes statistics requests across coroutines and
-# enforces a minimum gap between consecutive POSTs.
+# Lines the requests up one at a time and keeps a gap between them.
 _request_lock = asyncio.Lock()
 _last_request_at: float = 0.0
 
@@ -128,13 +93,11 @@ def _client_secret() -> str:
 
 
 async def _get_token() -> str | None:
-    """Fetch + cache an OAuth access token. Refreshes 60s before expiry.
+    """Get an access token, cached and renewed a minute before it expires.
 
-    Returns None (rather than raising) on ANY auth failure — missing
-    credentials, an identity-server outage, a 401, or a timeout. NDVI is an
-    optional signal: an auth failure must degrade to "no NDVI" (the caller
-    falls back to the season multiplier) instead of bubbling a 500 out of
-    /risk and /trajectory and taking Status/Safety down with it."""
+    Any auth trouble returns None instead of raising. Vegetation is optional, so
+    losing it costs the season multiplier rather than 500-ing Status and Safety.
+    """
     now = time.time()
     cached = _token_cache.get("token")
     expires_at = _token_cache.get("expires_at", 0.0)
@@ -160,13 +123,11 @@ async def _get_token() -> str | None:
                 )
                 resp.raise_for_status()
                 body = resp.json()
-            # Parse inside the guard: a 200 with an unexpected shape (e.g. an
-            # OAuth error object {"error": ...} some gateways return with 200,
-            # or a non-numeric expires_in) must degrade to None like any other
-            # auth failure, not raise KeyError/ValueError up into /trajectory.
+            # Parse in here too. Some gateways hand back an error object
+            # with a 200.
             token = body["access_token"]
             expires_in = float(body.get("expires_in", 3600))
-        except Exception as e:  # noqa: BLE001 - any auth failure must degrade, never crash /risk
+        except Exception as e:  # noqa: BLE001 - losing auth must never crash /risk
             status = getattr(getattr(e, "response", None), "status_code", "n/a")
             print(f"[cdse] token/auth fetch failed ({status}, {type(e).__name__}); returning None")
             return None
@@ -174,9 +135,6 @@ async def _get_token() -> str | None:
         _token_cache["token"] = token
         _token_cache["expires_at"] = time.time() + expires_in
         return str(token)
-
-
-# ---- Statistical API --------------------------------------------------------
 
 
 def _bbox(lat: float, lon: float) -> list[float]:
@@ -236,14 +194,10 @@ async def _wait_for_slot() -> None:
 
 
 async def _post_statistics(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """POST a Statistical API request and return the parsed JSON, or None
-    on upstream failure. Throttles via _wait_for_slot and retries on 429
-    with exponential backoff. Non-429 errors are logged once and return
-    None."""
+    """Send a statistics request, or None on failure. Waits its turn and backs off
+    when throttled."""
     token = await _get_token()
     if token is None:
-        # Auth is down (or unconfigured). Degrade to "no NDVI" — the /risk and
-        # /trajectory callers fall back to the season multiplier rather than 500.
         return None
     headers = {
         "Authorization": f"Bearer {token}",
@@ -264,8 +218,7 @@ async def _post_statistics(payload: dict[str, Any]) -> dict[str, Any] | None:
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if status == 429 and attempt < _MAX_RETRIES_429:
-                # Exponential backoff: 2s, 4s, 8s, 16s. Honors Retry-After
-                # header if upstream sends one.
+                # Exponential, or whatever Retry-After asks for.
                 retry_after = e.response.headers.get("Retry-After")
                 try:
                     delay = float(retry_after) if retry_after else 2.0 * (2 ** attempt)
@@ -287,12 +240,8 @@ async def _post_statistics(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _extract_mean(stats_json: dict[str, Any]) -> float | None:
-    """Pull the single overall mean NDVI from a Statistical API response.
-
-    Multiple intervals may exist when the caller requested year-by-year
-    aggregation. We average their means weighted by sampleCount so
-    months with more usable observations contribute more.
-    """
+    """One mean NDVI out of a statistics response, averaged across intervals by
+    sample count, so months where the satellite saw the ground count more."""
     intervals = stats_json.get("data") or []
     weighted_sum = 0.0
     total_weight = 0
@@ -315,11 +264,8 @@ def _extract_mean(stats_json: dict[str, Any]) -> float | None:
 
 
 async def fetch_ndvi_current(lat: float, lon: float, days: int = 16) -> float | None:
-    """Mean NDVI over the last `days` days for a 1 km bbox around lat/lon.
-
-    16 days is two Sentinel-2 revisits — enough to almost always get at
-    least some cloud-free pixels even in cloudier biomes.
-    """
+    """Recent mean NDVI around a point. The default covers two Sentinel-2 passes,
+    so even a cloudy region usually yields some clear pixels."""
     now = time.time()
     payload = _build_payload(
         lat=lat,
@@ -341,14 +287,8 @@ async def fetch_ndvi_climatology(
     month: int,
     years: list[int] | None = None,
 ) -> float | None:
-    """Mean NDVI for the given calendar month, averaged across the given
-    years (defaults to 2018–2025).
-
-    Issues one Statistical API request per year, then averages by
-    usable-sample weight. Results should be cached aggressively by the
-    caller (climatology only changes monthly). Smoke scripts can pass a
-    shorter window like [2023, 2024, 2025] to keep the test fast.
-    """
+    """What this month normally looks like here, one request per year, weighted by
+    usable samples. Cache it hard, it only moves month to month."""
     if not 1 <= month <= 12:
         raise ValueError(f"month must be 1..12, got {month}")
     years_to_query = years if years is not None else _CLIMATOLOGY_YEARS
@@ -359,11 +299,9 @@ async def fetch_ndvi_climatology(
         end_year = year if month < 12 else year + 1
         from_iso = f"{year}-{month:02d}-01T00:00:00Z"
         to_iso = f"{end_year}-{end_month:02d}-01T00:00:00Z"
-        # The aggregation interval MUST fit within the query window, or the
-        # Statistical API returns zero intervals (no data). Months are 28-31
-        # days, so a hardcoded 31 silently drops every 30-day month (Apr/Jun/
-        # Sep/Nov) and February — manifesting as "vegetation unavailable" for
-        # the whole month. Match the interval to the month's actual length.
+        # The interval has to fit inside the window or nothing comes back. A
+        # hardcoded 31 killed every 30-day month and February, so the whole app
+        # read "vegetation unavailable" for those months.
         window_days = (date(end_year, end_month, 1) - date(year, month, 1)).days
         payload = _build_payload(
             lat=lat,
@@ -376,7 +314,6 @@ async def fetch_ndvi_climatology(
         js = await _post_statistics(payload)
         if js is None:
             continue
-        # Extract the per-year mean + its weight, accumulate.
         intervals = js.get("data") or []
         for interval in intervals:
             try:

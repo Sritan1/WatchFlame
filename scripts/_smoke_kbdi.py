@@ -1,6 +1,6 @@
-"""One-off smoke test: hit Open-Meteo and compute KBDI for diverse cities.
+"""Fetch weather and compute KBDI for a spread of cities, as a sanity check.
 
-Run from project root:  python -m scripts._smoke_kbdi
+Run from the project root with python -m scripts._smoke_kbdi
 """
 import asyncio
 import sys

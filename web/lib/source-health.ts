@@ -1,41 +1,28 @@
 'use client';
 
-// Live per-source health, fed by the `X-Source-Health` response header that
-// the backend attaches to routes which degrade gracefully (see
-// api/core/source_health.py). The api client reports each response's header
-// into this small external store; screens read it through useSourceHealth()
-// and show a "this feed is down" note instead of a misleading empty result.
-//
-// The store starts empty (everything assumed ok) and only fills in after a
-// real backend response arrives. The mock api never sets the header, so the
-// mock-driven dev build shows no false "down" notes.
+// Which upstream feeds are up, read off the X-Source-Health header. Screens use
+// useSourceHealth() to show a "feed is down" note instead of a misleading empty
+// result. Starts empty, so everything is fine until a response says otherwise.
 
 import { useSyncExternalStore } from 'react';
 
 export type SourceStatus = 'ok' | 'down';
 export type SourceHealth = Record<string, SourceStatus>;
 
-// Real per-request reports from the header, each tagged with the time it
-// arrived so a stale `down` can age out (see FRESH_MS).
+// Each report is stamped with its arrival time so an old down can age out.
 type Entry = { status: SourceStatus; ts: number };
 let realState: Record<string, Entry> = {};
-// Referentially-stable snapshot handed to useSyncExternalStore.
+// Kept stable by reference for useSyncExternalStore.
 let snapshot: SourceHealth = {};
 const listeners = new Set<() => void>();
 
-// A `down` with no fresh report within this window is treated as stale and
-// dropped, so a feed that recovered — or that we stopped querying after the
-// user navigated away — does not show a lingering "down" note. The
-// health-reporting queries carry a `refetchInterval` (see HEALTH_REFETCH_MS in
-// queries.ts) so a feed that is genuinely still down keeps re-reporting while
-// its screen is focused, refreshing the timestamp before this elapses. Keep
-// this above every such interval (all <= 15m) or a live down note would flicker
-// off between refetches.
+// An unconfirmed down this old gets dropped, so a recovered feed doesn't leave a
+// note hanging. Keep this above every reporting refetchInterval or the note
+// flickers between refetches.
 const FRESH_MS = 20 * 60_000;
 
-// A single low-frequency timer prunes stale `down` entries so a note can clear
-// even with no further reports or navigation. It only runs while something is
-// mounted AND a `down` exists, and stops itself otherwise (no idle timer).
+// One slow timer clears stale down entries so a note can go away with no further
+// reports. Runs only while something is mounted and down, and stops itself.
 let pruneTimer: ReturnType<typeof setInterval> | null = null;
 
 function anyDown(): boolean {
@@ -95,7 +82,7 @@ function rebuild(): void {
   }
 }
 
-/** Merge a per-request {source: status} map (from the header) into the store. */
+/** Fold one response's {source: status} map into the store. */
 export function reportSourceHealth(partial: SourceHealth): void {
   const now = Date.now();
   let touched = false;
@@ -104,11 +91,11 @@ export function reportSourceHealth(partial: SourceHealth): void {
     if (v !== 'ok' && v !== 'down') continue;
     const prev = realState[k];
     if (!prev || prev.status !== v) touched = true;
-    // Always refresh the timestamp so a still-down feed keeps its note alive.
+    // Refresh the timestamp either way, so a still-down feed keeps its note.
     realState = { ...realState, [k]: { status: v, ts: now } };
   }
   if (touched) rebuild();
-  ensurePruneTimer(); // (re)arm if a `down` is now present
+  ensurePruneTimer(); // arm it if something just went down
 }
 
 function subscribe(l: () => void): () => void {
@@ -124,22 +111,21 @@ function getSnapshot(): SourceHealth {
   return snapshot;
 }
 
-/** Live per-source health map. Empty until the first real backend response. */
+/** The current health map, empty until a real backend response lands. */
 export function useSourceHealth(): SourceHealth {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 const isDown = (h: SourceHealth, k: string): boolean => h[k] === 'down';
 
-// ─── On-screen notes (copy lives here so it stays consistent everywhere) ─────
+// On-screen notes, kept together so the wording stays consistent.
 
-/** Map satellite-detections note (NASA FIRMS). */
+/** Note for the satellite detections on the map. */
 export function firmsNote(h: SourceHealth): string | null {
   return isDown(h, 'firms') ? 'Satellite feed down, fire detections unavailable' : null;
 }
 
-/** Map named-incidents note (NIFC + Cal Fire). Names the down feed and says
- *  which one is still showing. */
+/** Note for the named incidents, saying which feed is out and which is left. */
 export function incidentFeedNote(h: SourceHealth): string | null {
   const nifc = isDown(h, 'nifc');
   const cal = isDown(h, 'calfire');
@@ -149,16 +135,15 @@ export function incidentFeedNote(h: SourceHealth): string | null {
   return null;
 }
 
-/** Safety FEMA-status note. A Census outage means the county can't be
- *  resolved, so FEMA can't be checked either. */
+/** Note for FEMA status on Safety. No Census means no county, and no county means
+ *  nothing to look up at FEMA. */
 export function femaNote(h: SourceHealth): string | null {
   if (isDown(h, 'census')) return "Couldn't confirm your county, FEMA status unavailable";
   if (isDown(h, 'fema')) return 'FEMA status unavailable';
   return null;
 }
 
-/** Safety shelter-sources note. Names the down source(s) and reassures the
- *  rest are still listed. */
+/** Note for the shelter sources, naming what's out and what still shows. */
 export function shelterFeedNote(h: SourceHealth): string | null {
   const names: Record<string, string> = {
     shelters_open: 'Open shelter status',

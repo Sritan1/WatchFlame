@@ -1,23 +1,8 @@
-"""OpenFEMA Disaster Declarations Summary v2 client.
+"""FEMA disaster declarations. Public, free, no key.
 
-Public, free, no key. Returns FEMA-declared disasters (Major Disasters,
-Emergency Declarations, Fire Management Assistance) with one row per
-declaration × designated county.
-
-We use this to surface the "FEMA disaster currently active in your county"
-context bridge between our static potential-shelter layer and the live
-emergency reality. When this banner is on, the Safety screen's static
-shelter list is much more likely to be relevant.
-
-Endpoint:
-  https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries
-
-OData filter syntax. Example:
-  $filter=state eq 'CA' and incidentEndDate eq null
-        &$orderby=declarationDate desc
-
-Note: FEMA returns one record per (disaster, county). A wildfire in three CA
-counties is three rows. We dedupe by disaster number on the client.
+Tells the Safety screen whether a federal declaration is active where the user is,
+which separates "buildings that might open" from an emergency underway. FEMA returns
+a row per disaster and county, so we dedupe by disaster number.
 """
 
 from __future__ import annotations
@@ -38,22 +23,18 @@ OPENFEMA_URL = (
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
-# Short-lived negative cache for transient upstream failures. Separate from
-# _CACHE because a success stores a list, where [] means "genuinely no active
-# declarations" and is trusted for the full TTL. A failure must not be
-# remembered as that empty answer. During an OpenFEMA outage this caps us at one
-# probe per _fail_ttl() window rather than re-querying on every request, while
-# still recovering within a minute. Mirrors the census + FIRMS degraded caches.
+# Failures cached separately, because an empty list here means "nothing declared"
+# and an outage must never be remembered as that.
 _FAIL_CACHE: dict[str, float] = {}
 
 
 def _ttl() -> int:
-    # Disasters change on the order of hours/days. 15-minute cache is plenty.
+    # Declarations move over hours and days, so 15 minutes is plenty.
     return int(os.getenv("OPENFEMA_CACHE_TTL_SECONDS", "900"))
 
 
 def _fail_ttl() -> int:
-    # How long a transient failure suppresses re-hitting the upstream.
+    # How long a failure keeps us from trying again.
     return int(os.getenv("OPENFEMA_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
@@ -71,14 +52,11 @@ class DisasterDeclaration:
 
 
 def _area_matches(area: str, needle: str, is_city: bool) -> bool:
-    """Whether a lowercased FEMA `designatedArea` covers this jurisdiction.
+    """Does this FEMA area cover the jurisdiction we're asking about?
 
-    FEMA tags rows "<Name> (County)" / "(Parish)" / "(Borough)" for counties and
-    "<Name> (City)" for independent cities. A bare substring test matched a
-    county to the like-named independent city (e.g. Fairfax County VA to a
-    "Fairfax (City)" declaration). We require a whole-word name match AND that
-    the designation TYPE agrees, so the two distinct jurisdictions don't
-    cross-match. Rows with no type qualifier fall through to the name match.
+    FEMA writes "Fairfax (County)" and "Fairfax (City)", two different places, and a
+    plain substring test matched one to the other. Name has to match as a whole word
+    and the type has to agree. Rows with no bracketed type match on name alone.
     """
     if not needle or re.search(rf"\b{re.escape(needle)}\b", area) is None:
         return False
@@ -96,12 +74,11 @@ async def fetch_active_for_county(
     county_name: str,
     is_city: bool = False,
 ) -> list[DisasterDeclaration]:
-    """Active or recently-active declarations covering a specific county.
+    """Declarations covering one county, active or recently ended.
 
-    'Active' = incidentEndDate is null. We also include the last 30 days of
-    just-ended events so a freshly-contained fire still surfaces. `is_city`
-    distinguishes an independent city from a like-named county (they are separate
-    FEMA jurisdictions).
+    Active means no end date. The last 30 days of finished events come too, so a
+    fire contained yesterday still shows. Pass `is_city` for an independent city,
+    which FEMA treats as its own jurisdiction.
     """
     if not state or not county_name:
         return []
@@ -112,16 +89,14 @@ async def fetch_active_for_county(
     if cached and now - cached[0] < _ttl():
         return [_to_decl(r) for r in cached[1]]
 
-    # A recent failure for this county? Serve the outage from the negative cache
-    # so we don't re-query a failing endpoint on every request, but still raise
-    # so the route surfaces `down` (never a silent "no declarations").
+    # Raise from here instead of asking again. It has to stay a raise, or the route
+    # reports "nothing declared".
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         raise SourceUnavailable("openfema query failed (cached)")
 
-    # FEMA's designatedArea field includes "(County)" suffix for counties.
-    # Some boroughs / parishes use different suffixes. Match prefix loosely.
-    # Use $filter to scope by state + active end date; filter by county client-side.
+    # Ask FEMA for the state and let it filter on the end date. The county match is
+    # ours, because parishes and boroughs get labeled inconsistently.
     params = {
         "$filter": (
             f"state eq '{state}' and "
@@ -144,14 +119,11 @@ async def fetch_active_for_county(
             resp.raise_for_status()
             payload = resp.json()
     except Exception as e:
-        # Real outage — record a short-lived failure so we probe at most once
-        # per _fail_ttl() instead of re-querying every request, and don't cache
-        # an empty result as if there were genuinely no declarations. Signal
-        # `down` so the route can surface it.
+        # A real outage. Never cache the empty result as "nothing declared".
         _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable("openfema query failed") from e
 
-    # Fetch succeeded — drop any stale failure marker for this county.
+    # Back up, so clear the failure marker.
     _FAIL_CACHE.pop(cache_key, None)
 
     summaries = payload.get("DisasterDeclarationsSummaries", [])
@@ -162,8 +134,8 @@ async def fetch_active_for_county(
     for s in summaries:
         area = (s.get("designatedArea") or "").lower()
         if _area_matches(area, needle, is_city):
-            # disasterNumber can be null/non-numeric on a matched record; skip
-            # rather than raising out of the whole parse loop.
+            # A matched record can still carry a junk disaster number, so skip the
+            # row rather than killing the loop.
             try:
                 num = int(s.get("disasterNumber"))
             except (TypeError, ValueError):

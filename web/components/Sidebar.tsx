@@ -1,7 +1,7 @@
 'use client';
 
-// Floating glass rail — detached 220px sidebar with magnetic active-pill,
-// hover ghost, and ambient glow. Matches the reference's premium aesthetic.
+// The floating rail down the left, with a pill that slides to whatever is
+// active and a ghost that follows the cursor.
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -22,9 +22,8 @@ interface NavItem {
   group?: string;
 }
 
-// Mirrors the mobile app's 4 tabs (Status / Map / Risk / Safety).
-// Group label attaches to the FIRST item in each group, drawn as a header
-// row above the button with a hairline gradient to its right.
+// The group label rides on the first item of each group and draws as a header
+// above it, with a hairline running off to the right.
 const NAV_ITEMS: NavItem[] = [
   { href: '/',       icon: 'grid',   label: 'Status', group: 'Operations' },
   { href: '/map',    icon: 'map',    label: 'Live Map' },
@@ -32,15 +31,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/safety', icon: 'shield', label: 'Safety' },
 ];
 
-// Chrome accent — peach-orange that reads as the brand's signature warmth.
+// The peach the whole app is trimmed in.
 const DEFAULT_ACCENT = '#FFA76A';
 
-// ─── Data Feeds widget ──────────────────────────────────────────────────────
-// The capsule shows the three most fundamental data sources for the CURRENT
-// screen and, on click, opens a popover listing EVERY source that powers that
-// screen (provenance, not live health — the down-state shows contextually on
-// each screen instead). `chip` is the short label in the 3-up grid; `name` +
-// `desc` fill the popover rows.
+// The data-feeds capsule. Names the three main sources behind the current screen
+// and opens a popover listing all of them. Provenance, not health. An outage shows
+// up on the screen it affects.
 type Feed = { chip: string; name: string; desc: string };
 const FEEDS: Record<string, Feed> = {
   firms:     { chip: 'FIRMS',    name: 'NASA FIRMS',    desc: 'Satellite fire detections' },
@@ -64,8 +60,8 @@ const ALL_FEEDS = [
   'fema', 'femanss', 'osm', 'nces', 'maptiler', 'fpafod',
 ];
 
-// Per-screen roster, ordered so the FIRST THREE are the chip's labels and the
-// full list fills the popover. Settings + any unmapped route → the full roster.
+// Ordered so the first three become the chip's labels. Anything unmapped, plus
+// Settings, gets the full roster.
 const SCREEN_FEEDS: Record<string, string[]> = {
   '/':            ['firms', 'nifc', 'owm', 'calfire', 'openmeteo', 'cdse', 'nlcd', 'census'],
   '/map':         ['firms', 'nifc', 'calfire', 'maptiler', 'osm'],
@@ -77,11 +73,9 @@ function feedsForRoute(pathname: string): string[] {
   return SCREEN_FEEDS[pathname] ?? ALL_FEEDS;
 }
 
-// ─── FeedsPopover — anchored glass popover listing all of a screen's sources ──
-// Portaled to <body> so it floats free of the rail's backdrop-filter + overflow
-// clip. Positioned to the right of the card (flips above on a narrow viewport),
-// with a speech-bubble arrow tying it back. Adapted from web-shell.jsx (the
-// per-source latency + the "N live" count are intentionally dropped).
+// The popover itself. Rendered at the top of the document, or the rail's blur and
+// clipping would trap it. Sits right of the card, flipping above on a narrow
+// window.
 function FeedsPopover({
   feeds,
   anchorRef,
@@ -115,9 +109,8 @@ function FeedsPopover({
     const next = flip
       ? { left: r.left, bottom: Math.round(window.innerHeight - r.top + 12), flip: true }
       : { left, bottom: Math.round(window.innerHeight - (r.top + r.height)) - 2, flip: false };
-    // Bail out when the anchor hasn't actually moved (it is fixed to the
-    // sidebar, so scrolling the page recomputes the same values) — this avoids
-    // a re-render on every scroll event.
+    // The anchor is pinned to the sidebar, so scrolling recomputes the same
+    // numbers. Bail out instead of re-rendering on every scroll event.
     setPos((prev) =>
       prev && prev.left === next.left && prev.bottom === next.bottom && prev.flip === next.flip
         ? prev
@@ -127,8 +120,7 @@ function FeedsPopover({
 
   useLayoutEffect(() => place(), [place]);
   useEffect(() => {
-    // Coalesce resize/scroll bursts to at most one layout read per frame
-    // instead of a getBoundingClientRect + setState on every event.
+    // One measurement per frame, however many events arrive.
     let raf = 0;
     const fn = () => {
       if (raf) return;
@@ -331,12 +323,11 @@ export function Sidebar() {
   const loc = useUserLocation();
   const [locationsOpen, setLocationsOpen] = useState(false);
 
-  // Sources for this screen: the first three are the chip labels, the full
-  // list fills the popover.
+  // The first three label the chip, the rest fill the popover.
   const screenFeeds = feedsForRoute(pathname);
   const topThree = screenFeeds.slice(0, 3);
 
-  // Data-feeds popover (click the card → list all of this screen's sources).
+  // Clicking the card lists every source behind this screen.
   const feedsCardRef = useRef<HTMLDivElement | null>(null);
   const feedsPopRef = useRef<HTMLDivElement | null>(null);
   const feedsOpenRef = useRef(false);
@@ -362,8 +353,7 @@ export function Sidebar() {
       setFeedsOpen(true);
     }
   }, [closeFeeds]);
-  // Dismiss on a click outside the card + popover (a click on the card itself
-  // is handled by toggleFeeds, so it's excluded here).
+  // Close on a click anywhere else. The card handles its own clicks.
   useEffect(() => {
     if (!feedsOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -386,7 +376,7 @@ export function Sidebar() {
   const accentRgb = hexToRgb(accent);
   const bgRgb = hexToRgb(ae.bg);
 
-  // Magnetic active pill + hover ghost
+  // The sliding pill and the hover ghost behind it.
   const navRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
   const [pill, setPill] = useState({ top: 0, h: 36, ready: false });
@@ -454,7 +444,7 @@ export function Sidebar() {
         flexDirection: 'column',
       }}
     >
-      {/* Aurora veil — subtle sheen along the inside edge */}
+      {/* Aurora veil, a soft sheen along the inside edge */}
       <div
         aria-hidden
         style={{
@@ -469,7 +459,7 @@ export function Sidebar() {
         }}
       />
 
-      {/* Brand — flame stone + WatchFlame wordmark ("flame" in the accent). */}
+      {/* Brand, the flame stone and the wordmark with "flame" in the accent. */}
       <div
         style={{
           position: 'relative',
@@ -496,7 +486,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Watching — opens LocationsModal */}
+      {/* Watching, opens LocationsModal */}
       <button
         type="button"
         onClick={() => setLocationsOpen(true)}
@@ -569,7 +559,7 @@ export function Sidebar() {
 
       <LocationsModal open={locationsOpen} onClose={() => setLocationsOpen(false)} />
 
-      {/* Nav — relative-positioned host for the magnetic pill + hover ghost */}
+      {/* Nav, positioned so the magnetic pill and hover ghost can sit inside */}
       <nav
         ref={navRef}
         className="ember-scroll"
@@ -583,7 +573,7 @@ export function Sidebar() {
           overflowX: 'hidden',
         }}
       >
-        {/* Hover ghost — soft underlay that follows mouse over items */}
+        {/* Hover ghost, a soft underlay that follows the mouse */}
         <div
           aria-hidden
           style={{
@@ -790,7 +780,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Data feeds — click to open the full source list popover */}
+      {/* Data feeds, click to open the full source list */}
       <div
         ref={feedsCardRef}
         role="button"
@@ -908,7 +898,7 @@ export function Sidebar() {
           )
         : null}
 
-      {/* Settings — single chip (no profile since we don't have auth) */}
+      {/* Settings. One chip, with no profile since there is no auth */}
       <Link
         href="/settings"
         data-active={pathname === '/settings'}

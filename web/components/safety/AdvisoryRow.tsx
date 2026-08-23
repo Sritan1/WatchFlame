@@ -1,12 +1,8 @@
 'use client';
 
-// Status band (full-width) below the hero — two matte-glass cards matching the
-// reference design:
-//   1. Safety Status banner — title + body computed UPSTREAM in SafetyScreen's
-//      computeBannerSignal() so the fire-weather × closest-fire rule lives in
-//      one place.
-//   2. "Closest Active Fire" mini stat with proximity meter.
-// Real data via incidents + FIRMS queries.
+// The band under the Safety hero, the status banner on one side, the closest fire
+// and its proximity meter on the other. The wording is decided in SafetyScreen, so
+// the rule producing it lives in one place.
 
 import { Icon } from '@/components/Icon';
 import { GLASS_CARD } from '@/components/safety/glass';
@@ -15,17 +11,15 @@ import { useAesthetic } from '@/lib/aesthetic';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { convertDistance, useUnits } from '@/lib/use-units';
 
-/** Minimal shape for AdvisoryRow's closest-fire display — works for both
- *  NamedIncident (NIFC/Cal Fire) and synthesized FIRMS satellite detections. */
+/** Just enough about a fire to display it, from either feed. */
 export interface ClosestFireSummary {
   name: string;
   distance_mi: number;
 }
 
-/** Resolved banner content. Computed in SafetyScreen so the
- *  fire-weather × closest-fire rule lives in one place. */
+/** The banner's finished wording, decided in SafetyScreen. */
 export interface BannerSignal {
-  /** Drives palette + icon (low = green check, else amber/orange warn). */
+  /** Sets the color and the icon, a green tick or a warning. */
   level: RiskLevel;
   title: string;
   subtitle: string;
@@ -46,12 +40,9 @@ export function AdvisoryRow({
 }) {
   const { ae, accent } = useAesthetic();
   const units = useUnits();
-  // Palette for the banner — driven by `banner.level`. Use the raw RISK_LEVELS
-  // (not getRisk with accent override) so 'low' stays green even when the
-  // user's accent is amber/orange/red.
+  // Straight from the palette, ignoring the accent, so an all-clear is always green.
   const tone = RISK_LEVELS[banner.level];
-  // Palette for the closest-fire side. When unresolved (no fire OR loading),
-  // fall back to the banner's tone so the row reads cohesively.
+  // The other side borrows the banner's color when there's no fire to color it.
   const fr = closestSeverity ? getRisk(closestSeverity, accent) : null;
   const fireTone = fr ?? tone;
 
@@ -60,15 +51,15 @@ export function AdvisoryRow({
       className="app-stack"
       style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}
     >
-      {/* Safety Status — title + body driven by the combined banner signal */}
+      {/* Safety status. Title and body both come off the banner signal */}
       <div className="app-card-pad" style={{ ...GLASS_CARD, borderRadius: ae.radius, padding: '26px 28px' }}>
         {isLoading ? (
           <SafetyStatusSkeleton />
         ) : (
           <>
-            {/* Framing eyebrow — makes clear this reads the CURRENT situation
-                (fire weather + active fires), distinct from Status's overall
-                risk tier (which also folds in ignition likelihood). */}
+            {/* Framing eyebrow. This is the situation right now, fire weather plus
+                active fires. Not the same as the Status tier, which also folds in
+                ignition likelihood. */}
             <div
               style={{
                 fontFamily: ae.fontMono,
@@ -254,9 +245,7 @@ export function AdvisoryRow({
               </>
             )}
           </div>
-          {/* Proximity meter — 6 bars, left-to-right small-to-tall.
-           *  Lit bar position scales with distance: closer fire → rightmost
-           *  (tallest) bar lit; farther fire → leftmost bar; >50 mi → leftmost. */}
+          {/* Proximity meter. The nearer the fire, the further right the lit bar. */}
           <ProximityMeter
             distanceMi={closestFire?.distance_mi ?? null}
             color={fireTone.color}
@@ -268,9 +257,7 @@ export function AdvisoryRow({
   );
 }
 
-/** Inline skeleton for the Safety Status card. Matches the live layout's
- *  icon-tile + title + two body lines, so the swap when data lands doesn't
- *  jolt the row height. */
+/** Shaped like the real banner, so the row doesn't jump when data arrives. */
 function SafetyStatusSkeleton() {
   return (
     <>

@@ -1,12 +1,8 @@
 """Shared rate limiter.
 
-Lives in its own module (depending only on `config`) so both `main.py` and the
-route modules can import the same `Limiter` without a circular import. The
-global default applies to every route via SlowAPIMiddleware; expensive routes
-opt into a tighter cap with `@limiter.limit(EXPENSIVE)`.
-
-When `RATE_LIMIT_ENABLED=false` (e.g. the test suite) the limiter is disabled
-and every `@limiter.limit(...)` decorator becomes a no-op.
+Its own module, importing only config, so main.py and the routes share one Limiter
+without a circular import. SlowAPIMiddleware applies the default cap everywhere.
+RATE_LIMIT_ENABLED=false makes every decorator a no-op, which is what tests use.
 """
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -18,18 +14,11 @@ _settings = get_settings()
 
 
 def client_ip(request: Request) -> str:
-    """Per-IP rate-limit key: the real client address.
+    """The real client address, used as the per-IP rate-limit key.
 
-    Behind a trusted reverse proxy (Railway) the immediate peer is the proxy,
-    and the client IP is appended to the RIGHT of any client-supplied
-    X-Forwarded-For chain. slowapi's default `get_remote_address` trusts
-    whatever uvicorn set as `request.client` — with `--forwarded-allow-ips=*`
-    that is the LEFTMOST XFF entry, which the client fully controls, so an
-    attacker can rotate it per request and never hit the per-IP cap.
-
-    We instead read the entry the trusted proxy appended: the
-    `rate_limit_trusted_proxies`-th value from the right of the raw header. A
-    spoofed client value sits further left and is ignored.
+    The proxy appends the client IP to the RIGHT of any X-Forwarded-For the caller
+    sent. slowapi's get_remote_address takes the leftmost entry, which the caller
+    writes and can rotate every request to dodge the cap.
     """
     n = _settings.rate_limit_trusted_proxies
     if n > 0:
@@ -45,11 +34,10 @@ limiter = Limiter(
     key_func=client_ip,
     default_limits=[_settings.rate_limit_default],
     enabled=_settings.rate_limit_enabled,
-    # headers_enabled stays False: slowapi's informational X-RateLimit-* headers
-    # require every decorated route to declare a `response: Response` param, and
-    # without it slowapi raises on each request. Enforcement (429) is unaffected.
+    # Leave this False. The X-RateLimit-* headers need every decorated route to take
+    # a response: Response param, and slowapi 500s on any route without one.
     headers_enabled=False,
 )
 
-# Tighter bucket for endpoints that fan out to paid / quota-limited upstreams.
+# Tighter bucket for the routes that hit quota-limited upstreams.
 EXPENSIVE = _settings.rate_limit_expensive

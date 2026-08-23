@@ -13,10 +13,6 @@ async def get_ignition(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
 ):
-    """Live fire-ignition-likelihood index for a location.
-
-    Returns `null` (not an error) when the model artifact is missing or the
-    upstream weather fetch fails - the frontend hides the chip, same graceful
-    pattern as the rest of the API.
-    """
+    """How fire-start-like conditions are at a location. Null rather than an error
+    when the model file is missing or the weather fetch fails."""
     return await ignition_for_location(lat, lon)

@@ -1,9 +1,8 @@
 'use client';
 
-// Small, non-blocking "this feed is down" note: an amber dot + a short line of
-// mono text. Used wherever a single data source can fail without the whole
-// screen erroring, so an empty result is never misread as "nothing here".
-// Copy for each note lives in lib/source-health.ts.
+// The small "this feed is down" note, used wherever a single source can fail
+// without the whole screen erroring, so an empty result is never misread as
+// "nothing here". The wording lives in lib/source-health.ts.
 
 import { useAesthetic } from '@/lib/aesthetic';
 
@@ -20,8 +19,8 @@ export function SourceNote({
       role="status"
       style={{
         display: 'flex',
-        // flex-start (not center) so the dot stays aligned to the FIRST line
-        // when the text wraps to two lines on a narrow / mobile width.
+        // Aligned to the first line, not centered, so the dot stays put when the
+        // text wraps on a narrow screen.
         alignItems: 'flex-start',
         gap: 7,
         fontFamily: ae.fontMono,
@@ -39,7 +38,7 @@ export function SourceNote({
           height: 6,
           borderRadius: 99,
           flexShrink: 0,
-          // Nudge down to sit on the first line's optical center (~14px line box).
+          // Nudged down onto the first line's optical center.
           marginTop: 4,
           background: '#E8B339',
           boxShadow: '0 0 8px rgba(232, 179, 57, 0.6)',

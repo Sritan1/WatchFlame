@@ -1,8 +1,7 @@
 'use client';
 
-// Opens from an info icon next to "Nearest Shelter" segment in EvacuationCard.
-// Important caveats — these aren't official Red Cross shelters; they're
-// community-tagged OSM data + NCES school records.
+// These are not official Red Cross shelters. They come from community-tagged
+// OpenStreetMap data and NCES school records.
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';

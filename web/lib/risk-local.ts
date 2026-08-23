@@ -1,24 +1,12 @@
-// Pure, client-side fire-weather scorer — the single source of truth for
-// computing a risk score from explicit inputs WITHOUT the backend.
-//
-// Why this exists: the Risk Calculator ("what-if") is a deterministic function
-// of its slider inputs, so it shouldn't need a network round-trip per keystroke
-// (and the README promises it "works fully offline"). This module mirrors
-// api/core/risk_algorithm.py `compute_risk` exactly; the exponents come from
-// v4-weights.ts (the existing single source) and the per-state calibration
-// cutoffs from regional-thresholds.ts (bundled mirror of the backend JSON).
-//
-// The BACKEND remains the authority for the live Status/Safety/Map flows, which
-// need real weather/KBDI/NDVI for the user's actual coordinates. This is only
-// for the what-if calculator + anywhere a score must be computed offline.
+// Client-side fire-weather scorer, so the what-if calculator doesn't need a network
+// round trip per keystroke. Mirrors compute_risk in risk_algorithm.py, with
+// exponents from v4-weights.ts and cutoffs from regional-thresholds.ts.
 
 import type { RegionalThresholds, RiskRequest, RiskResponse } from '@/lib/api';
 import { thresholdsForState } from '@/lib/regional-thresholds';
 import { SEASON_MULT, V4_SCALES, V4_WEIGHTS } from '@/lib/v4-weights';
 
-// Saturation scales + floors now live in v4-weights.ts (the single TS source
-// of truth for the fitted constants). Alias them to the local names this scorer
-// already uses.
+// Aliased to the names this scorer already used.
 const {
   vpdScaleHpa: VPD_SCALE_HPA,
   windScaleKph: WIND_SCALE_KPH,
@@ -34,10 +22,8 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/** Tetens / Magnus saturation vapor pressure (hPa). Matches the backend,
- *  including the [-90, 60] °C domain clamp — so an out-of-domain temperature
- *  can't hit the t = -237.3 singularity or overflow exp(). Normal calculator
- *  inputs fall well inside this range, unaffected. */
+/** Tetens / Magnus saturation vapor pressure in hPa. The clamp mirrors the backend
+ *  and keeps a wild temperature off the singularity at -237.3. */
 export function saturationVaporPressureHpa(tC: number): number {
   const t = clamp(tC, -90, 60);
   return 6.1078 * Math.exp((17.27 * t) / (t + 237.3));
@@ -50,32 +36,29 @@ export interface V4Factors {
   season: number;
 }
 
-/** Pure fire-weather factor + score computation from explicit physical inputs. Mirrors
- *  api/core/risk_algorithm.py `compute_risk`. */
+/** Score and factors from explicit weather inputs. Mirrors compute_risk. */
 export function scoreV4(input: {
   temperatureC: number;
   humidityPct: number;
-  /** Wind in km/h (the wire contract — matches /risk + /weather). */
+  /** Wind in km/h, matching what /risk and /weather send. */
   windKph: number;
-  /** KBDI 0–800 when known; null → fall back to the days-since-rain drying proxy. */
+  /** KBDI 0-800, or null to fall back on days since rain. */
   kbdi: number | null;
   daysSinceRain: number;
   season: RiskRequest['season'];
-  /** NDVI anomaly when known; null → fall back to the season multiplier. */
+  /** NDVI anomaly, or null to fall back on the season multiplier. */
   ndviAnomaly: number | null;
 }): { score: number; factors: V4Factors } {
-  // VPD factor — Tetens / 40 hPa scale, clamped [0, 1].
   const vpdHpa =
     saturationVaporPressureHpa(input.temperatureC) *
     (1 - clamp(input.humidityPct, 0, 100) / 100);
   const vpdFactor = clamp01(vpdHpa / VPD_SCALE_HPA);
 
-  // Wind factor — power law (kph/scale)^1.5 with floor.
   const windKph = Math.max(0, input.windKph);
   const windBase = Math.pow(windKph / WIND_SCALE_KPH, 1.5);
   const windFactor = clamp(WIND_FLOOR + (1 - WIND_FLOOR) * windBase, WIND_FLOOR, 1);
 
-  // Drought factor — KBDI when supplied, else exponential drying from days-since-rain.
+  // KBDI if we have it, otherwise dry out exponentially from the last rain.
   let droughtFactor: number;
   if (input.kbdi != null) {
     droughtFactor = clamp(
@@ -88,14 +71,12 @@ export function scoreV4(input: {
     droughtFactor = clamp(DROUGHT_FLOOR + (1 - DROUGHT_FLOOR) * expBase, DROUGHT_FLOOR, 1);
   }
 
-  // Vegetation/season multiplier — NDVI anomaly overrides season when available.
-  // Negative anomaly (drier than normal) → higher factor → higher risk.
+  // A measured NDVI anomaly beats the calendar. Drier than normal scores higher.
   const seasonal =
     input.ndviAnomaly != null
       ? clamp(0.8 - input.ndviAnomaly, 0.4, 1)
       : SEASON_MULT[input.season];
 
-  // Multiplicative combination (log-space exponents from v4-weights.ts).
   const raw =
     Math.pow(vpdFactor, V4_WEIGHTS.vpd) *
     Math.pow(windFactor, V4_WEIGHTS.wind) *
@@ -108,7 +89,7 @@ export function scoreV4(input: {
   };
 }
 
-/** Global (uncalibrated) danger level. Cutoffs match the backend's global block. */
+/** Uncalibrated danger level, on the backend's global cutoffs. */
 export function globalDangerLevel(score: number): RiskResponse['danger_level'] {
   if (score < 0.3) return 'LOW';
   if (score < 0.6) return 'MODERATE';
@@ -116,9 +97,8 @@ export function globalDangerLevel(score: number): RiskResponse['danger_level'] {
   return 'EXTREME';
 }
 
-/** Bucket a score against a state's percentile thresholds. HIGH→EXTREME cuts at
- *  `extreme` (97th percentile); `high` (90th) is informational. Mirrors
- *  api/core/regional_calibration.py `_bucket`. */
+/** Bucket a score against one state's thresholds, mirroring _bucket. The high
+ *  threshold is informational and not a boundary. */
 export function regionalBucket(
   score: number,
   t: RegionalThresholds,
@@ -129,14 +109,9 @@ export function regionalBucket(
   return 'EXTREME';
 }
 
-/** Full offline equivalent of POST /risk for the what-if calculator. Pure and
- *  synchronous — no network. `req.state` selects the calibration thresholds
- *  from the bundled table (null → Global cutoffs). Returns the same
- *  RiskResponse shape the backend returns, so consumers are source-agnostic.
- *
- *  NOTE: intended for EXPLICIT slider inputs. It does not synthesize KBDI/NDVI
- *  from coordinates — that's a live-data concern the backend owns (the
- *  calculator seeds those values via the backend, then computes locally). */
+/** Offline stand-in for POST /risk, same response shape. Slider inputs only. It
+ *  won't work KBDI or NDVI out from coordinates, that's the backend's job. The
+ *  calculator seeds those once and computes here after. */
 export function computeRiskLocal(req: RiskRequest): RiskResponse {
   const { score, factors } = scoreV4({
     temperatureC: req.temperature,

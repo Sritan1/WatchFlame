@@ -1,8 +1,6 @@
-"""Helpers for validating the risk algorithm against the Kaggle 188M Wildfires dataset.
+"""Helpers for validating the risk algorithm against the 1.88M-fire FPA-FOD dataset.
 
-This module is import-safe (no side effects) and used both from the validation
-notebook and from a future CLI. Kept separate from `risk_algorithm.py` so the
-production codepath has no pandas/sqlite dependency in its import graph.
+Separate from risk_algorithm.py so production never imports pandas or sqlite.
 """
 
 from __future__ import annotations
@@ -20,14 +18,7 @@ KAGGLE_SQLITE_PATH = _PROJECT_ROOT / "data" / "FPA_FOD_20170508.sqlite"
 
 
 def doy_to_season(doy: int) -> Season:
-    """Map day-of-year (1-366) to a meteorological season.
-
-    Northern Hemisphere convention:
-      winter = Dec, Jan, Feb   (DOY 335-366, 1-59)
-      spring = Mar, Apr, May   (60-151)
-      summer = Jun, Jul, Aug   (152-243)
-      fall   = Sep, Oct, Nov   (244-334)
-    """
+    """Day-of-year (1-366) to a Northern Hemisphere meteorological season."""
     if doy <= 59 or doy >= 335:
         return "winter"
     if doy <= 151:
@@ -38,7 +29,6 @@ def doy_to_season(doy: int) -> Season:
 
 
 def doy_to_month(doy: int, year: int) -> int:
-    """Day-of-year to calendar month (1-12)."""
     return (date(year, 1, 1) + timedelta(days=int(doy) - 1)).month
 
 
@@ -48,19 +38,11 @@ def load_fires_sample(
     min_size_acres: float = 0.0,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Load a deterministic sample of fires from the Kaggle SQLite for analysis.
+    """Load a repeatable sample of fires from the FPA-FOD SQLite.
 
-    Returns a DataFrame with columns: objectid, fire_year, doy, month, season,
-    state, fire_size, size_class, lat, lon, cause.
-
-    Determinism matters: the Open-Meteo weather cache is keyed by
-    (lat, lon, fire_date, window) — see openmeteo._key — so a sample that
-    changes across runs forces a re-fetch of every fire's window and never
-    benefits from the cache. SQLite's `ORDER BY RANDOM()` ignores Python
-    seeds, so we instead pull a stable-ordered window (by OBJECTID, the table
-    PK) and down-sample it with pandas using `seed`. Identical inputs across
-    runs then yield identical fire selections. This mirrors the approach
-    proven in scripts/build_regional_thresholds.load_state_pool.
+    Same seed has to mean the same fires or the Open-Meteo cache misses every run
+    and re-fetches the world. ORDER BY RANDOM() ignores the Python seed, so take a
+    stable OBJECTID window and let pandas do the seeded down-sample.
     """
     if not sqlite_path.exists():
         raise FileNotFoundError(
@@ -71,8 +53,7 @@ def load_fires_sample(
 
     import sqlite3
 
-    # Pull more rows than we need (stable-ordered) so the pandas down-sample
-    # has a real pool to draw from. 4× headroom matches load_state_pool.
+    # Pull 4x what we need so the down-sample has a real pool to draw from.
     pool_limit = int(n) * 4
 
     con = sqlite3.connect(str(sqlite_path))
@@ -100,8 +81,7 @@ def load_fires_sample(
     finally:
         con.close()
 
-    # Deterministic down-sample so the pool isn't biased to the lowest
-    # OBJECTIDs (which cluster by year + agency in FPA-FOD).
+    # Down-sample. The lowest OBJECTIDs cluster by year and agency.
     take = min(int(n), len(df))
     df = df.sample(n=take, random_state=seed).reset_index(drop=True)
 
@@ -110,10 +90,8 @@ def load_fires_sample(
     return df
 
 
-# Approximate climate normals for the contiguous US (degC, %, kph), per season.
-# Source: rough regional averages from NOAA monthly normals, used purely for the
-# baseline validation in section 2 of the notebook. Replace with per-state values
-# for tighter validation if desired.
+# Rough lower-48 climate normals (degC, %, kph), eyeballed from NOAA monthly
+# normals. Only used for the baseline validation comparison.
 SEASONAL_CLIMATE: dict[Season, dict[str, float]] = {
     "winter": {"temp": 2.0,  "humidity": 70.0, "wind": 16.0, "days_since_rain": 5},
     "spring": {"temp": 14.0, "humidity": 60.0, "wind": 18.0, "days_since_rain": 8},
@@ -123,7 +101,7 @@ SEASONAL_CLIMATE: dict[Season, dict[str, float]] = {
 
 
 def predicted_risk_for_season(season: Season) -> float:
-    """Run compute_risk against the seasonal climate normal — the baseline prediction."""
+    """The baseline prediction, compute_risk on the seasonal climate normal."""
     n = SEASONAL_CLIMATE[season]
     return compute_risk(
         temp_c=n["temp"],
@@ -138,7 +116,6 @@ SizeBucket = Literal["small", "medium", "large", "very_large"]
 
 
 def bucket_fire_size(acres: float) -> SizeBucket:
-    """Group raw acreage into 4 interpretable buckets for plotting."""
     if acres < 1:
         return "small"
     if acres < 100:
@@ -153,8 +130,7 @@ def stratified_sample(
     per_bucket: dict[SizeBucket, int],
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Pick `per_bucket[b]` rows from each size bucket, falling back to all
-    available rows if a bucket has fewer."""
+    """Take n rows from each size bucket, or all of them when a bucket is short."""
     if "size_bucket" not in df.columns:
         df = df.copy()
         df["size_bucket"] = df["fire_size"].apply(bucket_fire_size)
@@ -168,5 +144,4 @@ def stratified_sample(
 
 
 def build_fire_date(row: pd.Series) -> date:
-    """fire_year + day-of-year → calendar date."""
     return date(int(row["fire_year"]), 1, 1) + timedelta(days=int(row["doy"]) - 1)

@@ -1,13 +1,8 @@
 'use client';
 
-// "Still Waters" — the Safety page's signature backdrop. Ported from the
-// reference design (safety-scene.jsx), image-based variant: two slowly-drifting
-// copies of the wave artwork, colour-graded to the app's deep navy-teal Safety
-// identity, with a travelling sheen, a focal teal glow behind the command card,
-// and the shared vignette/scrim framing. No canvas / rAF — pure CSS motion that
-// fully stops under prefers-reduced-motion. Pinned `fixed` behind the page like
-// the Status backdrop, offset past the 248px sidebar gutter; content scrolls
-// over it. Pausing is handled by the parent toggling `ember-anim-paused`.
+// The Safety page's backdrop, two drifting copies of the same wave artwork graded
+// to a deep navy-teal. CSS, not canvas, so it stops completely under reduced
+// motion, and the parent pauses it like the Status waves.
 
 import { useAesthetic } from '@/lib/aesthetic';
 
@@ -80,7 +75,7 @@ export function SafetyScene({ active = true }: { active?: boolean }) {
             filter: WAVE_FILTER,
           }}
         />
-        {/* Colour grade → match the app's deep base + Safety aqua-teal identity. */}
+        {/* Color grade, to match the app's deep base and the Safety aqua-teal. */}
         <div style={{ ...layer, background: 'rgb(8, 12, 18)', mixBlendMode: 'multiply', opacity: 0.46 }} />
         <div style={{ ...layer, background: 'rgb(86, 196, 188)', mixBlendMode: 'color', opacity: 0.30 }} />
         <div
@@ -92,9 +87,8 @@ export function SafetyScene({ active = true }: { active?: boolean }) {
         />
       </div>
 
-      {/* Composition tied to the layout (unflipped): focal teal glow behind the
-          command card; hero + left checklist calmed so the eye is led to the
-          primary action. */}
+      {/* A teal glow behind the command card, with the hero and checklist calmed,
+          so the eye is led to the primary action. */}
       <div
         style={{
           ...layer,
@@ -127,7 +121,7 @@ export function SafetyScene({ active = true }: { active?: boolean }) {
         <rect width="100%" height="100%" filter="url(#sw-grain-safety)" />
       </svg>
 
-      {/* Shared framing — vignette + scrims (family resemblance + legibility). */}
+      {/* Shared framing. The vignette and scrims keep text legible. */}
       <div style={{ ...layer, background: `radial-gradient(ellipse 92% 80% at 56% 50%, transparent 32%, rgba(0,0,0,0.55) 96%)` }} />
       <div
         style={{

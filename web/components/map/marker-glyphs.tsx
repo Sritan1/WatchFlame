@@ -1,11 +1,8 @@
 'use client';
 
-// Pure (leaflet-free) marker glyphs — the SAME visuals as the Live Map's flame
-// detections and incident nuclei, but as plain React/SVG so they render OUTSIDE
-// a leaflet map (the map's info/key modal). Kept leaflet-free on purpose so
-// server-rendered components can import them; the L.DivIcon builders in
-// ./flame-marker and ./incident-marker are the leaflet-side counterparts and
-// reuse the EMBER_* path constants below.
+// The same markers the map draws, as plain SVG, for the legend that explains
+// them. Free of leaflet, so the server can render them. The leaflet
+// versions live next door and share the path constants below.
 
 import { type CSSProperties } from 'react';
 
@@ -16,10 +13,8 @@ export const EMBER_PATH =
 export const EMBER_CORE_PATH =
   'M12 12 C 13.2 15, 15 17, 14.2 21 C 13.7 24.5, 12.5 26.5, 12 26.5 C 11.5 26.5, 10.3 24.5, 9.8 21 C 9 17.5, 10.8 15, 12 12 Z';
 
-/** The flame's colour ramp (white-hot base → red tip). The single source shared
- *  by every flame gradient — the map markers' #ember-grad (see ./flame-marker)
- *  and the legend glyph's #flame-key-grad below — so a ramp tweak can't leave
- *  them out of sync. */
+/** The flame's colors, white-hot at the base and red at the tip. Both the map
+ *  markers and the legend read from this, so they can't drift apart. */
 export const EMBER_STOPS: readonly { offset: number; color: string }[] = [
   { offset: 0, color: '#ffffff' },
   { offset: 0.25, color: '#FFD24A' },
@@ -27,8 +22,7 @@ export const EMBER_STOPS: readonly { offset: number; color: string }[] = [
   { offset: 1, color: '#F04438' },
 ];
 
-/** The <stop> children for a vertical flame gradient. Drop inside a
- *  <linearGradient x1="0" y1="1" x2="0" y2="0">. */
+/** The stops for a vertical flame gradient. */
 export function EmberStops() {
   return (
     <>
@@ -39,9 +33,8 @@ export function EmberStops() {
   );
 }
 
-/** Satellite flame glyph as inline SVG with a self-contained gradient, for
- *  legends/keys outside a leaflet map. Uses the same `.sat-flame` styling as the
- *  real marker, so it sways and glows identically (and respects reduced-motion). */
+/** The flame for a legend, carrying its own gradient. It's styled like the real
+ *  marker, so it sways and glows the same way. */
 export function FlameGlyph({ height = 26 }: { height?: number }) {
   return (
     <svg
@@ -62,8 +55,7 @@ export function FlameGlyph({ height = 26 }: { height?: number }) {
   );
 }
 
-/** Incident nucleus glyph (severity-tinted core), for legends/keys outside a
- *  leaflet map. Uses the same `.inc-node-core` styling as the real marker. */
+/** The incident marker for a legend, tinted by severity like the real one. */
 export function IncidentGlyph({
   severity = 'extreme',
   size = 16,

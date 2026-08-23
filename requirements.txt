@@ -1,4 +1,3 @@
-# Root marker so Railway's Nixpacks builder detects this as a Python app.
-# The actual backend dependencies live in api/requirements.txt; this just
-# points at them. (railway.json's build command also installs the same file.)
+# Root marker so Railway's Nixpacks builder sees a Python app. The real deps are
+# in api/requirements.txt. railway.json installs that same file.
 -r api/requirements.txt

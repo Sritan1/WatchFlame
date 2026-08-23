@@ -1,12 +1,8 @@
-"""Cal Fire Active Incidents client.
+"""Cal Fire's active incidents, the feed behind their public map.
 
-Cal Fire's public Umbraco-backed JSON API powers their public incident map.
-California-specific, but the feed is richer than NIFC's nationwide one —
-includes a human-readable `ControlStatement`, Cal Fire's own canonical URL,
-and tighter update cadence during active events.
-
-We use this in addition to NIFC: NIFC for nationwide coverage, Cal Fire for
-the better detail when an incident is in California.
+California only, but richer than the national one. Carries a written control
+statement, their own incident URL, and faster updates during an event. So NIFC for
+coverage, Cal Fire for detail where they overlap.
 """
 
 from __future__ import annotations
@@ -31,7 +27,7 @@ def _ttl() -> int:
 
 
 def _fail_ttl() -> int:
-    # How long a transient upstream failure suppresses re-hitting Cal Fire.
+    # How long a failure keeps us from trying again.
     return int(os.getenv("CALFIRE_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
@@ -57,8 +53,7 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
     if not force and _CACHE["data"] and now - _CACHE["ts"] < _ttl():
         return [_to_inc(r) for r in _CACHE["data"]]
 
-    # A recent failure? Back off and signal the outage so /incidents/near
-    # reports calfire `down` rather than conflating it with an empty feed.
+    # Failed recently. Back off and report down instead of showing nothing.
     if not force and now - _CACHE.get("fail_ts", 0.0) < _fail_ttl():
         raise SourceUnavailable("calfire upstream failed (cached)")
 
@@ -71,8 +66,8 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
                 headers=headers,
             )
             resp.raise_for_status()
-            # A 200 with a non-JSON body (Cloudflare / maintenance interstitial)
-            # raises ValueError here — treat it as an outage, not a crash.
+            # A Cloudflare or maintenance page arrives as a 200 full of HTML, which
+            # raises here. That is an outage, not a crash.
             data = resp.json()
     except (
         httpx.HTTPStatusError,
@@ -80,8 +75,7 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
         httpx.TransportError,
         ValueError,
     ) as e:
-        # Real outage. Back off (one probe per _fail_ttl()) and raise so
-        # /incidents/near reports `down` instead of showing an empty list.
+        # A real outage. Log it and raise, don't hand back an empty list.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[calfire] upstream {status} ({type(e).__name__}); reporting down"
@@ -90,14 +84,14 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
         raise SourceUnavailable(f"calfire upstream {status}") from e
 
     if not isinstance(data, list):
-        # Unexpected 200 shape (error wrapper) — a real upstream problem.
+        # A 200 wrapped around an error is still a real problem.
         _CACHE["fail_ts"] = now
         raise SourceUnavailable("calfire returned a non-list body")
 
     raw_rows: list[dict[str, Any]] = []
     for inc in data:
         if not isinstance(inc, dict):
-            # A null / non-object element must not abort the whole feed.
+            # One junk element shouldn't take the rest of the feed with it.
             continue
         try:
             lat = float(inc.get("Latitude"))
@@ -107,7 +101,7 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
         if lat == 0 or lon == 0:
             continue
         url = inc.get("Url")
-        # Cal Fire returns relative URLs; prepend the host.
+        # Their URLs come back relative.
         if url and url.startswith("/"):
             url = f"https://incidents.fire.ca.gov{url}"
         raw_rows.append(

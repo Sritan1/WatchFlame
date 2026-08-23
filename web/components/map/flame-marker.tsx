@@ -1,30 +1,24 @@
 'use client';
 
-// Shared FIRMS "flame glyph" marker, used by BOTH the main Live Map (MapImpl)
-// and the Fire Detail mini-map (MiniMapImpl). Both of those import leaflet and
-// are already behind dynamic({ ssr: false }); this module touches leaflet at
-// load, so it inherits that constraint — never import it from a server path.
-//
-// The flame's CSS (sway, core glow, bloom pulse, ember sparks, selected scale)
-// lives in globals.css under `.sat-flame*`. Incident markers are a SEPARATE
-// system (`.inc-node*`) and are untouched by anything here.
+// The flame marker for satellite detections, shared by both maps. Touches leaflet
+// at import, so it can only be pulled in from the client. The sway, glow and
+// sparks all live in globals.css.
 
 import L from 'leaflet';
 
 import { EMBER_PATH, EMBER_CORE_PATH, EmberStops } from './marker-glyphs';
 
-/** Stable 0..1 hash of a marker key, so each flame's sway is phase-shifted
- *  (they don't all pulse in lockstep) without the delay churning per render. */
+/** Turns a marker's key into a stable number, so every flame sways out of step
+ *  with its neighbours and stays that way between renders. */
 export function keyToUnit(key: string): number {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
   return (Math.abs(h) % 1000) / 1000;
 }
 
-/** An ember-tip flame divIcon. `tier` 'bloom' adds the pulsing glow; `isSelected`
- *  adds rising sparks and enlarges it. Fixed pixel size (zoom-independent), sized
- *  the same on laptop and phone: a ~24px flame in a 36×46 touch box, anchored at
- *  the flame base so the fire rises FROM the detection point. */
+/** A flame marker. Stays the same size at every zoom, sits in a box big enough to
+ *  tap, and is anchored at its base so the fire rises out of the detection
+ *  point. */
 export function satelliteFlameIcon(
   tier: 'base' | 'bloom',
   isSelected: boolean,
@@ -54,9 +48,8 @@ export function satelliteFlameIcon(
   });
 }
 
-/** The shared flame gradient, rendered once per map. Every flame fills its path
- *  with url(#ember-grad), so there are no duplicate gradient ids in the document
- *  regardless of how many detections are on screen. */
+/** One gradient per map that every flame points at, so a hundred detections don't
+ *  put a hundred identical gradients in the document. */
 export function FlameGradientDef() {
   return (
     <svg aria-hidden="true" width="0" height="0" style={{ position: 'absolute' }}>

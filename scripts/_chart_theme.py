@@ -1,13 +1,9 @@
-"""Shared light/dark theming for the docs chart scripts.
+"""Light and dark theming for the chart scripts.
 
-Charts default to the existing light look. Set the env var ``CHART_THEME=dark``
-to render a dark variant matched to GitHub's dark canvas (``#0d1117``); the
-output filename gains a ``-dark`` suffix. These dark PNGs back the ``<picture>``
-tags in README.md / METHODOLOGY.md so each chart matches the reader's theme.
-
-Data-series colors (the bars, lines, markers) are left to each script since the
-saturated tier/brand colors already read on either background. This module only
-themes the neutrals: figure/axes background, text, spines, ticks, and grid.
+Charts render light by default. Set CHART_THEME=dark for a version matched to
+GitHub's dark background, landing in its own folder, so the <picture> tags in the
+docs can hand readers whichever suits. Only themes the neutrals. Series colors stay
+with each script, the tier palette reads fine on either.
 """
 from __future__ import annotations
 
@@ -30,7 +26,7 @@ def palette() -> dict:
 
 
 def apply() -> dict:
-    """Set matplotlib rcParams for the active theme; return its palette dict."""
+    """Apply the current theme to matplotlib and hand back its palette."""
     p = palette()
     plt.rcParams.update(
         {
@@ -53,8 +49,7 @@ def apply() -> dict:
 
 
 def mute(hex_color: str, sat: float = 0.70, val: float = 0.88) -> str:
-    """Soften a bright series color for the dark canvas: pull saturation and
-    brightness down so bars read calmly instead of glowing against #0d1117."""
+    """Take the glow off a bright color so it sits calmly on a dark page."""
     h = hex_color.lstrip("#")
     r, g, b = (int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
     hh, ss, vv = colorsys.rgb_to_hsv(r, g, b)
@@ -63,12 +58,12 @@ def mute(hex_color: str, sat: float = 0.70, val: float = 0.88) -> str:
 
 
 def data_color(hex_color: str) -> str:
-    """Series color for the active theme: muted on dark, unchanged on light."""
+    """A series color for the current theme, muted on dark and left alone on light."""
     return mute(hex_color) if is_dark() else hex_color
 
 
 def out_path(base: Path) -> Path:
-    """docs/foo.png -> docs/charts-dark/foo.png when CHART_THEME=dark, else unchanged."""
+    """Redirect the output into the dark folder when we're rendering dark."""
     if is_dark():
         dark_dir = base.parent / "charts-dark"
         dark_dir.mkdir(parents=True, exist_ok=True)

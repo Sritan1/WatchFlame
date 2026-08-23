@@ -1,11 +1,8 @@
 'use client';
 
-// Small pill-shaped chip placed below the Status hero subtitle. Single
-// tight string ("HIGH CONFIDENCE" / "MEDIUM CONFIDENCE" / "LOW CONFIDENCE"),
-// color-coded green/amber/red, click-to-open breakdown modal.
-//
-// Reason text (which signal is the bottleneck) lives only in the modal —
-// chip stays clean per design.
+// The confidence chip under the Status subtitle. Two words, color-coded, and it
+// opens the breakdown. Which signal is holding it back is a question for the
+// modal, not for a chip.
 
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -16,8 +13,8 @@ import type {
   ConfidenceSignal,
 } from '@/lib/confidence';
 
-// Tone palette — green / amber / red. Slightly desaturated vs the
-// risk-level palette so confidence reads as meta-info, not a tier.
+// Duller than the risk palette. This is a note about the data, not a verdict on
+// the fire.
 const TONE: Record<ConfidenceLevel, { color: string; rgb: string; label: string }> = {
   high:   { color: '#3FB68B', rgb: '63, 182, 139',  label: 'High confidence' },
   medium: { color: '#E8B339', rgb: '232, 179, 57',  label: 'Medium confidence' },
@@ -36,7 +33,7 @@ const STATUS_TONE = {
   bad:  { color: '#F04438', rgb: '240, 68, 56' },
 } as const;
 
-// ─── Chip ────────────────────────────────────────────────────────────────
+// Chip
 
 export function ConfidenceChip({
   confidence,
@@ -102,7 +99,7 @@ export function ConfidenceChip({
   );
 }
 
-// ─── Breakdown modal ─────────────────────────────────────────────────────
+// Breakdown modal
 
 export function ConfidenceBreakdownModal({
   open,
@@ -114,11 +111,8 @@ export function ConfidenceBreakdownModal({
   confidence: ConfidenceResult;
 }) {
   const { ae } = useAesthetic();
-  // While loading or before a determinate confidence is computed, render a
-  // muted neutral palette so the outcome row doesn't claim a level it
-  // doesn't have. The chip itself won't open this modal during loading
-  // (its render returns a Skeleton), so this branch is rare — but still
-  // worth handling defensively for any future caller.
+  // Grey until there is a real answer, so the row never claims a level it doesn't
+  // have.
   const tone = confidence.level
     ? TONE[confidence.level]
     : { color: 'rgba(255,255,255,0.55)', rgb: '255,255,255', label: 'Resolving…' };

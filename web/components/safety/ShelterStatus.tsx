@@ -1,14 +1,8 @@
 'use client';
 
-// Shelter status language — shared between the Evacuation card's "Nearest
-// Shelter" mode pieces. Two visual registers:
-//   • CONFIRMED / LIVE (shelter.activated) — verified, operational: solid tinted
-//     tile, status-colored accent bar + soft glow, "Open now" badge with a
-//     live pulse dot, capacity bar + ADA/pet/org metadata, freshness.
-//   • POTENTIAL (candidate) — tentative / recommended: muted, dashed-hairline
-//     tile, no glow, a hollow "Potential site" badge, a call-ahead note.
-// Kept deliberately calm (no alert banners) so it stays cohesive with the
-// premium card it lives inside.
+// How the evacuation card talks about shelters, in two registers. A genuinely open
+// one gets the solid treatment, a candidate building gets a dashed outline and a note
+// to call ahead. Both stay calm. The card around them is already delivering bad news.
 
 import { Icon } from '@/components/Icon';
 import { cardinal8 } from '@/components/ui/CompassRose';
@@ -21,8 +15,7 @@ import { formatDistance, useUnits } from '@/lib/use-units';
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
-// Live status tones reuse the shared risk palette (theme.ts) so they never
-// drift from the app's green/amber/red source of truth.
+// Taken from the app's palette, so they can't drift from it.
 const LIVE_TONES: Record<string, { color: string; rgb: string; label: string }> = {
   OPEN: { color: RISK_LEVELS.low.color, rgb: RISK_LEVELS.low.glow, label: 'Open now' },
   STANDBY: { color: RISK_LEVELS.moderate.color, rgb: RISK_LEVELS.moderate.glow, label: 'Standby' },
@@ -50,9 +43,8 @@ function timeAgo(iso: string | null | undefined): string | null {
   return days === 1 ? '1 day ago' : `${days} days ago`;
 }
 
-/** Honest freshness line from the NSS record. "Updated" only when NSS actually
- *  reported a status (reporting_period); otherwise "Opened" from the open date.
- *  Both are NSS timestamps, never our fetch time. */
+/** Only says "Updated" when there really was a status report, and otherwise falls
+ *  back to when the shelter opened. Both are FEMA's timestamps, never ours. */
 function freshnessLabel(s: Shelter): string | null {
   const updated = timeAgo(s.updated_at);
   if (updated) return `Updated ${updated}`;
@@ -67,8 +59,7 @@ function humanizeType(type: string | null | undefined): string | null {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/** Status pill: a live pulse dot + "Open now" for confirmed shelters; a hollow
- *  dashed ring + "Potential site" for candidates. */
+/** A pulsing dot for an open shelter, a hollow ring for one that merely could be. */
 export function ShelterStatusBadge({ shelter, ae }: { shelter: Shelter; ae: Ae }) {
   const live = !!shelter.activated;
   const t = shelterTone(shelter);
@@ -118,7 +109,7 @@ export function ShelterStatusBadge({ shelter, ae }: { shelter: Shelter; ae: Ae }
   );
 }
 
-/** The detail tile that swaps registers between live and potential. */
+/** The tile, in whichever of the two registers applies. */
 export function ShelterDetailTile({
   shelter,
   ae,
@@ -150,7 +141,7 @@ export function ShelterDetailTile({
   );
 
   if (!live) {
-    // POTENTIAL — tentative / recommended fallback.
+    // A building where a shelter could open.
     const typeLabel = humanizeType(shelter.type);
     return (
       <div
@@ -183,11 +174,10 @@ export function ShelterDetailTile({
     );
   }
 
-  // LIVE — verified, operational.
+  // A shelter that is actually open.
   const hasCap = shelter.capacity != null && shelter.capacity > 0;
-  // NSS headcounts are frequently missing. Only show an occupancy count/bar
-  // when we actually have one — otherwise a null headcount would render a
-  // fabricated "0 / N · 0%" that reads as empty and contradicts a FULL badge.
+  // Headcounts are missing more often than not, and without this a shelter marked
+  // full renders as "0 / 200" with an empty bar.
   const hasOcc = shelter.occupancy != null;
   const occ = shelter.occupancy ?? 0;
   const status = shelter.status ?? 'OPEN';

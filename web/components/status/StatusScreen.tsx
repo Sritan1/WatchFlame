@@ -1,11 +1,8 @@
 'use client';
 
-// Status — mirrors mobile app/(tabs)/index.tsx as closely as possible.
-//   Hero band: SegmentedRiskChip + HeroOrb + headline + subtitle + CTAs + Calibration link
-//   2x2 grid: Conditions card (Wind + Temperature) | Humidity card
-//             LocalKbdiCard                         | LocalNdviCard
-// Cards beyond these (Active Incident, Regional Risk Index, Closest Fires list,
-// FEMA banner) live on Map / Safety in mobile; mobile Status doesn't show them.
+// The Status screen. A hero band with the orb, the headline and its chips, then
+// a grid of conditions, humidity, drought and vegetation cards. Anything about
+// specific fires lives on Map or Safety instead.
 
 import { useEffect, useId, useMemo, useState } from 'react';
 
@@ -62,9 +59,8 @@ import { floorLow, getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 import { formatDistance, formatSpeed, formatTemp, useUnits } from '@/lib/use-units';
 
-// Composite-bucket-driven hero copy. The bucket is computed from the full
-// composite (fire weather + active-fire threat) — see `compositeSubtitle`
-// for the context-aware subtitle that explains which signal is driving it.
+// Headline copy per tier. compositeSubtitle handles the line underneath, which
+// names whichever signal is driving it.
 const HEADLINE: Record<RiskLevel, [string, string]> = {
   low:      ['All',         'Clear'],
   moderate: ['Stay',        'Aware'],
@@ -75,10 +71,8 @@ const HEADLINE: Record<RiskLevel, [string, string]> = {
 const dirLabel = (deg: number | null | undefined) =>
   deg == null ? '—' : cardinal8(deg);
 
-/** Shared visual treatment for the two ghost-text triggers in the hero
- *  meta-info row (Calibration · Score Breakdown). Both are small mono
- *  caps with a trailing info icon; identical layout so they read as a
- *  pair rather than two unrelated affordances. */
+/** Styling for the two quiet text triggers in the hero, kept identical so they
+ *  read as a pair. */
 function metaTriggerStyle(
   ae: ReturnType<typeof useAesthetic>['ae'],
   animationDelay: string,
@@ -101,14 +95,9 @@ function metaTriggerStyle(
   };
 }
 
-/** True while the browser tab is visible. Drives the waves-canvas pause + the
- *  `.ember-anim-paused` CSS freeze (with modal-open ANDed in by the caller),
- *  purely to cut idle CPU/GPU when you're not looking at the tab.
- *
- *  Deliberately NOT scroll/IntersectionObserver-based: the waves are a
- *  position:fixed band that stays partially on-screen at every scroll position,
- *  so pausing them when some sentinel scrolls out just freezes visible waves
- *  (and on mobile the hero pushes any sentinel below the fold at the very top). */
+/** Stops the waves and the CSS animations when nobody is watching. Not tied to
+ *  scrolling. The waves are pinned and stay partly on screen at every scroll
+ *  position, so a sentinel element would freeze waves the user can still see. */
 function useTabVisible(): boolean {
   const [visible, setVisible] = useState(true);
   useEffect(() => {
@@ -122,18 +111,14 @@ function useTabVisible(): boolean {
 
 export function StatusScreen() {
   const { ae, accent } = useAesthetic();
-  // Heat reduction: pause the waves canvas + Status CSS animations when the tab
-  // is hidden or a modal covers the screen (the orb/waves sit behind it).
   const tabVisible = useTabVisible();
   const anyModalOpen = useAnyModalOpen();
   const loc = useUserLocation();
   const weather = useWeather(loc.coords);
   const risk = useRiskFromWeather(weather.data, loc.coords);
   const fires = useFiresAroundMe(loc.coords);
-  // Fetch named incidents out to the full threat radius (not the 30 mi query
-  // default) so the composite threat driver sees every fire inside the 50 mi
-  // window it scores — otherwise a fire 30-50 mi away shows on Safety (which
-  // requests THREAT_RADIUS_MI) but is invisible here, a false "no active fires".
+  // Full threat radius, not the smaller default, or a fire 40 miles out shows on
+  // Safety and not here, which looks like an all-clear.
   const incidents = useNamedIncidentsNear(loc.coords, THREAT_RADIUS_MI);
   const units = useUnits();
   const [calibOpen, setCalibOpen] = useState(false);
@@ -141,31 +126,13 @@ export function StatusScreen() {
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [phaseSpaceOpen, setPhaseSpaceOpen] = useState(false);
 
-  // anyModalOpen comes from the shared Modal's global open-state, so EVERY modal
-  // counts (Ignition info included) without a hand-maintained list.
   const animActive = tabVisible && !anyModalOpen;
-
-  // Trajectory (Tier 2 #7) — short-term forecast projection. Drives the
-  // Trajectory chip below the subtitle and the projection arrow in the
-  // phase-space modal. Backed by /trajectory which hits Open-Meteo
-  // Forecast (separate endpoint + quota from the Archive used for KBDI).
   const trajectory = useTrajectory(loc.coords);
-
-  // Ignition likelihood (ML model) — the third, independent lens: "do today's
-  // conditions look like a day fires actually start here?". Backed by /ignition,
-  // which derives parity features from the Open-Meteo archive.
   const ignition = useIgnition(loc.coords);
 
-  // ── Composite score ─────────────────────────────────────────────────────
-  // Two independent inputs:
-  //   w = calibration-aware fire-weather score (regional percentile-aligned)
-  //   t = aggregate active-fire threat across nearby NIFC/Cal Fire incidents
-  //       + FIRMS satellite hits within 50 mi (distance, size, wind, time)
-  // Composite = 0.45 × w + 0.55 × t. Bucket = quartile of the composite.
-  //
-  // Calibration matters: a Bronson FL day at the 95th percentile FOR FL has
-  // w ≈ 0.92 even though raw/score_max is only ~0.42, because the regional
-  // thresholds remap each tier into a quarter of [0, 1].
+  // The first of the two axes. Calibration is what makes it comparable across
+  // states, so a Florida day in that state's worst few percent scores high here even
+  // though its raw number is modest.
   const weatherSignal: number | null = useMemo(
     () =>
       risk.data
@@ -175,10 +142,8 @@ export function StatusScreen() {
   );
   const windDeg = weather.data?.wind_deg ?? null;
   const windSpeedKph = weather.data?.wind_speed ?? null;
-  // The single fire driving the threat score — for the Threat Source card.
-  // Applies the FIRMS→named-incident tiebreak inside findThreatDriver so a
-  // satellite pixel sitting on top of a real Cal Fire incident surfaces the
-  // named incident instead.
+  // The one fire behind the threat number. A satellite pixel sitting on a known
+  // incident surfaces as that incident.
   const threatDriver: ThreatDriver | null = useMemo(
     () =>
       incidents.data != null && fires.data != null
@@ -192,74 +157,45 @@ export function StatusScreen() {
         : null,
     [incidents.data, fires.data, loc.coords, windDeg, windSpeedKph],
   );
-  // Aggregate threat IS the driving fire's factor (0 when none), so derive it
-  // from the driver rather than walking every fire a second time.
+  // That fire's own factor is the aggregate, so read it off instead of looping again.
   const threatSignal: number = threatDriver?.threat ?? 0;
-  // True when there's at least one fire that contributed to the threat
-  // signal — i.e. within THREAT_RADIUS_MI. Derived from the actual
-  // computation, NOT from the raw dataset (useFiresAroundMe pulls a 250 mi
-  // bbox, so the dataset can be non-empty even with no fire in range).
+  // Read off the computation, not the raw feed, which covers 250 miles and is
+  // rarely empty.
   const anyFireInRange: boolean = threatDriver != null;
 
-  // While any input is loading, treat composite as null and skeleton the
-  // hero rather than show stale or partial values.
   const compositeReady =
     weather.data !== undefined &&
     risk.data !== undefined &&
     fires.data !== undefined &&
     incidents.data !== undefined;
 
-  // Narrower readiness for the two Score Breakdown cards, so each shows as soon
-  // as ITS OWN inputs are ready instead of waiting on the whole composite (risk
-  // is chained behind weather, so it lands last). Threat needs fires + incidents
-  // (identity) + weather (wind alignment, so no tier flash when wind lands);
-  // fire weather needs weather + risk. Neither needs the other's data.
+  // Each breakdown card waits only on its own inputs, so neither sits behind the
+  // whole composite.
   const threatReady =
     weather.data !== undefined && fires.data !== undefined && incidents.data !== undefined;
   const fireWeatherReady = weather.data !== undefined && risk.data !== undefined;
 
-  // Component buckets — feed both the matrix-derived headline tier AND
-  // the breakdown row below the hero. For weather, prefer the backend's
-  // authoritative `regional_level` (or the global `danger_level` fallback)
-  // so the bucket pill on the Status breakdown card matches the Risk
-  // Calculator's pill for the same raw fire-weather score. `bucketOf(weatherSignal)`
-  // is mathematically equivalent when thresholds are present, but using
-  // the backend value directly is simpler and avoids any drift if the two
-  // band schemes ever diverge.
+  // Take the backend's level instead of re-deriving it, so this card and the what-if
+  // screen show the same pill for the same score even if the two drift.
   const weatherBucket: RiskLevel | null = risk.data
     ? dangerToRisk(risk.data.regional_level ?? risk.data.danger_level)
     : null;
   const threatBucket: RiskLevel | null = anyFireInRange ? bucketOf(threatSignal) : null;
 
-  // Ignition likelihood (ML) folds into the environmental tier as Stage 1 of
-  // the headline: E = envFromBuckets(weather severity ⊗ ignition likelihood).
-  // Deliberately NOT gated by compositeReady — when the ML signal is still
-  // loading or unavailable, envFromBuckets falls back to the weather bucket and
-  // the headline behaves exactly as before, then updates when ignition resolves.
+  // Not gated on the composite being ready. Without ignition this is just the
+  // weather bucket, so the headline works now and sharpens when the model answers.
   const ignitionBucket: RiskLevel | null = ignition.data?.level ?? null;
   const envBucket: RiskLevel | null = envFromBuckets(weatherBucket, ignitionBucket);
 
-  // Headline tier comes from the COMPOSITE_MATRIX lookup, not from
-  // bucketOf(linear blend). Two reasons spelled out in
-  // web/lib/composite-risk.ts + docs/METHODOLOGY.md (the overall-risk composite): the prior 0.45/0.55
-  // weights were a political knob with no empirical fit, and the linear
-  // blend's quartile sometimes lands in a tier the operational intent
-  // wouldn't (e.g. W=high × T=mod → ~0.48 linear → MOD, but matrix → HIGH).
-  // The matrix encodes each cell's call explicitly in one published table.
+  // The headline is a matrix lookup, not a blended number. See
+  // web/lib/composite-risk.ts for why.
   const compositeBucket: RiskLevel = compositeReady
     ? compositeFromBuckets(envBucket, threatBucket) ?? 'moderate'
-    : 'moderate'; // placeholder while loading (skeleton hides it anyway)
+    : 'moderate'; // placeholder while loading, hidden by the skeleton anyway
 
-  // `compositeScore` (linear blend, 0-1) is kept ONLY for the HeroOrb arc
-  // fill — it's a visual position cue, not the source of truth for the
-  // tier label. In edge cells the arc fill can sit visually in a slightly
-  // different band than the tier color; that's acceptable since the user
-  // reads the tier label, not the arc precise position.
-  // Arc fill (decorative): blend ignition into the environmental score as a
-  // continuous analog of the ENV matrix — the geometric mean of weather
-  // severity and the ignition percentile (likelihood × consequence) — so the
-  // arc tracks the ENV tier. Falls back to weatherSignal alone when ignition
-  // is absent. The tier label, not the arc, remains authoritative.
+  // Only the orb's arc uses this blended number, purely as a position cue. The
+  // tier label is what people read. Ignition folds in as a smooth version of the
+  // matrix, and drops out when the model has nothing to say.
   const ignitionScore: number | null =
     ignition.data ? ignition.data.percentile / 100 : null;
   const envScore: number | null =
@@ -272,21 +208,16 @@ export function StatusScreen() {
     ? composite(envScore, threatSignal)
     : null;
 
-  // Floor 'low' to 'moderate' for the page CHROME (background waves, hero
-  // orb palette, section eyebrow accent). The literal Risk pill below still
-  // receives the actual bucket so the user sees "LOW" in green when applicable
-  // — this only stops the surrounding visuals from going muted teal/grey.
+  // Floor the chrome at moderate so a calm day doesn't wash the page out.
   const chromeLevel: RiskLevel = floorLow(compositeBucket);
   const r = getRisk(chromeLevel, accent);
-  // Orb dial fill — band-anchored to the orb's OWN color (chromeLevel) so the
-  // arc length always sits in the same band as the color. compositeScore only
-  // sets the continuous position WITHIN that band. (Previously the raw blend
-  // drove the dial directly and could read a band away from the matrix tier.)
+  // Anchored to the orb's own color, so the arc can never sit in a different band
+  // than the orb it wraps. The blend only positions it inside that band.
   const compositeArc: number | null =
     compositeReady && compositeScore != null
       ? tierArcFraction(chromeLevel, compositeScore)
       : null;
-  // pillTone uses the true composite bucket so "LOW" stays green.
+  // The pill takes the real tier, so LOW stays green.
   const pillTone = getRisk(compositeBucket, accent);
   const isAlarming = compositeBucket === 'high' || compositeBucket === 'extreme';
 
@@ -297,17 +228,9 @@ export function StatusScreen() {
     ? compositeSubtitle({ envBucket, weatherBucket, ignitionBucket, threatBucket })
     : 'Reading conditions for your area…';
 
-  // Confidence breakdown — computes the weakest-link confidence across
-  // weather observation age, KBDI availability, NDVI availability,
-  // calibration source, and driving-fire age. Shown as a small chip
-  // beneath the subtitle; tap to expand into a full breakdown modal.
-  //
-  // `confidenceNowMs` ticks once a minute via setInterval so the chip's
-  // age-based signals (weather observation age, FIRMS detection age)
-  // advance over time even when TanStack hasn't refetched. Without this,
-  // computeConfidence's internal `Date.now()` is captured by useMemo at
-  // the moment its deps last changed — and the chip stays frozen at
-  // "X min ago" until the next refetch (10+ min for /weather).
+  // The clock ticks once a minute so the age-based parts keep counting up. Left
+  // alone, the memo would freeze "8 min ago" until something else re-rendered the
+  // screen. Weather has no refetch interval of its own.
   const [confidenceNowMs, setConfidenceNowMs] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setConfidenceNowMs(Date.now()), 60_000);
@@ -334,12 +257,9 @@ export function StatusScreen() {
     ],
   );
 
-  // Failed state: if any core signal errored, `compositeReady` stays false (the
-  // SAME condition as "still loading"), so the page naturally keeps its
-  // skeletons. Rather than swap in a whole error screen, we leave those
-  // skeletons frozen and overlay a centered, non-dismissible modal (the
-  // BlockingErrorOverlay at the end of the render). Computed after all hooks so
-  // nothing changes hook order between renders.
+  // A failed core signal leaves the page in the same state as a loading one, so
+  // the skeletons stay put and we float a modal over them instead of swapping in
+  // a whole error screen. Computed after every hook, to keep their order stable.
   const statusDataFailed =
     weather.isError || risk.isError || fires.isError || incidents.isError;
   const retryStatusData = () => {
@@ -352,14 +272,11 @@ export function StatusScreen() {
 
   return (
     <>
-      {/* Fixed waves backdrop — the same animated WavesBackground, pinned to the
-          viewport so it stays put while the page scrolls. All content (including
-          the hero) scrolls over it; the sections are transparent so it shows
-          through. Mirrors the reference design. */}
+      {/* Pinned to the viewport so it holds still while the page scrolls over it. */}
       <StatusBackdrop risk={chromeLevel} active={animActive} />
 
       <div className={animActive ? undefined : 'ember-anim-paused'} style={{ position: 'relative', zIndex: 1 }}>
-      {/* ─── HERO (content scrolls over the fixed waves backdrop) ───────── */}
+      {/* Hero */}
         <PageSection top={28} bottom={48}>
           <SectionEyebrow
             color={isAlarming ? r.color : ae.textDim}
@@ -370,7 +287,6 @@ export function StatusScreen() {
             {isAlarming ? 'Active Threat · ' : 'Status · '}{loc.label}
           </SectionEyebrow>
 
-          {/* 2-col: orb left, headline + subtitle + CTAs right */}
           <div
             className="app-stack"
             style={{
@@ -392,15 +308,11 @@ export function StatusScreen() {
                 minHeight: 360,
               }}
             >
-              {/* Segmented risk chip sits above the orb (matches the reference
-                  Command Center hero). Loading placeholder matches its footprint. */}
               <div style={{ marginBottom: 28 }}>
                 <SegmentedRiskChip risk={pillTone} loading={!compositeReady} />
               </div>
-              {/* Orb arc is band-anchored to the orb color via tierArcFraction
-                  (see compositeArc above), so the dial fill can never sit in a
-                  different band than the tier. thresholds={null} keeps HeroOrb
-                  from re-mapping the already-banded value. */}
+              {/* thresholds={null} keeps HeroOrb from re-mapping compositeArc,
+                  which is already banded to the tier. */}
               <HeroOrb
                 risk={chromeLevel}
                 score={compositeArc}
@@ -461,12 +373,8 @@ export function StatusScreen() {
                 </div>
               )}
 
-              {/* Confidence + Trajectory chips — own row directly under the
-                  subtitle, AQI-style. Confidence reads data quality
-                  ("HIGH / MEDIUM / LOW CONFIDENCE") and opens a per-signal
-                  breakdown. Trajectory reads direction over the next 6 hr
-                  ("RISING / STEADY / FALLING") and opens the phase-space
-                  modal where the projected position + driver context live. */}
+              {/* Confidence and Trajectory chips. The row carries the animation
+                  delay, so the chips must not set their own. */}
               <div
                 style={{
                   marginTop: 14,
@@ -490,11 +398,6 @@ export function StatusScreen() {
                 />
               </div>
 
-              {/* Hero meta-info row: calibration hint + "Score Breakdown"
-                  trigger. Both open their respective modals — the
-                  calibration ladder explains where your bucket comes from,
-                  the explainer walks you through the matrix that produced
-                  the composite tier. */}
               <div
                 style={{
                   marginTop: 14,
@@ -504,13 +407,9 @@ export function StatusScreen() {
                   gap: 14,
                 }}
               >
-                {/* "Calibrated for <state>" moved into the Fire Weather card
-                    (HeroScoreCard) — next to the fire-weather score it actually
-                    describes — since here, beside the composite headline, it
-                    misleadingly read as explaining the composite tier. */}
-
-                {/* Opens the matrix explainer. Always available; doesn't require
-                    regional calibration. */}
+                {/* "Calibrated for <state>" lives in the Fire Weather card, next to
+                    the score it describes. Here it looked like it explained the
+                    composite tier. */}
                 {compositeReady ? (
                   <button
                     type="button"
@@ -549,10 +448,8 @@ export function StatusScreen() {
           </div>
         </PageSection>
 
-      {/* ─── Wildfire Intelligence: the three "brain" signals, art-directed
-            into one cinematic stage (Fire Weather + Active Fire Threat gauges +
-            the ML Ignition core). Same underlying data as before; elevated
-            presentation. See components/status/HeroSystems.tsx. ─── */}
+      {/* Wildfire Intelligence. Fire weather, threat and the ignition core on one
+          stage. See components/status/HeroSystems.tsx. */}
       <PageSection top={16} bottom={22}>
         <div className="ember-fade-up" style={{ marginBottom: 16 }}>
           <SectionEyebrow
@@ -566,9 +463,7 @@ export function StatusScreen() {
           <IntelligenceSystem
             ae={ae}
             fireWeather={{
-              // Raw risk_score (matches the Risk Calculator for the same
-              // inputs). Regional thresholds drive the gauge zones so they
-              // agree with the backend bucket; global defaults otherwise.
+              // The raw score, so this matches the what-if screen for the same inputs.
               score: risk.data?.risk_score ?? null,
               bucket: weatherBucket,
               zoneBoundaries: risk.data?.regional_thresholds
@@ -585,9 +480,6 @@ export function StatusScreen() {
               emptyText: '—',
               isLoading: !fireWeatherReady,
               howCalculatedHref: '/risk',
-              // "Calibrated for <state>" lives HERE (next to the fire-weather
-              // score it describes) instead of by the composite headline, where
-              // it misleadingly read as explaining the composite tier.
               calibrationLabel:
                 risk.data?.regional_level && risk.data?.regional_state
                   ? `Calibrated for ${risk.data.regional_state}${
@@ -604,8 +496,7 @@ export function StatusScreen() {
             threat={{
               score: anyFireInRange ? threatSignal : null,
               bucket: threatBucket,
-              // Fixed composite-side band edges (no backend bucketing for
-              // fire proximity).
+              // Fixed bands. The backend doesn't bucket fire proximity.
               zoneBoundaries: { low: 0.25, moderate: 0.5, extreme: 0.75 },
               scoreMax: 1.0,
               caption: anyFireInRange
@@ -624,14 +515,13 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
-      {/* ─── Threat Source: names the single fire driving the threat ──── */}
+      {/* Threat Source names the single fire driving the threat */}
       <PageSection top={16} bottom={22}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow
             color={isAlarming ? r.color : undefined}
             right={
-              // Until the threat feeds resolve, don't assert "No active fires"
-              // (that reads as a false all-clear over the loading card below).
+              // Don't claim "no active fires" before the feeds have answered.
               !threatReady
                 ? `Checking within ${formatDistance(THREAT_RADIUS_MI, units.distance, 0)}`
                 : threatDriver?.kind === 'incident'
@@ -649,7 +539,7 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
-      {/* ─── Current Conditions: Wind + Temperature + Humidity ────────── */}
+      {/* Current Conditions */}
       <PageSection top={16} bottom={22}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow right="Open-Meteo · OWM · refreshed every 15 min">
@@ -683,7 +573,7 @@ export function StatusScreen() {
         </div>
       </PageSection>
 
-      {/* ─── Area & Vegetation: KBDI + NDVI ─────────────────────────────── */}
+      {/* Area and Vegetation, KBDI and NDVI */}
       <PageSection top={16} bottom={48}>
         <div className="ember-fade-up" style={{ marginBottom: 18 }}>
           <SectionEyebrow right="Tracked over the local fire season">
@@ -761,9 +651,7 @@ export function StatusScreen() {
         }}
       />
 
-      {/* Blocking failure modal — overlays the frozen skeletons when core data
-          can't load. Non-dismissible (no backdrop click-through) since the page
-          has nothing real to show; the only way forward is a successful Retry. */}
+      {/* Not dismissible, because the page has nothing real to show behind it. */}
       {statusDataFailed ? (
         <BlockingErrorOverlay
           ae={ae}
@@ -776,10 +664,8 @@ export function StatusScreen() {
   );
 }
 
-/** Centered, non-dismissible failure modal that floats over the page's frozen
- *  skeletons. The backdrop intentionally has NO click handler, so clicking
- *  outside the card does nothing — the user can only Retry (or navigate away
- *  via the sidebar). */
+/** Floats over the frozen skeletons. The backdrop does nothing, so the only ways
+ *  out are Retry and the sidebar. */
 function BlockingErrorOverlay({
   ae,
   title,
@@ -796,10 +682,8 @@ function BlockingErrorOverlay({
       role="presentation"
       className="app-left-inset"
       style={{
-        // Cover the content area only (left offset = Shell's 248px sidebar
-        // gutter) so the failure is non-dismissible over Status but the sidebar
-        // stays navigable — the user can still reach the offline Risk Calculator
-        // or another screen rather than being trapped on a dead page.
+        // Cover the content but not the sidebar, so the user can walk away instead
+        // of being stuck on a dead page.
         position: 'fixed',
         top: 0,
         right: 0,
@@ -834,7 +718,7 @@ function BlockingErrorOverlay({
   );
 }
 
-// ─── Inline cards ──────────────────────────────────────────────────────────
+// Inline cards
 
 function ConditionsCard({
   wind,
@@ -903,9 +787,9 @@ function ConditionsCard({
             gap: 12,
           }}
         >
-          {/* Wind — the dial shows the direction, so hide it (rather than draw a
-              fabricated 180° needle) when the direction is unknown, mirroring how
-              the Thermometer below hides when temperature is missing. */}
+          {/* The dial's whole job is the direction, so hide it when we don't know
+              one. A made-up needle is worse than none. The Thermometer below hides
+              the same way when temperature is missing. */}
           <CondTile
             label="Wind"
             decoration={windDeg != null ? <WindDial angle={windDeg + 180} color={accentColor} size={56} /> : undefined}
@@ -1035,8 +919,7 @@ function Thermometer({
   temperatureC: number;
   visible: boolean;
 }) {
-  // Per-instance gradient id (colons stripped for url() safety) so a second
-  // Thermometer on the page can't collapse to this one's fill via a shared id.
+  // Its own gradient id, or a second thermometer would borrow this one's fill.
   const fillId = `thermo-fill-${useId().replace(/:/g, '')}`;
   if (!visible) return null;
   const tFrac = Math.max(0, Math.min(1, temperatureC / 50));
@@ -1073,8 +956,7 @@ function Thermometer({
   );
 }
 
-/** Title-case a string — uppercase the first letter of each word. OWM returns
- *  the weather description all-lowercase ("scattered clouds"). */
+/** Capitalize each word. OpenWeather sends "scattered clouds" in lowercase. */
 function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -1229,7 +1111,7 @@ function HumidityCard({
   );
 }
 
-/** Radial humidity dial — ticked ring + arc fill + droplet glyph in center. */
+/** The humidity dial, a ticked ring, an arc, and a droplet in the middle. */
 function HumidityDial({
   ae,
   value,
@@ -1247,8 +1129,7 @@ function HumidityDial({
   const r = c - 8;
   const circ = 2 * Math.PI * r;
   const dash = circ * (value / 100);
-  // Per-instance halo id (colons stripped for url() safety) — keying on `size`
-  // alone would collide if two same-size dials ever shared a page.
+  // Its own halo id. Keying on size alone collides between two equal dials.
   const haloId = `hd-halo-${useId().replace(/:/g, '')}`;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
@@ -1280,8 +1161,8 @@ function HumidityDial({
         const a = (i * 15 * Math.PI) / 180;
         const r1 = r - 5;
         const r2 = r - (i % 6 === 0 ? 9 : 7);
-        // Round trig outputs so SSR (x86) and client (e.g. ARM phone) stringify
-        // these coords identically — avoids a hydration mismatch on the ticks.
+        // Round these, or a phone and the server disagree in the last decimal
+        // place and React complains the markup doesn't match.
         const rnd = (n: number) => Math.round(n * 1000) / 1000;
         return (
           <line
@@ -1306,14 +1187,9 @@ function HumidityDial({
   );
 }
 
-/** Status-only FIXED waves backdrop. The same animated WavesBackground the hero
- *  used — pinned to the top of the viewport so it stays put while the page scrolls
- *  (the hero text scrolls up over it). It's a HERO-HEIGHT band, NOT full-viewport:
- *  the wave motion is tuned to its container height, so matching the hero's height
- *  keeps the exact reference look (a 100vh canvas spreads the same waves over ~2×
- *  the area and changes how they move). The bottom fades cleanly to the page color
- *  so there's no darker vignette "strip" where the band ends. Offset past the
- *  248px sidebar gutter. */
+/** The waves behind the hero, pinned so the text scrolls up over them. A band the
+ *  height of the hero, not the viewport, because the motion is tuned to its
+ *  container. Stretch it and the same waves spread over twice the area. */
 function StatusBackdrop({ risk, active }: { risk: RiskLevel; active: boolean }) {
   const { ae } = useAesthetic();
   return (
@@ -1331,9 +1207,8 @@ function StatusBackdrop({ risk, active }: { risk: RiskLevel; active: boolean }) 
       }}
     >
       <WavesBackground risk={risk} pulseSpeed={70} active={active} />
-      {/* Fade the band's lower portion to exactly the page color, masking the
-          WavesBackground's own darker vignette/scrim so it blends seamlessly into
-          the dark page below instead of leaving a black strip. */}
+      {/* Fade to exactly the page color, masking the WavesBackground's own darker
+          vignette so the band leaves no black strip. */}
       <div
         style={{
           position: 'absolute',

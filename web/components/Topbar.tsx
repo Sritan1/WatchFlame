@@ -1,8 +1,7 @@
 'use client';
 
-// Floating glass dock — sticky 56px pill with breadcrumb left, Refresh + LIVE
-// timestamp right. Sits inside a 14px-padded sticky wrapper so it floats
-// above content rather than reading as a flush bar.
+// The bar across the top. Breadcrumb on the left, refresh and the clock on the
+// right. Padded away from the edges so it floats instead of sitting flush.
 
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
@@ -40,11 +39,11 @@ export function Topbar() {
   useEffect(() => () => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
   }, []);
-  // Mobile-only location entry — the sidebar's "Watching" picker is hidden on
-  // mobile, so the Topbar surfaces the same LocationsModal there.
+  // The sidebar's "Watching" picker is hidden on mobile, so the Topbar surfaces
+  // the same modal there.
   const [locOpen, setLocOpen] = useState(false);
 
-  // Live wall-clock — initialized lazily so SSR doesn't mismatch.
+  // Live wall-clock, initialized lazily so SSR doesn't mismatch.
   const [now, setNow] = useState<string>('');
   useEffect(() => {
     const fmt = () =>
@@ -115,11 +114,11 @@ export function Topbar() {
           }}
         />
 
-        {/* Breadcrumb — group label · chevron · active pill */}
+        {/* Breadcrumb. Group label, chevron, active pill. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
-          {/* Mobile-only brand — the sidebar (which carries the wordmark on
-              desktop) is hidden on phones, so surface WatchFlame here in place
-              of the screen-title pill (the bottom nav already shows the screen). */}
+          {/* Mobile-only brand. The sidebar carries the wordmark on desktop but
+              is hidden on phones, so WatchFlame goes here instead of the screen
+              title, which the bottom nav already shows. */}
           <span
             className="app-show-mobile"
             aria-label="WatchFlame"
@@ -200,7 +199,7 @@ export function Topbar() {
           </span>
         </div>
 
-        {/* Right cluster — Refresh icon button + LIVE timestamp capsule */}
+        {/* Right cluster, the refresh button and the LIVE timestamp */}
         <div
           style={{
             display: 'flex',
@@ -209,7 +208,7 @@ export function Topbar() {
             position: 'relative',
           }}
         >
-          {/* Mobile-only: change location (replaces the hidden sidebar picker) */}
+          {/* Mobile-only. Change location, standing in for the hidden sidebar picker. */}
           <button
             type="button"
             onClick={() => setLocOpen(true)}
@@ -264,7 +263,7 @@ export function Topbar() {
             </span>
           </button>
 
-          {/* LIVE capsule with aurora glow + ping ring */}
+          {/* LIVE capsule with aurora glow and ping ring */}
           <div
             style={{
               position: 'relative',

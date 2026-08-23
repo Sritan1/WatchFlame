@@ -1,8 +1,7 @@
 'use client';
 
-// One slider tile — big numeric value + custom-drawn slider track with an
-// invisible native <input type="range"> overlay for actual interaction (so
-// keyboard ←/→/Home/End all work out of the box).
+// One slider tile, a big numeric value over a custom-drawn track, with an
+// invisible native range input on top so keyboard control works for free.
 
 import type { ReactNode } from 'react';
 
@@ -37,18 +36,15 @@ export function InputPanel({
   caption?: string;
   index: number;
   onChange: (v: number) => void;
-  /** When true, render skeleton placeholders for the value + slider track
-   *  (matches mobile SliderRow's isLoading state during auto-seed wait). */
+  /** Skeletons the value and track while auto-seeding. */
   isLoading?: boolean;
-  /** Optional footer slot rendered inside the card below the caption — used
-   *  for "couldn't fetch" warnings tied to specific sliders (KBDI, NDVI). */
+  /** Footer slot below the caption, carrying a "couldn't fetch" warning. */
   footer?: ReactNode;
 }) {
   const { ae } = useAesthetic();
-  // Clamp to the track: a seeded local reading can land outside the slider's
-  // [min,max] (e.g. an 80 km/h wind on the 0-60 dial, or 45 days-since-rain on
-  // the 0-30 dial). Without clamping, pct exceeds 100% and shoves the fill +
-  // thumb off the visible track (clipped by the card's overflow:hidden).
+  // A seeded reading can land outside the slider's range, like an 80 km/h wind on
+  // a 0-60 dial. Without clamping, pct passes 100 and shoves the fill and thumb
+  // off the visible track.
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
   const decimals = step >= 1 ? 0 : Math.max(0, Math.ceil(-Math.log10(step)));
   const display = value.toFixed(decimals);

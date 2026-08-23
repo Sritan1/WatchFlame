@@ -21,19 +21,9 @@ async def get_incidents_near(
     radius_mi: float = Query(15.0, ge=1.0, le=200.0),
     limit: int = Query(5, ge=1, le=50),
 ):
-    """Return named-incident matches near (lat, lon).
-
-    Merges two sources concurrently:
-      • **NIFC WFIGS** — nationwide (~700 active fires); incident_size, containment %,
-        personnel, cause, agency, IRWIN id.
-      • **Cal Fire** — California only but richer detail (control statement, source URL).
-
-    For California incidents that appear in both feeds, Cal Fire wins because its
-    detail is better (we dedupe by name within a 5-mile bubble).
-
-    Used by the fire-detail screen to enrich satellite point detections with the
-    real incident name + management metadata.
-    """
+    """Named incidents near a point, from two feeds at once. NIFC covers the whole
+    country with size, containment, personnel and cause. Cal Fire is California only
+    but carries more detail, so it wins where both describe the same fire."""
     nifc_task = asyncio.create_task(fetch_nifc())
     calfire_task = asyncio.create_task(fetch_calfire())
     nifc_res, calfire_res = await asyncio.gather(
@@ -42,7 +32,6 @@ async def get_incidents_near(
 
     rows: list[dict[str, object]] = []
 
-    # Cal Fire first so its richer rows are kept on dedupe.
     set_source_health(
         response,
         {
@@ -51,6 +40,7 @@ async def get_incidents_near(
         },
     )
 
+    # Cal Fire goes in first, so its richer rows survive the merge below.
     if isinstance(calfire_res, Exception):
         logger.warning("calfire query failed: %s", calfire_res)
     else:
@@ -109,19 +99,15 @@ async def get_incidents_near(
                 }
             )
 
-    # Same incident often appears in both feeds for CA fires. Instead of
-    # dropping the duplicate we MERGE: keep the first-seen base (Cal Fire,
-    # which has the URL + control statement) and fill any null fields from
-    # the duplicate (NIFC, which has personnel + cause).
+    # California fires show up in both feeds. Keep the Cal Fire row and fill its
+    # gaps from the NIFC one, which is where personnel and cause live.
     merged: list[dict[str, object]] = []
     for r in rows:
         norm = _normalize_name(str(r["name"]))
         rl_lat = float(r["lat"])  # type: ignore[arg-type]
         rl_lon = float(r["lon"])  # type: ignore[arg-type]
-        # Only dedupe on a REAL name. Two distinct unnamed fires both normalize
-        # to a placeholder ("unnamed"/""/"none"), so name-matching them would
-        # merge two separate nearby incidents into one and drop a real fire.
-        # Generic-named rows are always kept distinct.
+        # Only merge on a real name. Two unnamed fires both normalize to the same
+        # string, and merging those would delete one of them.
         match_idx = (
             None
             if norm in _GENERIC_NAMES
@@ -140,7 +126,6 @@ async def get_incidents_near(
             merged.append(r)
         else:
             base = merged[match_idx]
-            # Fill any null/missing fields on the base from the duplicate.
             for key in (
                 "acres", "contained_pct", "personnel", "cause", "started",
                 "agency", "state", "county", "location", "control_statement",
@@ -153,8 +138,7 @@ async def get_incidents_near(
     return merged[:limit]
 
 
-# Normalized names that carry no identity — a row with one of these must never
-# dedupe-merge with another (they are not "the same fire", just both unnamed).
+# Names that identify nothing, so two rows sharing one never merge.
 _GENERIC_NAMES = frozenset({"", "unnamed", "none", "unknown", "null"})
 
 

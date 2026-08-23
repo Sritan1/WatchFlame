@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { RiskResponse } from '@/lib/api';
 import { computeConfidence } from '@/lib/confidence';
 
-// Minimal RiskResponse builder — only the fields computeConfidence reads
-// (kbdi / ndvi_anomaly) matter; the rest satisfy the type.
+// Minimal RiskResponse builder. Only kbdi and ndvi_anomaly matter here, the
+// rest is there to satisfy the type.
 function riskWith(over: Partial<RiskResponse>): RiskResponse {
   return {
     risk_score: 0.4,
@@ -38,7 +38,7 @@ describe('computeConfidence', () => {
       threatDriver: null,
     });
     expect(r.loading).toBe(false);
-    // Must be LOW: a risk-endpoint failure should never render a confident chip.
+    // Must be LOW. A risk-endpoint failure should never render a confident chip.
     expect(r.level).toBe('low');
   });
 
@@ -68,7 +68,7 @@ describe('computeConfidence', () => {
     const r = computeConfidence({
       weatherUpdatedAt: Date.now(),
       weatherLoading: false,
-      riskData: riskWith({ kbdi: null, ndvi_anomaly: null }), // KBDI + NDVI estimated
+      riskData: riskWith({ kbdi: null, ndvi_anomaly: null }), // KBDI and NDVI estimated
       riskLoading: false,
       threatDriver: null,
     });

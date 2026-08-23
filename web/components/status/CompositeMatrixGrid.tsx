@@ -1,16 +1,8 @@
 'use client';
 
-// Tier-lookup matrix grids for the "Score Breakdown" explainer modal. A generic
-// `TierMatrixGrid` renders any (rowTier × colTier → outputTier) lookup, with the
-// user's actual cell highlighted (brighter fill + colored border + glow) and the
-// user's row/column emphasized for cross-hatch readability. Two wrappers use it:
-//
-//   - CompositeMatrixGrid: Environmental tier (E) × Active-fire Threat (T)  [4×5]
-//   - EnvMatrixGrid:       Fire Weather (W) × Ignition Likelihood (I)        [4×4]
-//
-// Pure presentational. The matrices are mirrored inline (identical to
-// COMPOSITE_MATRIX / ENV_MATRIX in web/lib/composite-risk.ts) to keep this
-// component independent of the risk-logic import graph — edit both places.
+// The matrix grids in the score-breakdown modal. One generic grid draws any lookup
+// table with the user's cell picked out, and two wrappers point it at the app's two
+// matrices. The tables are copied here, not imported. Change one and change the other.
 
 import type { RiskLevel } from '@/lib/theme';
 import { useAesthetic } from '@/lib/aesthetic';
@@ -31,7 +23,7 @@ const COMPOSITE: Record<RiskLevel, Record<ThreatTier, RiskLevel>> = {
   extreme:  { none: 'moderate', low: 'high',     moderate: 'high',     high: 'extreme',  extreme: 'extreme' },
 };
 
-// Mirror of ENV_MATRIX in web/lib/composite-risk.ts (symmetric, multiplicative).
+// Mirror of ENV_MATRIX in web/lib/composite-risk.ts.
 const ENV: Record<RiskLevel, Record<RiskLevel, RiskLevel>> = {
   low:      { low: 'low',      moderate: 'low',      high: 'moderate', extreme: 'moderate' },
   moderate: { low: 'low',      moderate: 'moderate', high: 'moderate', extreme: 'high'     },
@@ -42,16 +34,16 @@ const ENV: Record<RiskLevel, Record<RiskLevel, RiskLevel>> = {
 const TIER_SHORT: Record<RiskLevel, string> = { low: 'LOW', moderate: 'MOD', high: 'HIGH', extreme: 'EXT' };
 const COL_SHORT: Record<ThreatTier, string> = { none: 'NONE', low: 'LOW', moderate: 'MOD', high: 'HIGH', extreme: 'EXT' };
 
-// ─── Wrappers ──────────────────────────────────────────────────────────────
+// Wrappers
 
-/** Stage 2: Environmental tier (E) × Active-fire Threat (T). */
+/** The second step, environment against active-fire threat. */
 export function CompositeMatrixGrid({
   weatherBucket,
   threatBucket,
 }: {
-  /** The environmental tier E (named `weatherBucket` for backward-compat). */
+  /** The environmental tier. Still called weatherBucket for compatibility. */
   weatherBucket: RiskLevel | null;
-  /** null = no fire in range → 'none' column. */
+  /** Null means nothing in range, which is its own column. */
   threatBucket: RiskLevel | null;
 }) {
   return (
@@ -67,7 +59,7 @@ export function CompositeMatrixGrid({
   );
 }
 
-/** Stage 1: Fire Weather (W) × Ignition Likelihood (I). */
+/** The first step, fire weather against ignition likelihood. */
 export function EnvMatrixGrid({
   weatherBucket,
   ignitionBucket,
@@ -88,7 +80,7 @@ export function EnvMatrixGrid({
   );
 }
 
-// ─── Generic grid ──────────────────────────────────────────────────────────
+// Generic grid
 
 function TierMatrixGrid<C extends string>({
   rows,

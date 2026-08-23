@@ -1,9 +1,7 @@
 'use client';
 
-// Opens from the info button on the Ignition Likelihood (ML) card.
-// A short, plain-English explainer: what the model is, what it predicts, the
-// factors it uses, and how well it does. Deliberately not exhaustive — the full
-// write-up lives in the model card.
+// A short explainer for the ignition card. What the model is, what it predicts,
+// how well it does. The full write-up lives in the model card.
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';

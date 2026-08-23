@@ -1,19 +1,8 @@
 'use client';
 
-// 17-state "same score, different tier" comparison ladder, rendered inside
-// the Status calibration modal. Visual language ported from the Status Fire
-// Weather card's segmented gauge (3px gaps, gradient fills, pill segments)
-// so it reads as part of the same design system.
-//
-// Per-state row: state code · segmented bar (segments sized to the state's
-// fitted percentile boundaries) · tier-at-your-score chip on the right.
-//
-// The user's home state row is highlighted (brighter segment fills + border
-// + score marker dot on the bar). Non-user rows are muted so the comparison
-// pops without the eye getting lost.
-//
-// Pure presentational component — data comes via props. Empty / loading
-// states are handled by the parent modal.
+// The ladder inside the calibration modal, showing what one score means in every
+// fitted state. Each row is a state code, a bar split at that state's tier
+// boundaries, and a chip for where the user lands. Presentation only.
 
 import { useMemo } from 'react';
 
@@ -30,10 +19,8 @@ const TIER_LABEL: Record<Tier, string> = {
   extreme: 'Ext',
 };
 
-/** Bucket a raw score under a state's calibrated thresholds. Mirrors
- *  `_bucket` in api/core/regional_calibration.py — note `t.high` (90th
- *  percentile) is informational only and NOT a bucket boundary; HIGH→EXT
- *  cuts at `t.extreme` (97th). */
+/** Bucket a score against one state's thresholds, mirroring the backend. The high
+ *  threshold is informational and not a boundary. */
 function tierAt(score: number | null, t: StateCalibration['thresholds']): Tier | null {
   if (score == null) return null;
   if (score < t.low) return 'low';
@@ -48,9 +35,7 @@ function tierColor(tier: Tier | null): { color: string; rgb: string } {
   return { color: lvl.color, rgb: hexToRgb(lvl.color) };
 }
 
-/** Width-of-band fractions for one state's 4 calibrated segments, in
- *  display order (LOW / MOD / HIGH / EXT). Each segment sized to its
- *  span on a 0..score_max axis (score_max defaults to 1.0 for display). */
+/** How wide each of a state's four bands should draw, as fractions of its bar. */
 function stateSegments(t: StateCalibration['thresholds']): Array<{
   tier: Tier;
   width: number;
@@ -72,24 +57,18 @@ export function CalibrationLadder({
   liveLocation = true,
 }: {
   data: CalibrationInfo;
-  /** State code (e.g. "CA") for the user's current location. Null when the
-   *  user is outside the 17 fitted states or location hasn't resolved yet. */
+  /** The user's own state, or null if we have no fit for where they are. */
   userState: string | null;
-  /** User's current raw fire-weather score. Null while risk data is loading. */
+  /** Their current raw score. Null while it loads. */
   userScore: number | null;
-  /** True (default) when userState comes from an auto-resolved live location
-   *  (Status), so a null state with no score yet means "still resolving".
-   *  Pass false for the what-if calculator — the region is an explicit choice
-   *  and a score is always present, so the "unresolved" copy never applies and
-   *  the footnote always reads as either the global cutoffs or a picked state. */
+  /** True on Status, where the location is still resolving. The what-if screen
+   *  passes false. There the region is the user's own choice. */
   liveLocation?: boolean;
 }) {
   const { ae } = useAesthetic();
 
-  // Sort ascending by EXT threshold — fire-prone West (high EXT) sits at top,
-  // humid SE belt (low EXT) lands at bottom. The reader scans down and sees
-  // the "extreme" band grow visibly as states get more fire-prone — the same
-  // visual gradient as the README chart so the two read consistently.
+  // Ordered so the extreme band visibly grows as you scan down, the same gradient
+  // the README chart uses.
   const ordered = useMemo(() => {
     return Object.entries(data.states)
       .map(([code, cal]) => ({ code, ...cal }))
@@ -101,32 +80,25 @@ export function CalibrationLadder({
       ? Math.min(100, Math.max(0, userScore * 100))
       : null;
 
-  // Decides whether the modal got a useful state code. State codes outside
-  // the fitted set are surfaced as "global fallback" rather than dropped.
+  // A state we have no fit for is shown as the global fallback, not dropped.
   const userIsCalibrated =
     userState != null && Boolean(data.states[userState]);
 
-  // With no calibrated home row (Global, or a not-yet-fitted state), draw the
-  // score marker on EVERY row so the reader sees where their score lands in
-  // each state. A calibrated state pins the marker to just its row. Never drawn
-  // while the score is unresolved.
+  // With no home row to pin it to, mark the score on every row instead.
   const showAllMarkers = userScore != null && !userIsCalibrated;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {/* Header strip — anchors the vertical alignment of the score chip
-          above the bar column, so the reader's eye reads "0.45 from the
-          chip flows down into the colored bands below." */}
+      {/* Header strip. Lines the score chip up over the bar column so the eye
+          follows the number down into the colored bands. */}
       <LadderHeader
         ae={ae}
         scorePct={scorePct}
         userScore={userScore}
       />
 
-      {/* State rows. With a calibrated state picked, that row shows its own
-          score dash. In Global mode (no single home state) a single straight
-          line is overlaid across every row at the score's position instead of
-          a separate dash per row. */}
+      {/* With a calibrated state picked, that row carries its own score dash. In
+          Global mode one straight line runs across every row instead. */}
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {ordered.map((s) => (
@@ -142,9 +114,7 @@ export function CalibrationLadder({
           ))}
         </div>
         {showAllMarkers && userScore != null ? (
-          // Overlay grid mirrors the row template (incl. the rows' 8px h-padding)
-          // so the line lands exactly in the bar column. Spans top→bottom for a
-          // single continuous straight line through all states.
+          // Same grid as the rows, so the line falls exactly in the bar column.
           <div
             aria-hidden
             style={{
@@ -178,11 +148,9 @@ export function CalibrationLadder({
         ) : null}
       </div>
 
-      {/* Footnote when no fitted-state row is highlighted. A calibrated state
-          needs none (its row is highlighted). Otherwise: a resolved-but-not-yet-
-          fitted state names itself; a genuinely unresolved LIVE location (no
-          score yet) says so; everything else (Global / the what-if calculator)
-          reads as the global cutoffs. */}
+      {/* A footnote for the cases with no highlighted row. An unfitted state names
+          itself, a location still resolving says so, everything else falls back to
+          the global cutoffs. */}
       {userIsCalibrated ? null : userState != null ? (
         <p style={{ ...captionStyle(ae), marginTop: 14 }}>
           {userState} isn&apos;t one of the 17 fitted states yet. Your score
@@ -208,7 +176,7 @@ export function CalibrationLadder({
   );
 }
 
-// ─── Header (score chip + axis hint) ─────────────────────────────────────
+// Score chip and axis hint
 
 function LadderHeader({
   ae,
@@ -264,7 +232,7 @@ function LadderHeader({
   );
 }
 
-// ─── Single state row ────────────────────────────────────────────────────
+// Single state row
 
 function LadderRow({
   ae,
@@ -279,8 +247,7 @@ function LadderRow({
   thresholds: StateCalibration['thresholds'];
   isUser: boolean;
   userScore: number | null;
-  /** Draw the score marker on this row. True for the home row, or for every
-   *  row in Global mode; always false while the score is unresolved. */
+  /** Whether to mark the score on this row. */
   showMarker: boolean;
 }) {
   const segments = stateSegments(thresholds);
@@ -330,9 +297,8 @@ function LadderRow({
           {segments.map((s) => {
             const tone = tierColor(s.tier);
             const isActiveTier = tier === s.tier;
-            // Brightness: user row is full strength; others use a softer
-            // muted treatment so the user's row clearly leads visually.
-            // Within a row, the tier the user's score lands in pops a hair.
+            // The user's row is full strength and the rest muted. Within any row,
+            // the tier their score lands in lifts a little.
             const bg = isUser
               ? `linear-gradient(180deg, rgba(${tone.rgb}, ${
                   isActiveTier ? 0.70 : 0.50
@@ -362,8 +328,8 @@ function LadderRow({
           })}
         </div>
 
-        {/* Score marker — on the home row, or on every row in Global mode
-            (no single home state). Hidden while the score is unresolved. */}
+        {/* Score marker. Sits on the home row, or on every row in Global mode
+            where there is no home state. Hidden until the score resolves. */}
         {showMarker && userScore != null ? (
           <div
             style={{
@@ -400,7 +366,7 @@ function LadderRow({
   );
 }
 
-// ─── Tokens ──────────────────────────────────────────────────────────────
+// Tokens
 
 const ROW_TEMPLATE = '32px 1fr 48px';
 const ROW_GAP = 12;

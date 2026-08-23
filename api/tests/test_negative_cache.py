@@ -1,13 +1,8 @@
-"""Regression tests for the short-lived negative cache in census + openfema.
+"""The short-lived negative cache in census and openfema.
 
-Pins the anti-hammer guard: during an upstream outage, repeated calls within the
-failure-TTL window are served from the negative cache (raising SourceUnavailable)
-WITHOUT re-hitting the failing endpoint, then recover once the upstream comes
-back. The failure marker is kept distinct from the success cache, whose None /
-[] means a real "not in the US" / "no active declarations" answer.
-
-Network-free: we stub httpx.AsyncClient with a call-counting client that can be
-flipped between failing and succeeding mid-test.
+During an outage, repeated calls inside the failure window raise straight out of the
+cache without touching the dead endpoint, then recover. The failure marker stays
+separate from the success cache, where None or [] is a real answer.
 """
 from __future__ import annotations
 
@@ -33,8 +28,8 @@ class _Resp:
 
 
 class _CountingClient:
-    """Async-context-manager drop-in that counts upstream calls and either
-    raises (outage) or returns a canned payload, switchable via `mode`."""
+    """httpx.AsyncClient stand-in that counts calls and either raises or returns
+    a canned payload, switched through `mode`."""
     def __init__(self, calls: list, mode: dict, payload: dict):
         self._calls = calls
         self._mode = mode
@@ -77,11 +72,10 @@ def _patch(monkeypatch, mod, calls, mode, payload):
     )
 
 
-# --- census ------------------------------------------------------------------
+# census
 
 def test_census_negative_cache_bounds_upstream_calls(monkeypatch):
-    """Two failing lookups for the same point hit the upstream only once; the
-    second is served from the negative cache and still raises."""
+    """The second failure raises out of the cache, not the upstream."""
     calls: list = []
     _patch(monkeypatch, census, calls, {"fail": True}, {})
 
@@ -94,8 +88,7 @@ def test_census_negative_cache_bounds_upstream_calls(monkeypatch):
 
 
 def test_census_negative_cache_recovers_after_ttl(monkeypatch):
-    """Once the failure entry ages past the TTL and the upstream recovers, the
-    next lookup fetches fresh data and clears the failure marker."""
+    """A recovered upstream clears the marker on the next lookup."""
     calls: list = []
     mode = {"fail": True}
     _patch(monkeypatch, census, calls, mode, _CENSUS_OK)
@@ -115,10 +108,9 @@ def test_census_negative_cache_recovers_after_ttl(monkeypatch):
     assert key not in census._FAIL_CACHE  # cleared on success
 
 
-# --- openfema ----------------------------------------------------------------
+# openfema
 
 def test_openfema_negative_cache_bounds_upstream_calls(monkeypatch):
-    """Two failing county queries hit the upstream only once."""
     calls: list = []
     _patch(monkeypatch, openfema, calls, {"fail": True}, {})
 
@@ -130,13 +122,10 @@ def test_openfema_negative_cache_bounds_upstream_calls(monkeypatch):
     assert len(calls) == 1
 
 
-# --- firms -------------------------------------------------------------------
+# firms
 
 def test_firms_negative_cache_bounds_upstream_calls(monkeypatch):
-    """Two failing FIRMS fetches for the same query hit the upstream once; the
-    second is served from the negative cache and still raises (which /fires
-    turns into a firms=down header). FIRMS only catches httpx errors, so the
-    stub raises one."""
+    """FIRMS only catches httpx errors, so the stub has to raise one."""
     monkeypatch.setenv("NASA_FIRMS_API_KEY", "test-key")
     firms._CACHE.clear()
     firms._FAIL_CACHE.clear()
@@ -162,7 +151,7 @@ def test_firms_negative_cache_bounds_upstream_calls(monkeypatch):
     with pytest.raises(SourceUnavailable):
         asyncio.run(firms.fetch_fires_geojson(days=1, bbox=bbox))
 
-    # The first call probes each configured source once (all fail → down); the
-    # second is served from the negative cache and adds NO upstream calls.
+    # The first call tries every source once and they all fail. The second
+    # comes out of the cache and adds no upstream calls at all.
     assert after_first == len(firms._sources())
     assert len(calls) == after_first

@@ -1,10 +1,6 @@
-"""Tests for the fire-ignition serving layer (services/ignition.py + route).
-
-Network-free: the route tests stub the live fetch; the model tests use the
-committed artifact (api/models/ignition_model.joblib) directly to check that
-hot-dry conditions score higher than cold-wet ones (sanity + training/serving
-parity), skipping if the artifact isn't present.
-"""
+"""Tests for the fire-ignition serving layer. Route tests stub the live fetch. Model
+tests load the committed artifact and check hot dry beats cold wet, skipping if the
+artifact isn't there."""
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -38,12 +34,10 @@ def test_score_features_incomplete_returns_none():
 
 
 def test_dense_urban_scores_below_open_developed_same_weather():
-    """v2 intensity split: for IDENTICAL weather, dense urban (NLCD 24,
-    developed_high — Chicago downtown) reads lower than grassy open-space
-    developed (NLCD 21, developed_open — parks/lawns that genuinely burn).
-    Collapsing 21–24 into one 'developed' bucket hid this, which is what made
-    v1 over-flag dense cities. This asserts the split actually separates them."""
-    # Cool, windy, low-drought spring day (the Chicago over-flag scenario).
+    """Downtown concrete has to read lower than the parks and lawns of open
+    developed land. One bucket for the whole developed range is what made the
+    first model over-flag dense cities."""
+    # Cool, windy spring day with little drought. The Chicago case.
     base = {
         "temperature_c": 19.8, "humidity_pct": 61.0, "wind_kph": 17.0,
         "days_since_rain": 6, "kbdi": 71.0, "month": 5, "season": "spring",
@@ -57,8 +51,7 @@ def test_dense_urban_scores_below_open_developed_same_weather():
 
 
 def test_score_features_defaults_missing_land_cover():
-    """A feature dict without land_cover still scores (degrades to 'unknown')
-    rather than raising — back-compat for callers/fixtures that don't supply it."""
+    """Falls back to 'unknown' rather than raising."""
     scored = ignition.score_features(_HOT_DRY)  # no land_cover key
     if scored is None:
         import pytest

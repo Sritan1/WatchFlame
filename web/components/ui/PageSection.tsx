@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
-/** Consistent vertical rhythm + width clamp for every section on every page. */
+/** Consistent vertical rhythm and width clamp for every section on every page. */
 export function PageSection({
   children,
   gutter = 32,

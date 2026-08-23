@@ -4,9 +4,9 @@ import type { Shelter } from '@/lib/api';
 import { resolveEvacDestination } from '@/lib/evac';
 import { isOnLand } from '@/lib/landmask';
 
-// Mock the land check so the fallback chain is deterministic. The real polygon
-// is covered by landmask.test.ts. isOnLand is called in order: primary, +arc,
-// -arc — so mockReturnValueOnce sequences drive each branch.
+// Mock the land check so the fallback chain is deterministic. landmask.test.ts
+// covers the real polygon. isOnLand runs primary, then +arc, then -arc, so a
+// sequence of mockReturnValueOnce picks the branch.
 vi.mock('@/lib/landmask', () => ({ isOnLand: vi.fn() }));
 const mockLand = vi.mocked(isOnLand);
 
@@ -60,9 +60,9 @@ describe('resolveEvacDestination', () => {
   it('routes to the nearest shelter in the ±60° arc when all points are water', () => {
     mockLand.mockReturnValue(false);
     const shelters = [
-      shelter(0, 1.0, 69), // due east (bearing 90) — in arc
-      shelter(0, 0.5, 35), // due east, closer — in arc, should win
-      shelter(1, 0, 69), // due north (bearing 0) — out of arc, excluded
+      shelter(0, 1.0, 69), // due east (bearing 90), in arc
+      shelter(0, 0.5, 35), // due east, closer, in arc, should win
+      shelter(1, 0, 69), // due north (bearing 0), out of arc, excluded
     ];
     const r = resolveEvacDestination(ORIGIN, AWAY, 50, shelters);
     expect(r.kind).toBe('shelter');
@@ -71,7 +71,7 @@ describe('resolveEvacDestination', () => {
 
   it('falls back to direction-only when no shelter is in the arc', () => {
     mockLand.mockReturnValue(false);
-    // only a shelter due north (out of the ±60° away arc)
+    // Only a shelter due north, outside the away arc.
     const r = resolveEvacDestination(ORIGIN, AWAY, 50, [shelter(1, 0, 20)]);
     expect(r.kind).toBe('direction');
     expect(r.bearing).toBe(90);

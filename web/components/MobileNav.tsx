@@ -1,9 +1,8 @@
 'use client';
 
-// Mobile-only bottom tab bar. Hidden on desktop (inline display:none); shown
-// below 768px via the `.app-bottomnav` rule in globals.css. Replaces the
-// floating 220px sidebar on small screens — the sidebar is display:none'd there.
-// Desktop is unaffected: this renders but stays display:none above the breakpoint.
+// The bottom tab bar, which stands in for the sidebar on a phone. It renders
+// either way and CSS decides which of the two is visible, so desktop is
+// untouched.
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -35,7 +34,7 @@ export function MobileNav() {
       className="app-bottomnav"
       aria-label="Primary"
       style={{
-        display: 'none', // desktop: hidden; mobile @media flips to flex
+        display: 'none', // hidden on desktop, flipped to flex by the mobile media query
         position: 'fixed',
         left: 0,
         right: 0,

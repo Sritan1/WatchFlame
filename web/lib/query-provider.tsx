@@ -1,22 +1,21 @@
 'use client';
 
-// TanStack Query client provider. Lives in its own file because the root
-// layout is a Server Component and useState/QueryClient are client-only.
+// The TanStack Query provider. It gets its own file because the root layout is a
+// Server Component and this has to run on the client.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 
 export function QueryProvider({ children }: { children: ReactNode }) {
-  // useState ensures a single QueryClient per browser session — recreating it
-  // on every render would re-fire every query.
+  // State keeps one client for the session. A new one each render would re-fire
+  // every query.
   const [client] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Match mobile defaults: data is fresh for 1 min, no refetch on
-            // window focus (annoying in this app — most data has its own
-            // upstream cadence of 15+ min).
+            // No refetch on focus. Most of this data only moves upstream every 15
+            // minutes anyway.
             staleTime: 60_000,
             refetchOnWindowFocus: false,
             retry: 1,

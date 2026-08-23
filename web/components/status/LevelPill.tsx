@@ -1,8 +1,7 @@
 'use client';
 
-// Tiny gradient pill used by the Status sub-cards (KBDI/NDVI) to show
-// "Moist" / "Drier than normal" / etc. with a colored dot. Shared across
-// LocalKbdiCard and LocalNdviCard so the chrome stays in lockstep.
+// The small gradient pill on the KBDI and NDVI cards, shared by both so their
+// chrome stays in lockstep.
 
 import type { useAesthetic } from '@/lib/aesthetic';
 

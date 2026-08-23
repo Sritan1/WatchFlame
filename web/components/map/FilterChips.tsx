@@ -1,7 +1,6 @@
 'use client';
 
-// Floating top-left filter row: All Fires / Extreme / High / Moderate.
-// Counts derived from the incident list. Click toggles the active filter.
+// The floating severity filter over the map, with counts off the incident list.
 
 import { useAesthetic } from '@/lib/aesthetic';
 import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Theme tokens — exposed to Tailwind v4 utility generation.
+/* Theme tokens, exposed to Tailwind v4 utility generation.
    Tailwind picks up --color-* / --font-* / --radius-* and emits matching
    bg-*, text-*, font-*, rounded-* utilities. */
 @theme inline {
@@ -41,7 +41,7 @@ body {
  * during animation/refresh. Toggleable per-element via class="ember-num". */
 .ember-num { font-variant-numeric: tabular-nums; }
 
-/* ───── Legal / informational document prose (Terms, Privacy, Accessibility) ── */
+/* Legal and informational document prose (Terms, Privacy, Accessibility) */
 .legal-prose { color: var(--color-ember-text-dim); font-family: var(--font-body); font-size: 15px; line-height: 1.65; max-width: 760px; }
 .legal-prose h1 { font-family: var(--font-display); color: var(--color-ember-text); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
 .legal-prose h2 { font-family: var(--font-display); color: var(--color-ember-text); font-size: 18px; font-weight: 600; margin: 32px 0 8px; }
@@ -52,26 +52,23 @@ body {
 .legal-prose strong { color: var(--color-ember-text); font-weight: 600; }
 .legal-prose .legal-meta { font-family: var(--font-mono); font-size: 12px; color: var(--color-ember-text-dim); letter-spacing: 0.04em; margin: 0 0 28px; }
 .legal-prose .legal-callout { border: 0.5px solid rgba(232, 179, 57, 0.3); background: rgba(232, 179, 57, 0.06); border-radius: 12px; padding: 14px 16px; margin: 0 0 22px; color: var(--color-ember-text); }
-/* Conspicuous disclaimer text (UCC 2-316): brighter + bolder than body prose so
-   the warranty / liability waivers stand out from the surrounding paragraphs. */
+/* Conspicuous disclaimer text (UCC 2-316), brighter and bolder than body prose so
+   the warranty and liability waivers stand out from the surrounding paragraphs. */
 .legal-prose .legal-emphatic { color: var(--color-ember-text); font-weight: 600; letter-spacing: 0.01em; }
 
-/* Custom focus ring — :focus-visible only (mouse clicks don't trigger it).
+/* Custom focus ring, :focus-visible only (mouse clicks don't trigger it).
  * 2px ring offset from the element, in a faded white so it works on any
- * surface tone. Buttons / links / inputs all opt-in via this global rule. */
+ * surface tone. Buttons, links and inputs all opt in via this global rule. */
 :focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 2px;
   border-radius: inherit;
 }
-/* Disabled buttons get the not-allowed cursor for accessibility. */
 button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 
-/* ───── Card chrome system ─────────────────────────────────────────────────
- * `.ember-card` applies the always-on "lit from above" inset highlight + a
- * 200ms transition. Hero-level cards
- * also render a top accent stripe + soft corner glow via two pseudo-elements
- * — opt in with `.ember-hero-card` and set --card-accent on the parent. */
+/* Card chrome system. .ember-card applies the always-on "lit from above" inset
+ * highlight and a 200ms transition. Hero cards add a top accent stripe and corner
+ * glow. Opt in with .ember-hero-card and set --card-accent on the parent. */
 .ember-card {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
@@ -129,7 +126,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   z-index: 2;
 }
 
-/* Gradient hairline divider — replace flat ae.line for editorial sections. */
+/* Gradient hairline divider, replaces flat ae.line for editorial sections. */
 .ember-hairline {
   height: 1px;
   background: linear-gradient(
@@ -140,7 +137,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   );
 }
 
-/* Always-dark scrollbar — match the slate aesthetic everywhere. */
+/* Always-dark scrollbar, matching the slate aesthetic everywhere. */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -154,7 +151,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .ember-scroll::-webkit-scrollbar { display: none; }
 .ember-scroll { scrollbar-width: none; }
 
-/* ───── Keyframes (ported verbatim from interactions.jsx + primitives.jsx) ───── */
+/* Keyframes, ported verbatim from interactions.jsx and primitives.jsx */
 @keyframes ember-pulse {
   0%   { transform: scale(0.8); opacity: 0.9; }
   100% { transform: scale(2.4); opacity: 0; }
@@ -172,10 +169,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Safety "Still Waters" backdrop motion (image-based) ─────────────────────
-   Two slowly-drifting copies of the wave artwork shimmer the strands; a
-   travelling sheen reads as energy flowing along them. Transform/opacity only
-   (cheap), and fully disabled under prefers-reduced-motion. */
+/* Safety "Still Waters" backdrop motion (image-based). Two slowly-drifting copies of
+   the wave artwork shimmer the strands, and a travelling sheen suggests energy moving
+   along them. Transform and opacity only, and off under prefers-reduced-motion. */
 @keyframes sw-drift-a {
   0%   { transform: scale(1.08) translate3d(-2.6%, 1.4%, 0); }
   50%  { transform: scale(1.15) translate3d(2.6%, -1.8%, 0); }
@@ -201,10 +197,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   0%, 100% { background-color: #24242a; }
   50%      { background-color: #34343c; }
 }
-/* Opacity-only on purpose: a `transform` here makes `<main>` a containing block
-   for any position:fixed descendant (e.g. the Status waves backdrop), so during
-   the 0.22s entrance the fixed backdrop is offset then snaps to the viewport
-   when the transform clears — a visible glitch on route return. Fade only. */
+/* Opacity-only. A transform here makes <main> a containing block for any
+   position:fixed descendant, so during the 0.22s entrance the fixed backdrop is
+   offset then snaps to the viewport, a visible glitch on route return. */
 @keyframes ember-route-fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -213,17 +208,16 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   animation: ember-route-fade-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-/* Freeze all descendant CSS animations when the Status visuals aren't being
-   viewed (tab hidden / scrolled past / modal open) — toggled by StatusScreen
-   to cut idle CPU/GPU. animation-play-state holds position, so it resumes in
-   place; modals portal to <body> so they're outside this scope and unaffected. */
+/* Freeze all descendant CSS animations when the Status visuals aren't being viewed,
+   toggled by StatusScreen to cut idle CPU and GPU. animation-play-state holds
+   position. Modals portal to <body>, outside this scope, so they keep running. */
 .ember-anim-paused,
 .ember-anim-paused *,
 .ember-anim-paused *::before,
 .ember-anim-paused *::after {
   animation-play-state: paused !important;
 }
-/* Staggered grid entrance — apply `ember-grid-stagger` to a container and the
+/* Staggered grid entrance. Apply `ember-grid-stagger` to a container and the
  * first N children fade up with an 80ms cascade. Caps at 6 children. */
 .ember-grid-stagger > *:nth-child(1) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 0ms both; }
 .ember-grid-stagger > *:nth-child(2) { animation: ember-fade-up 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 80ms both; }
@@ -273,8 +267,8 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .px-bar        { transform-origin: center bottom; animation: px-bar-rise 0.6s cubic-bezier(0.3, 1.2, 0.4, 1) both; }
 .px-bar-active { animation: px-bar-shimmer 2.4s ease-in-out infinite; }
 
-/* ── Wildfire Intelligence hero systems (Status) ─────────────────────────────
-   Cinematic gauges + AI ignition core. Used by components/status/HeroSystems. */
+/* Wildfire Intelligence hero systems (Status).
+   Cinematic gauges and the AI ignition core. Used by components/status/HeroSystems. */
 @keyframes hs-blob-a    { 0%,100%{ transform: translate(0,0) scale(1);} 50%{ transform: translate(7%,-5%) scale(1.12);} }
 @keyframes hs-blob-b    { 0%,100%{ transform: translate(0,0) scale(1);} 50%{ transform: translate(-6%,6%) scale(1.1);} }
 @keyframes hs-beam      { 0%{ opacity:.35; } 50%{ opacity:1; } 100%{ opacity:.35; } }
@@ -301,9 +295,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   pointer-events: none;
 }
 
-/* Segmented risk-chip loading state: a diagonal sheen sweeps across the value
+/* Segmented risk-chip loading state. A diagonal sheen sweeps across the value
    placeholders, and the four index bars "charge" (staggered opacity pulse) in a
-   left-to-right wave, so the skeleton reads as this instrument, not a gray box. */
+   left-to-right wave, so the skeleton still looks like this instrument. */
 @keyframes ember-chip-sweep  { 0% { transform: translateX(-160%); } 55%, 100% { transform: translateX(420%); } }
 @keyframes ember-chip-charge { 0%, 100% { opacity: 0.22; } 50% { opacity: 1; } }
 .ember-chip-sheen  { animation: ember-chip-sweep 3.4s cubic-bezier(0.5, 0, 0.5, 1) infinite; }
@@ -312,7 +306,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .ember-chip-sheen, .ember-chip-charge { animation: none !important; }
 }
 
-/* Premium button — mouse-tracked highlight + sheen for primary variant */
+/* Premium button, mouse-tracked highlight and sheen for the primary variant */
 .px-btn {
   position: relative; isolation: isolate;
   transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1),
@@ -346,10 +340,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   z-index: 0;
 }
 
-/* ───── Floating glass shell — sidebar + topbar interactions ─────
- * Hover/active visuals are rendered as separate absolutely-positioned layers
- * inside the rail (magnetic pill, hover ghost, ambient glow). The buttons
- * themselves stay background-transparent so those layers read cleanly. */
+/* Floating glass shell, sidebar and topbar interactions. Hover and active visuals
+ * are separate absolutely-positioned layers inside the rail. The buttons stay
+ * background-transparent so those layers show through cleanly. */
 .web-nav-item { text-decoration: none; transition: transform .18s ease, color .18s ease; }
 .web-nav-item:hover .web-nav-stone { transform: translateY(-1px); }
 .web-nav-item:active { transform: scale(0.985); }
@@ -366,7 +359,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .web-footer-link { transition: color .15s ease; }
 .web-footer-link:hover { color: var(--color-ember-text) !important; text-decoration: underline; }
 
-/* Data-feeds popover (Sidebar FeedsPopover) — entrance/exit + row hover. */
+/* Data-feeds popover (Sidebar FeedsPopover), entrance, exit and row hover. */
 .feeds-pop.anim-in { animation: feeds-pop-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 .feeds-pop.anim-out { animation: feeds-pop-out 0.15s ease both; }
 @keyframes feeds-pop-in {
@@ -385,14 +378,13 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 }
 .web-icon-btn:active { transform: translateY(0) scale(0.96); }
 
-/* Soft "ping" expansion — used by Live indicator + Feeds Live dot. */
+/* Soft "ping" expansion, used by the Live indicator and the Feeds Live dot. */
 @keyframes web-ping {
   0%   { transform: scale(1);   opacity: 0.6; }
   80%  { transform: scale(2.2); opacity: 0;   }
   100% { transform: scale(2.2); opacity: 0;   }
 }
 
-/* Settings — aesthetic option cards lift on hover. */
 .settings-aesthetic-card:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.18) !important;
@@ -400,7 +392,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .settings-aesthetic-card[data-selected="true"]:hover { transform: translateY(-1px); }
 .settings-aesthetic-card:active { transform: translateY(0) scale(0.995); }
 
-/* Fire Detail — premium glass panels + back chip + CTA hover states. */
+/* Fire Detail, premium glass panels, back chip and CTA hover states. */
 .inc-back { transition: background .18s ease, color .18s ease, border-color .18s ease; }
 .inc-back:hover {
   background: rgba(255, 255, 255, 0.04);
@@ -411,10 +403,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .inc-open-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
 .inc-open-btn:active { transform: translateY(0) scale(0.992); }
 
-/* ───── Map → Incident Rail ─────────────────────────────────────────
- * Premium rail card hover states + cursor-following highlight + live pulse.
- * Selector tree is namespaced to .inc-card / .inc-live-dot / .inc-rail-*
- * so it doesn't conflict with the Fire Detail .inc-* classes above. */
+/* Map incident rail. Card hover states, cursor-following highlight and live pulse.
+ * Namespaced to .inc-card / .inc-live-dot / .inc-rail-* so it doesn't collide with
+ * the Fire Detail .inc-* classes above. */
 @keyframes inc-live-pulse {
   0%, 100% { opacity: 1;    box-shadow: 0 0 8px #3FB68B; }
   50%      { opacity: 0.55; box-shadow: 0 0 4px #3FB68B; }
@@ -430,9 +421,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 }
 .inc-rail-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
 
-/* Incident card hover lift + bar-glow + chevron nudge. (No persistent
-   will-change: the browser promotes on hover during the transition and drops the
-   layer after — avoids keeping every card on its own GPU layer while idle.) */
+/* Incident card hover lift, bar-glow and chevron nudge. (No persistent
+   will-change. The browser promotes on hover during the transition and drops
+   the layer after, which avoids keeping every card on its own GPU layer while idle.) */
 .inc-card:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.14) !important;
@@ -469,29 +460,22 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 }
 .inc-card:hover .inc-card-shine { opacity: 1; }
 
-/* CTA lift in the detail footer. */
 .inc-rail-cta:hover { transform: translateY(-1px); filter: brightness(1.06); }
 .inc-rail-cta:active { transform: translateY(0) scale(0.992); }
 
-/* ───── Leaflet map markers (rendered via L.divIcon HTML) ───── */
+/* Leaflet map markers (rendered via L.divIcon HTML) */
 .user-marker-wrapper, .inc-node-wrapper { background: transparent !important; border: none !important; }
 
-/* ───── Named-incident markers — nucleus (L.divIcon HTML) ─────
- * Replaces the old glowing core dot. A SEPARATE system from the satellite flame
- * detections (.sat-flame*), so the two layers stay visually distinct: incidents
- * are a tight severity-tinted core. Glow is intentionally restrained — a small
- * shadow, not the old 22px bloom — so a map full of incidents doesn't wash out.
- * No animation (the rotating ring was repainting each frame and dragging the
- * map). The hover transform lives on the inner core, never on .inc-node-wrapper
- * (leaflet positions that root via an inline translate3d, which a transform here
- * would clobber). */
+/* Named-incident markers, the nucleus (L.divIcon HTML). A SEPARATE system from the
+ * satellite flames (.sat-flame*). Restrained glow, no animation, so a busy map stays
+ * smooth. Hover transforms the inner core, never the wrapper leaflet positions. */
 .inc-node-box { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .inc-node-core {
   width: 13px;
   height: 13px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #fff, var(--sev) 62%);
-  /* Restrained halo, tinted by severity via --sev-rgb — enough to lift the core
+  /* Restrained halo, tinted by severity via --sev-rgb, enough to lift the core
    * off the tiles, far short of the old bloom. */
   box-shadow: 0 0 5px 1px rgba(var(--sev-rgb), 0.45);
   transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -537,15 +521,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   box-shadow: 0 0 16px rgba(59, 130, 246, 0.8);
 }
 
-/* ───── FIRMS satellite detections — flame glyphs (L.divIcon HTML) ─────
- * Replaces the old flat CircleMarker dots. A SEPARATE system from the incident
- * markers (.inc-node*), which are untouched. Tiered for looks + performance:
- *   base   → ember-tip flame, transform-only sway (cheap) on EVERY detection
- *   bloom  → + a soft pulsing glow, only on the hottest few (MapImpl bloomKeys)
- *   sparks → + rising embers, only on the SELECTED one (never more than one)
- * All animated transforms live on inner elements, never on .sat-flame-wrapper:
- * leaflet positions that root via an inline translate3d, so a transform here
- * would clobber the position and make the marker jump to the corner. */
+/* FIRMS satellite detections, flame glyphs (L.divIcon HTML). A SEPARATE system from
+ * the incident markers. Base sway on every detection, bloom on the hottest few,
+ * sparks on the selected one. Animate inner elements, never the leaflet wrapper. */
 .sat-flame-wrapper { background: transparent !important; border: none !important; }
 .sat-flame-box { position: relative; width: 100%; height: 100%; }
 .sat-flame-pos {
@@ -564,7 +542,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 }
 .sat-core { animation: sat-core-glow 1.3s ease-in-out infinite; }
 
-/* Bloom — hottest few only. Centered behind the flame body. */
+/* Bloom, hottest few only. Centered behind the flame body. */
 .sat-bloom {
   position: absolute;
   left: 50%;
@@ -579,7 +557,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   pointer-events: none;
 }
 
-/* Selected — enlarge (from the base) + rising sparks. */
+/* Selected, enlarged from the base with rising sparks. */
 .sat-flame-box[data-selected="true"] .sat-flame-pos { transform: translateX(-50%) scale(1.28); }
 .sat-embers { position: absolute; left: 50%; top: 3px; width: 2px; height: 2px; pointer-events: none; }
 .sat-embers span {
@@ -597,7 +575,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .sat-embers span:nth-child(2) { --dx: 5px; animation-delay: 0.7s; }
 .sat-embers span:nth-child(3) { --dx: -1px; animation-delay: 1.3s; }
 
-/* Desktop hover: swell the inner flame, NOT the leaflet-positioned wrapper. */
+/* Desktop hover swells the inner flame, NOT the leaflet-positioned wrapper. */
 .sat-flame-wrapper:hover { cursor: pointer; }
 .sat-flame-wrapper:hover .sat-flame-pos { transform: translateX(-50%) scale(1.18); }
 
@@ -623,7 +601,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   .sat-embers { display: none; }
 }
 
-/* Leaflet attribution + zoom controls: match dark theme */
+/* Leaflet attribution and zoom controls. Dark theme. */
 .leaflet-control-attribution {
   background: rgba(13, 16, 18, 0.78) !important;
   color: rgba(255, 255, 255, 0.42) !important;
@@ -639,13 +617,12 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   padding: 3px 8px !important;
 }
 .leaflet-control-attribution a { color: rgba(255, 255, 255, 0.62) !important; }
-/* `.leaflet-pane` uses z-index 200-700 *inside* the container. Without an
- * explicit stacking context the container's `position: relative` doesn't trap
- * those, and leaflet panes punch through portal-rendered modals (which sit at
- * zIndex 100). `isolation: isolate` forces a new stacking context. */
+/* .leaflet-pane uses z-index 200-700 inside the container. Without an explicit
+ * stacking context the container's position:relative doesn't trap those, and panes
+ * punch through portal-rendered modals. isolation:isolate forces a new context. */
 .leaflet-container { font-family: var(--font-body); isolation: isolate; }
-/* Tile fade-in — leaflet adds `.leaflet-tile-loaded` once the request resolves.
- * Fading from 0 → 1 lets tiles bloom in rather than snap. */
+/* Tile fade-in. Leaflet adds `.leaflet-tile-loaded` once the request resolves.
+ * Fading from 0 to 1 lets tiles bloom in rather than snap. */
 .leaflet-tile { opacity: 0; transition: opacity 0.3s ease; }
 .leaflet-tile-loaded { opacity: 1; }
 
@@ -654,7 +631,7 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .maptiler-logo { width: 76px; height: auto; display: block; }
 @media (max-width: 768px) { .maptiler-logo { width: 54px; } }
 
-/* Hover state for SVG-based markers (FIRMS dots, incident circles). 1.15×
+/* Hover state for SVG-based markers (FIRMS dots, incident circles). 1.15x
  * scale around the marker's center, plus a brightness bump. transform-box
  * fill-box anchors the scale to the SVG element's bounding box. */
 .leaflet-interactive {
@@ -667,25 +644,22 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   filter: brightness(1.15);
   cursor: pointer;
 }
-/* DivIcon incident markers: hover swells the inner core, never the wrapper
+/* DivIcon incident markers. Hover swells the inner core, never the wrapper
  * (which leaflet positions via an inline transform that a wrapper transform
  * would clobber, snapping the marker to the corner). */
 .inc-node-wrapper:hover { cursor: pointer; }
 .inc-node-wrapper:hover .inc-node-core { transform: scale(1.18); }
 
-/* ═══════════ Mobile (≤768px) ═══════════════════════════════════════════════
- * Overrides ONLY. This block never matches above 768px, so the desktop layout
- * is byte-for-byte unchanged. `!important` is required because the layout uses
- * inline styles (a stylesheet `!important` beats a normal inline style). Pairs
- * with the .app-* classNames on Shell/Sidebar and the MobileNav bottom bar.
- * ────────────────────────────────────────────────────────────────────────── */
+/* Mobile, 768px and below. Overrides ONLY, so the desktop layout is byte-for-byte
+ * unchanged. !important is required because the layout uses inline styles. Pairs
+ * with the .app-* classNames on Shell and Sidebar, and the MobileNav bottom bar. */
 @media (max-width: 768px) {
   /* Swap the fixed 220px desktop rail for the bottom tab bar. */
   .app-sidebar  { display: none !important; }
   .app-bottomnav { display: flex !important; }
 
-  /* Content goes full-width (was offset 248px for the rail); leave room at the
-   * bottom so the fixed nav never covers the last card. */
+  /* Content goes full-width, having been offset 248px for the rail, with room at
+   * the bottom so the fixed nav never covers the last card. */
   .app-content {
     margin-left: 0 !important;
     padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
@@ -699,34 +673,31 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
    * wrap (e.g. the Threat Source summary blurb next to its pill). */
   .app-hide-sm { display: none !important; }
 
-  /* Threat Source identity: on mobile the name + Threat Level badge no longer
-   * share a row. The name block takes the full width (so a long incident name
-   * wraps cleanly instead of colliding with the badge), and the badge drops to
-   * its own line below. Title also shrinks so it stays compact. */
+  /* Threat Source identity. On mobile the name and Threat Level badge stop sharing a
+   * row. The name block takes full width so a long incident name wraps instead of
+   * colliding, and the badge drops below. The title shrinks too. */
   .app-threat-id { flex-basis: 100% !important; }
   .app-threat-title { font-size: 22px !important; }
 
-  /* Map filter chips: compact single-line pills so all four fit across a phone
-   * instead of wrapping/overflowing off the right edge. */
+  /* Map filter chips, compact single-line pills so all four fit across a phone
+   * instead of wrapping or overflowing off the right edge. */
   .app-map-filter-bar { left: 8px !important; right: 8px !important; top: 12px !important; }
   .app-map-filters { gap: 4px !important; }
   .app-map-filters > button { height: 28px !important; padding: 0 6px !important; gap: 4px !important; }
   .app-map-filters > button > span { font-size: 8.5px !important; letter-spacing: 0 !important; white-space: nowrap !important; }
   .app-map-filters > button > span:last-child { padding: 1px 3px !important; font-size: 8px !important; }
 
-  /* Fire-detail: once the two columns stack, flatten their wrappers into the
-   * single grid (display:contents) so individual panels become grid items, then
-   * push the technical Detection Metadata + Incident details panels to the very
-   * bottom. Desktop never matches these rules, so its 2-column layout is intact. */
+  /* Fire-detail. Once the two columns stack, flatten their wrappers into the single
+   * grid (display:contents) so panels become grid items, then push Detection Metadata
+   * and Incident details to the bottom. Desktop never matches these. */
   .app-detail-grid > div { display: contents !important; }
   .app-detail-grid .app-detail-late { order: 1 !important; }
-  /* Open in Maps CTA sits below even the late panels — the final action. */
+  /* Open in Maps CTA sits below even the late panels, as the final action. */
   .app-detail-grid .app-detail-last { order: 2 !important; }
 
-  /* Fire-detail mini-map: on a narrow card the bottom-left MapTiler logo and the
-   * bottom-right attribution pill crowd toward each other. Shrink both (only on
-   * the mini-map, scoped via .app-minimap) so they stay legible and clear of one
-   * another. The main map is large enough that it never needs this. */
+  /* Fire-detail mini-map. On a narrow card the MapTiler logo and the attribution pill
+   * crowd each other. Shrink both, scoped via .app-minimap, so they stay legible. The
+   * main map is large enough that it never needs this. */
   .app-minimap .leaflet-control-attribution {
     font-size: 8px !important;
     line-height: 1.25 !important;
@@ -734,70 +705,68 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
   }
   .app-minimap .maptiler-logo { width: 44px !important; }
 
-  /* Dense 4-across stat strips (e.g. Threat Source Dist/Size/Cont/Wind) reflow
-   * to 2×2 so labels/values stop truncating to "DIST 3…". */
+  /* Dense 4-across stat strips (the Threat Source Dist, Size, Cont and Wind row)
+   * reflow to 2 by 2 so labels and values stop truncating to "DIST 3...". */
   .app-grid-4to2 { grid-template-columns: repeat(2, 1fr) !important; }
 
-  /* Section eyebrows are one non-wrapping row (label · hairline · meta) whose
-   * fixed-width right meta forces the page WIDER than the viewport (the "text
-   * cut off / orange band" symptom). Let the row wrap so the meta drops to a
-   * second line, and let it shrink rather than push the layout out. */
+  /* Section eyebrows are one non-wrapping row of label, hairline and meta, and the
+   * fixed-width meta forces the page WIDER than the viewport. Let the row wrap so the
+   * meta drops to a second line, and let it shrink instead of pushing the layout out. */
   .app-eyebrow { flex-wrap: wrap !important; row-gap: 4px !important; }
   .app-eyebrow-meta { flex-shrink: 1 !important; min-width: 0 !important; }
 
-  /* Hide on mobile only — e.g. the Topbar's "Operations ›" breadcrumb prefix,
+  /* Hide on mobile only, such as the Topbar's "Operations" breadcrumb prefix,
    * which is redundant with the bottom nav and crowds the 56px pill. */
   .app-hide-mobile { display: none !important; }
 
-  /* Show on mobile only — paired with an inline display:none default, so the
-   * element is desktop-hidden and appears only here (e.g. the Topbar's mobile
-   * location button, replacing the hidden sidebar picker). */
+  /* Show on mobile only. Pairs with an inline display:none default, so the element
+   * is desktop-hidden and appears only here. The Topbar's mobile location button
+   * is the one that uses it. */
   .app-show-mobile { display: inline-flex !important; }
 
-  /* Fixed overlays pinned to the desktop content area (left: 248 past the
-   * sidebar) must span full-width once the sidebar is gone — otherwise they
-   * leave a black strip where the sidebar used to be. */
+  /* Fixed overlays pinned to the desktop content area, 248px past the sidebar,
+   * must span full-width once the sidebar is gone, or they leave a black strip
+   * where the sidebar used to be. */
   .app-left-inset { left: 0 !important; }
 
-  /* Stack a horizontal flex row (icon | text | actions) vertically — used for
-   * wide banners (e.g. the FEMA card) that read as over-stretched on a phone. */
+  /* Stack a horizontal flex row of icon, text and actions vertically. Used for
+   * wide banners such as the FEMA card, which read as over-stretched on a phone. */
   .app-flex-col { flex-direction: column !important; align-items: stretch !important; }
 
   /* Trim heavy horizontal padding on phones so cards get real content width
-   * (the desktop gutters eat ~60px of a 390px screen). Vertical padding kept. */
+   * (the desktop gutters eat about 60px of a 390px screen). Vertical padding kept. */
   .app-section   { padding-left: 16px !important; padding-right: 16px !important; }
   .app-intel-pad { padding-left: 10px !important; padding-right: 10px !important; }
   .app-card-pad  { padding-left: 16px !important; padding-right: 16px !important; }
 
-  /* Let a normally-truncated (nowrap + ellipsis) label wrap to full text — e.g.
-   * a long fire name in the Threat Source card. */
+  /* Let a normally-truncated (nowrap with ellipsis) label wrap to full text, such
+   * as a long fire name in the Threat Source card. */
   .app-wrap { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
 
-  /* Score Breakdown factor legend: keep the enlarged desktop factor names +
+  /* Score Breakdown factor legend. Keeps the enlarged desktop factor names and
    * questions from feeling oversized on a phone (they still wrap, via minWidth:0
    * on the text block). */
   .app-factor-legend .app-factor-name { font-size: 15.5px !important; }
   .app-factor-legend .app-factor-q { font-size: 13.5px !important; }
 
-  /* Map: stack the canvas above the incident rail instead of side-by-side, and
-   * let the page scroll (the desktop version is a fixed-height split pane). */
-  /* Map: stack the canvas above the rail and let the PAGE scroll between them
-   * (you can't fit a usable map + list in one mobile viewport). */
+  /* Map. Canvas above the incident rail instead of side-by-side, and the PAGE
+   * scrolls between them. A usable map and list won't fit in one mobile viewport.
+   * Desktop is a fixed-height split pane. */
   .app-map-layout {
     grid-template-columns: 1fr !important;
     grid-template-rows: 56vh auto !important;
     height: auto !important;
     overflow: visible !important;
   }
-  /* Second, INTERNAL scroll: cap the incident/satellite list so a long list
-   * stays compact and — crucially — selecting a distant item scrolls the LIST,
-   * not the whole page, so the map doesn't fly off-screen. */
+  /* A second, INTERNAL scroll. Caps the incident and satellite list so a long list
+   * stays compact. It also means selecting a distant item scrolls the LIST and not
+   * the whole page, which keeps the map from flying off-screen. */
   .inc-rail-scroll {
     max-height: 60vh !important;
     overflow-y: auto !important;
   }
 
-  /* Empty-state panel: compact on mobile so it doesn't overflow the capped
+  /* Empty-state panel, compact on mobile so it doesn't overflow the capped
    * rail-list height (the desktop 340px min would force an inner scroll on a
    * short phone). */
   .app-empty-feed {
@@ -805,9 +774,9 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
     padding: 24px 20px !important;
   }
 
-  /* Detail footer (flex child under the list) — keep it compact on mobile:
-   * drop the stat grid (same numbers are on the card in the list) and tighten
-   * the summary + CTA. */
+  /* Detail footer (flex child under the list), kept compact on mobile. Drops the
+   * stat grid, whose numbers are already on the card in the list, and tightens
+   * the summary and CTA. */
   .app-map-detail-footer { padding: 10px 14px 12px !important; }
   .app-map-detail-footer .app-map-footer-stats { display: none !important; }
   .app-map-detail-footer .app-map-footer-summary { margin-bottom: 8px !important; }

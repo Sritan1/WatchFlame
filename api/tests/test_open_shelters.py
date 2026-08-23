@@ -1,8 +1,6 @@
-"""Tests for the activated / open-shelter layer (services/open_shelters.py).
-
-Network-free: we unit-test the FEMA NSS field parser + mappers against synthetic
-ArcGIS features (the live query is exercised manually), and the mock fixtures.
-"""
+"""Tests for the activated open-shelter layer. The FEMA NSS parser and mappers run
+against synthetic ArcGIS features and the mock fixtures. The live query gets checked
+by hand."""
 import asyncio
 
 from api.services.open_shelters import (
@@ -13,8 +11,8 @@ from api.services.open_shelters import (
     fetch_open_shelters,
 )
 
-# A synthetic ArcGIS feature shaped like a real FEMA NSS "Open Shelters" record
-# (coordinates live in the geometry; many attribute fields are partial/UNK).
+# Shaped like a real FEMA NSS record, where the coordinates live in the geometry
+# and many attribute fields come back partial or unknown.
 _FEATURE = {
     "attributes": {
         "shelter_id": "ABC123",
@@ -50,7 +48,7 @@ def test_map_feature_parses_real_shape():
     assert s.address == "1872 N Mohawk St, Chicago, IL"
     assert s.managing_org == "American Red Cross of Chicago"
     assert s.pet_friendly is False          # pet_accommodations_code == NONE
-    assert s.ada_accessible is True          # ada UNK → falls back to wheelchair Y
+    assert s.ada_accessible is True          # ada was UNK, so it read wheelchair
     assert s.updated_at is None              # reporting_period was null
     assert s.opened_at is not None           # from shelter_open_date epoch ms
 

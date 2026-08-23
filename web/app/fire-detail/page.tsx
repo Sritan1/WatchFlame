@@ -1,13 +1,6 @@
-// Fire-detail route — /fire-detail?lat=…&lon=…&brightness=…&confidence=…&
-// acq_date=…&acq_time=…&satellite=…&daynight=…
-//
-// One unified screen for both FIRMS satellite pixels AND named NIFC/Cal Fire
-// incidents — matches mobile app/fire-detail.tsx 1:1. The screen looks up
-// named incidents within 10 mi of (lat, lon) and renders the incident
-// metadata block when a match is found.
-//
-// Wrapped in <Suspense> because FireDetailScreen reads URL params via
-// useSearchParams, which Next 16 requires under a Suspense boundary.
+// One screen for both satellite pixels and named incidents. Reads the pixel off the
+// query string, then looks for a nearby named incident. The Suspense boundary is what
+// Next requires around the useSearchParams read inside FireDetailScreen.
 
 import { Suspense } from 'react';
 

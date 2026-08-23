@@ -1,22 +1,7 @@
-"""Trajectory index — short-term forward-looking signal for the composite tier.
+"""Trajectory index, the "is this getting worse?" signal next to the Status tier.
 
-The Status composite tier is "now-only." It tells the user how dangerous
-the current environment is, but not whether conditions are about to get
-worse or better. Trajectory closes that gap by projecting the fire-weather
-fire-weather score 6 hours forward using Open-Meteo's hourly Forecast
-data, and surfacing one of three tiers:
-
-    rising   — projected score materially higher than now (deteriorating)
-    steady   — projected within ±10% of now
-    falling  — projected score materially lower than now (improving)
-
-The "materially" threshold is a 10% delta in raw fire-weather score. That's roughly
-the resolution at which a one-tier bucket shift becomes plausible, and
-small enough that genuine direction is captured before it crosses a
-boundary the user can act on.
-
-Pure functions — no I/O, no FastAPI imports. Easy to unit-test against
-synthetic forecast windows.
+Projects the fire-weather score 6 hours out on Open-Meteo hourly data and calls it
+rising, steady or falling. No I/O, so it unit-tests on synthetic windows.
 """
 from __future__ import annotations
 
@@ -28,19 +13,17 @@ from .validation import doy_to_season
 
 Tier = Literal["rising", "steady", "falling"]
 
-# Trajectory threshold — % change in raw fire-weather score that counts as a
-# directional move rather than steady. Symmetric for rising and falling.
+# Score change that counts as a move rather than steady, same either direction.
 SIGNIFICANT_DELTA_PCT = 10.0
 
-# Horizon we project forward. Mirrors openmeteo_forecast.TRAJECTORY_HORIZON_HOURS;
-# kept here as a separate constant so the core math doesn't import the
-# service layer.
+# Mirrors openmeteo_forecast.TRAJECTORY_HORIZON_HOURS. Duplicated so the core math
+# never imports the service layer.
 HORIZON_HOURS = 6
 
 
 @dataclass
 class TrajectoryFrame:
-    """A single point in time on the forecast trajectory — current or projected."""
+    """One hour on the forecast trajectory."""
     label: str          # "now" or "+6 hr"
     temperature_c: float
     humidity_pct: float
@@ -57,27 +40,20 @@ class TrajectoryResult:
     horizon_hours: int     # how far forward we projected
     now: TrajectoryFrame
     projected: TrajectoryFrame
-    dominant_driver: str   # "vpd" / "wind" / "humidity" — what shifted most
-    # Full hour-by-hour series from now out to the horizon (length
-    # horizon_hours + 1). frames[0] IS `now` and frames[horizon_hours] IS
-    # `projected` — so existing consumers are unaffected; the series just
-    # additionally powers the hour-by-hour phase-space curve on the frontend.
+    dominant_driver: str   # whichever of vpd, wind or humidity shifted most
+    # Every hour from now to the horizon. frames[0] is now, the last is projected.
     frames: list[TrajectoryFrame]
 
 
 def _pick_hour_index(times: list[str], from_iso: str | None, hours_ahead: int) -> int:
-    """Pick the array index closest to `from_iso + hours_ahead`. When
-    from_iso is None, use the first element as anchor. Returns the index
-    into `times`. Clamps to the last available index."""
+    """Index nearest from_iso + hours_ahead, clamped to the end of the array."""
     if not times:
         return 0
     if from_iso and from_iso in times:
         anchor_idx = times.index(from_iso)
     elif from_iso:
-        # Tolerate minor format drift (a seconds / offset suffix) by matching on
-        # the YYYY-MM-DDTHH hour prefix; only then fall back to index 0. An
-        # exact-string-only match would silently anchor at midnight on any
-        # format change, reintroducing the pre-dawn "now" bug.
+        # Match on the hour prefix so an added seconds or offset suffix still lands.
+        # Exact matching anchored at midnight instead, the old pre-dawn bug.
         hour_key = from_iso[:13]
         anchor_idx = next((i for i, t in enumerate(times) if t[:13] == hour_key), 0)
     else:
@@ -87,9 +63,7 @@ def _pick_hour_index(times: list[str], from_iso: str | None, hours_ahead: int) -
 
 
 def _percent_change(now: float, projected: float) -> float:
-    """Signed % change from `now` to `projected`. Returns 0 when `now` is
-    near-zero to avoid division-by-near-zero blowup (a small absolute
-    move there wouldn't be operationally meaningful anyway)."""
+    """Signed percent change, 0 near zero where the division blows up."""
     if abs(now) < 1e-3:
         return 0.0
     return ((projected - now) / now) * 100.0
@@ -107,25 +81,17 @@ def _build_frame(
     season_for_iso: str,
 ) -> TrajectoryFrame:
     """Run compute_risk on the frame's weather and snapshot the score."""
-    # Best-effort season inference from the ISO date string. doy_to_season
-    # wants a day-of-year integer; convert if we can, fall back to current
-    # season as a last resort (irrelevant when NDVI is provided since
-    # compute_risk prefers NDVI over season anyway).
+    # Season from the date where possible, otherwise the caller's fallback.
     try:
-        # ISO format "YYYY-MM-DDTHH:MM"
         date_part = iso_time.split("T")[0]
         yr, mo, dy = (int(x) for x in date_part.split("-"))
         from datetime import date as _date
         doy = (_date(yr, mo, dy) - _date(yr, 1, 1)).days + 1
         season = doy_to_season(doy)
     except Exception:
-        season = season_for_iso  # passed-in fallback
+        season = season_for_iso
 
-    # The forecast doesn't tell us days-since-rain forward; use a neutral
-    # value (the algorithm prefers KBDI anyway when supplied, and even
-    # without KBDI a near-zero days-since-rain matches the typical recent
-    # forecast). KBDI for the projected frame is approximated as today's
-    # KBDI (it integrates slowly; 6 hours doesn't move it materially).
+    # The forecast says nothing about days since rain, so pass a neutral value.
     result: RiskResult = compute_risk(
         temp_c=float(temp_c),
         humidity_pct=float(rh_pct),
@@ -153,15 +119,11 @@ def compute_trajectory(
     season_fallback: str = "summer",
     horizon_hours: int = HORIZON_HOURS,
 ) -> TrajectoryResult | None:
-    """Compute the trajectory from a forecast dict (as returned by
-    openmeteo_forecast.fetch_forecast_hourly).
+    """Compute the trajectory from an openmeteo_forecast.fetch_forecast_hourly dict.
 
-    `kbdi` and `ndvi_anomaly` should be the user's current values from
-    the /risk pipeline — we hold them constant for both the now-frame
-    and the projected-frame since they move on timescales >> 6 hr.
-
-    Returns None when the forecast doesn't have enough samples or the
-    weather arrays are too sparse to project.
+    kbdi and ndvi_anomaly come from the /risk pipeline and stay fixed across the
+    window because they move far slower than 6 hours. None if the arrays are too
+    short or ragged to project.
     """
     times = forecast.get("time") or []
     temps = forecast.get("temperature_2m") or []
@@ -174,43 +136,28 @@ def compute_trajectory(
     if not (len(temps) == len(rhs) == len(winds) == len(precs) == len(times)):
         return None
 
-    # Anchor "now" at the user's ACTUAL current hour. Open-Meteo returns
-    # the hourly array starting at midnight of today (local), so anchoring
-    # at index 0 would silently use pre-dawn weather as "now" — that was
-    # producing trajectories like "1.3 → 6.4 kph wind" because both
-    # samples were nighttime calm, not the user's mid-afternoon reading.
-    # When the response includes a `current` block, find the hourly index
-    # whose `time` matches `current.time`; fall back to index 0 if no
-    # match (preserves legacy / test behavior).
+    # Anchor "now" at the real current hour from the current block. The hourly
+    # array starts at local midnight, so index 0 would report pre-dawn calm as the
+    # user's afternoon weather.
     current = forecast.get("current") or {}
     current_iso = current.get("time") if isinstance(current, dict) else None
-    # Anchor "now" via the shared (format-tolerant) index helper rather than a
-    # second inline match — keeps the projected-index logic and this one in sync.
     now_idx = _pick_hour_index(times, current_iso, 0)
 
-    # Guard against any-null entries at the chosen indices — Open-Meteo
-    # occasionally returns null for stations that didn't report. We
-    # carry-forward from neighboring valid samples.
+    # Open-Meteo returns null when a station didn't report, so borrow the nearest
+    # value that exists.
     def _safe(arr: list, idx: int, fallback: float) -> float:
         v = arr[idx]
         if v is not None:
             return float(v)
-        # walk back to find a non-null
         for j in range(idx - 1, -1, -1):
             if arr[j] is not None:
                 return float(arr[j])
-        # walk forward
         for j in range(idx + 1, len(arr)):
             if arr[j] is not None:
                 return float(arr[j])
         return fallback
 
-    # Build the full hour-by-hour series from `now` out to the horizon.
-    # Index h is clamped to the last sample so a late-night `now` that runs
-    # off the end of the array carries the last value forward (matching the
-    # old projected-clamp behavior). frames[0] is the now-frame and
-    # frames[horizon_hours] is the projected-frame, so now/projected keep
-    # their exact prior values.
+    # A late-night "now" runs off the end of the array and repeats the final hour.
     frames: list[TrajectoryFrame] = []
     for h in range(horizon_hours + 1):
         idx = min(now_idx + h, len(times) - 1)
@@ -230,7 +177,6 @@ def compute_trajectory(
     now_frame = frames[0]
     proj_frame = frames[horizon_hours]
 
-    # Tier from signed score delta
     delta_pct = _percent_change(now_frame.v4_score, proj_frame.v4_score)
     if delta_pct >= SIGNIFICANT_DELTA_PCT:
         tier: Tier = "rising"
@@ -239,9 +185,7 @@ def compute_trajectory(
     else:
         tier = "steady"
 
-    # Dominant driver: name the input whose % change contributed most
-    # to the score shift. Helps the UI show "VPD up 18%" or "humidity
-    # falling fast" — context the user can verify.
+    # Name whichever input moved most, so the UI can say what is driving the change.
     vpd_now = _vpd_proxy(now_frame.temperature_c, now_frame.humidity_pct)
     vpd_proj = _vpd_proxy(proj_frame.temperature_c, proj_frame.humidity_pct)
     deltas = {
@@ -263,8 +207,5 @@ def compute_trajectory(
 
 
 def _vpd_proxy(temp_c: float, rh_pct: float) -> float:
-    """VPD in hPa, used here only to rank which driver moved most. Delegates to
-    the canonical formula in risk_algorithm so the two can't drift (the prior
-    'circular import' concern was unfounded — this module already imports from
-    risk_algorithm)."""
+    """VPD in hPa, only used to rank drivers. Delegates so the formula can't drift."""
     return vapor_pressure_deficit_hpa(temp_c, rh_pct)

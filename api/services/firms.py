@@ -12,33 +12,24 @@ from ..core.parse import safe_float
 from ..core.source_health import SourceUnavailable
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-# Short-lived negative cache so a FIRMS outage isn't re-hit on every request.
-# Mirrors the census + openfema degraded caches; separate from _CACHE because a
-# success there is a real (possibly empty) FeatureCollection, not an outage.
+# Remembers a recent outage so we don't hammer FIRMS while it is down. Separate
+# from _CACHE, where an empty result is a real answer rather than a failure.
 _FAIL_CACHE: dict[str, float] = {}
 
-# Defense-in-depth: `area` is interpolated into the FIRMS URL path, so it must
-# never be arbitrary text. Callers (the /fires route) already validate, but the
-# service refuses anything that isn't "world" or four comma-separated numbers
-# and falls back to "world" rather than building a URL from untrusted input.
-# The optional [eE] exponent is required because the route formats coordinates
-# with a plain f-string, so a near-zero bbox stringifies as "1e-05"; without it
-# a legitimate tiny bbox would fail this allowlist and silently downgrade to a
-# WORLD query (returning global fires). Still numeric-only — no injection risk.
+# area lands in the FIRMS URL path, so it can never be arbitrary text. Anything that
+# isn't "world" or four numbers falls back to "world". The exponent part matters. A
+# tiny bbox stringifies as "1e-05", and without it that becomes a request for Earth.
 _NUM = r"-?\d{1,3}(?:\.\d+)?(?:[eE][+-]?\d+)?"
 _BBOX_RE = re.compile(rf"^{_NUM}(?:,{_NUM}){{3}}$")
 
-# Default: MERGE three VIIRS NRT satellites instead of relying on one. Any single
-# near-real-time product lags intermittently (Suomi-NPP notably has gone empty
-# for a full day while NOAA-20/21 still saw active fires), and a lone source
-# blanks the entire map on a false all-clear. Merging covers the gap; overlapping
-# same-fire pixels are collapsed by _dedup below. Override via FIRMS_SOURCES
-# (comma-separated) or the legacy single FIRMS_SOURCE.
+# Three satellites rather than one. Suomi NPP has gone empty for a whole day while
+# NOAA-20 and 21 were still seeing active fires, and on one source that empties the
+# map into a false all-clear.
 _DEFAULT_SOURCES = ("VIIRS_NOAA20_NRT", "VIIRS_SNPP_NRT", "VIIRS_NOAA21_NRT")
 
-# Coordinate rounding for cross-satellite dedup. 3 dp ≈ 110 m, comfortably under
-# the 375 m VIIRS pixel, so it collapses the SAME detection reported by multiple
-# satellites without merging genuinely distinct pixels along a fire front.
+# Rounding for the dedup. Three decimals is about 110m, well under the 375m VIIRS
+# pixel, so it merges one fire seen three times without merging separate pixels
+# along a fire front.
 _DEDUP_DP = 3
 
 
@@ -47,14 +38,13 @@ def _ttl() -> int:
 
 
 def _fail_ttl() -> int:
-    # How long an all-sources FIRMS outage suppresses re-hitting the upstream.
+    # How long a total outage keeps us from trying again.
     return int(os.getenv("FIRMS_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
 def _sources() -> list[str]:
-    """The FIRMS satellite products to merge. FIRMS_SOURCES (comma-separated)
-    wins; the legacy singular FIRMS_SOURCE is still honored; else the 3-VIIRS
-    default."""
+    """Which satellites to merge. FIRMS_SOURCES wins, the older singular
+    FIRMS_SOURCE still works."""
     raw = os.getenv("FIRMS_SOURCES") or os.getenv("FIRMS_SOURCE")
     if raw:
         srcs = [s.strip() for s in raw.split(",") if s.strip()]
@@ -71,15 +61,11 @@ def _api_key() -> str:
 
 
 def _parse_csv(text: str, source: str) -> list[dict[str, Any]]:
-    """Parse a FIRMS area-CSV body into GeoJSON features.
+    """Turn a FIRMS CSV body into GeoJSON features.
 
-    Raises SourceUnavailable when the 200 body is NOT the expected CSV. FIRMS
-    returns HTTP 200 with a plaintext error ("Invalid MAP_KEY.", "You have
-    exceeded your allocated transaction limit ...") for a bad key or blown quota.
-    Fed straight to csv.DictReader that parses to zero rows and reads as a
-    genuine "satellite saw nothing" — a silent, map-wide false all-clear. We
-    detect it by the absence of the latitude/longitude header columns (a real
-    empty result still carries the header row).
+    A bad key or blown quota comes back as HTTP 200 with a line of plain English. It
+    parses to zero rows and looks exactly like "the satellites saw nothing". The
+    giveaway is the missing header row, which a real empty result still has.
     """
     reader = csv.DictReader(io.StringIO(text))
     cols = reader.fieldnames or []
@@ -116,11 +102,9 @@ def _parse_csv(text: str, source: str) -> list[dict[str, Any]]:
 
 
 async def _fetch_source(source: str, area: str, days: int) -> list[dict[str, Any]]:
-    """Fetch + parse one FIRMS source. Raises SourceUnavailable on a network
-    error OR a non-CSV 200 body (bad key / blown quota — see _parse_csv)."""
-    # NOTE: the API key is embedded in this URL path — never log `url`. Logging
-    # below references only `source`/`area`/`days`. (The root logger also has a
-    # redaction filter as a backstop; see core/logging_setup.)
+    """Fetch and parse one satellite's feed."""
+    # The API key sits in this URL, so never log it. core/logging_setup is the
+    # backstop.
     url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{_api_key()}/{source}/{area}/{days}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -128,8 +112,7 @@ async def _fetch_source(source: str, area: str, days: int) -> list[dict[str, Any
             resp.raise_for_status()
             text = resp.text
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-        # FIRMS is flaky: transaction-quota bursts return 400 (not 429), and
-        # cold satellite-pass windows occasionally 5xx.
+        # FIRMS is flaky, and quota bursts come back as 400 rather than 429.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(f"[firms] {source} upstream {status} for {area}/{days} ({type(e).__name__}); reporting down")
         raise SourceUnavailable(f"firms {source} area fetch failed") from e
@@ -137,11 +120,8 @@ async def _fetch_source(source: str, area: str, days: int) -> list[dict[str, Any
 
 
 def _dedup(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse detections that round to the same ~110 m coordinate, keeping the
-    brightest representative. The same fire is seen by several satellites at
-    near-identical coords, so a raw merge would show it 2-3x and waste the
-    downstream brightest-first marker budget on duplicates. Keeping the brightest
-    means that cap still surfaces the strongest pixel for each location."""
+    """Collapse detections at the same spot down to the brightest. Three satellites
+    see one fire at near-identical coordinates, so the map would draw it thrice."""
     best: dict[tuple[float, float], dict[str, Any]] = {}
     for f in features:
         p = f["properties"]
@@ -153,27 +133,14 @@ def _dedup(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[str, Any]:
-    """
-    Fetch recent fire detections from NASA FIRMS and return GeoJSON.
+    """Recent fire detections from NASA FIRMS, as GeoJSON, merged and deduped.
 
-    Merges several VIIRS NRT satellites (see _sources) so one satellite's NRT
-    processing lag can't blank the map, then dedups overlapping same-fire pixels
-    (see _dedup).
-
-    Raises SourceUnavailable only when EVERY source fails (network error, quota
-    burst, 5xx, timeout, or a non-CSV 200 error body) so the /fires route can
-    report firms=down — a real outage returns the same empty FeatureCollection as
-    "satellite saw nothing," and the two must be told apart. If at least one
-    source succeeds, its detections are returned (partial coverage beats a false
-    outage). A successful-but-empty result is NOT an outage and returns normally.
-
-    FIRMS area API:
-      https://firms.modaps.nasa.gov/api/area/csv/<KEY>/<SOURCE>/<AREA>/<DAYS>
-      AREA is "world" or "minLon,minLat,maxLon,maxLat".
+    Raises only when every source fails. An outage and "the satellites saw nothing"
+    both look like an empty collection, and the route has to tell them apart, so one
+    surviving source counts as healthy.
     """
     area = bbox if bbox else "world"
     if area != "world" and not _BBOX_RE.match(area):
-        # Untrusted/malformed input never reaches the URL path.
         area = "world"
 
     sources = _sources()
@@ -184,14 +151,13 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     if cached and now - cached[0] < _ttl():
         return cached[1]
 
-    # A recent all-sources outage for this query? Signal `down` from the negative
-    # cache instead of re-hitting a flaky / quota-limited FIRMS every request.
+    # Everything failed recently, so say down rather than hammering a quota-limited
+    # FIRMS on every request.
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         raise SourceUnavailable("firms area fetch failed (cached)")
 
-    # Fetch every source concurrently; one source's failure must not sink the
-    # others, so gather with return_exceptions and merge whatever succeeded.
+    # All at once, keeping whatever comes back. One failing can't sink the rest.
     results = await asyncio.gather(
         *(_fetch_source(s, area, days) for s in sources),
         return_exceptions=True,
@@ -200,16 +166,15 @@ async def fetch_fires_geojson(days: int = 1, bbox: str | None = None) -> dict[st
     any_ok = False
     for r in results:
         if isinstance(r, BaseException):
-            continue  # already logged inside _fetch_source / _parse_csv
+            continue  # already logged where it happened
         any_ok = True
         merged.extend(r)
 
     if not any_ok:
-        # Every configured source failed — a real outage, not "saw nothing".
+        # An outage, not a quiet sky.
         _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable("all firms sources failed")
 
-    # Success (even if empty) — drop any stale failure marker for this query.
     _FAIL_CACHE.pop(cache_key, None)
 
     fc = {"type": "FeatureCollection", "features": _dedup(merged)}

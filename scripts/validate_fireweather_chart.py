@@ -1,19 +1,9 @@
-"""Generate notebooks/figures/fireweather_validation.png + print current fire-weather metrics.
+"""Draw the validation chart and print the numbers behind it.
 
-Hindcasts the production fire-weather algorithm (multiplicative VPD × wind ×
-KBDI × vegetation, with constants fit in scripts/fit_fireweather_params.py) against the
-frozen 500-fire FPA-FOD hindcast set (data/hindcast_features.csv, built by
-scripts/freeze_hindcast_dataset.py from real per-fire Open-Meteo weather + KBDI).
-
-Reading the frozen CSV makes this fully offline and reproducible — no
-Open-Meteo calls, no sample drift. Scores come from the same `compute_risk`
-the live `/risk` endpoint runs (NDVI substitution isn't applied — historical
-Sentinel-2 replay isn't tractable — so the calendar season multiplier stands
-in, matching the live fallback when an NDVI fetch fails).
-
-Outputs:
-  - notebooks/figures/fireweather_validation.png (chart for README)
-  - stdout summary with Spearman r, per-bucket means, sample sizes
+Runs the shipped algorithm back over the frozen 500-fire hindcast set, which carries
+real per-fire weather and KBDI. Reading that CSV keeps it offline and reproducible.
+Scores come from the same compute_risk the live endpoint uses. NDVI is the exception,
+because replaying old satellite passes isn't practical, so the calendar stands in.
 """
 from __future__ import annotations
 
@@ -23,7 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Windows consoles default to cp1252, which can't encode the ρ we print below.
+# Windows consoles default to a codepage that can't print the symbols we use.
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except (AttributeError, ValueError):
@@ -37,8 +27,8 @@ from scipy import stats  # noqa: E402
 from api.core.risk_algorithm import compute_risk  # noqa: E402
 
 CSV_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
-# Same stratified split as scripts/fit_fireweather_params.py, so the ρ reported here is
-# measured on the exact held-out fires the fitted constants never trained on.
+# The same split the fitting script used, so this is measured on the exact fires
+# those constants never saw.
 SEED = 7
 TEST_FRAC = 0.30
 BUCKETS = ["small", "medium", "large", "very_large"]
@@ -49,17 +39,14 @@ LABELS = {
     "very_large": ">1,000 ac",
 }
 COLORS = ["#7ee787", "#fbbf24", "#fb923c", "#ef4444"]
-# Dark-theme palette: same green -> red heat progression, but evened to a
-# cohesive family (~60% lightness, ~40% saturation) so the bars sit on the dark
-# canvas instead of glowing. Tuned for dark mode, not a uniform mute of the above.
+# The same progression for dark mode, evened out so the bars sit on a dark
+# background instead of glowing off it.
 COLORS_DARK = ["#6FAF8E", "#C6A55E", "#C9885A", "#C56A62"]
 
 
 def _heldout_test_mask(df: pd.DataFrame) -> np.ndarray:
-    """Boolean mask marking the held-out TEST split — identical stratified
-    split to scripts/fit_fireweather_params.py (same SEED, TEST_FRAC, per-size-bucket,
-    fresh Generator used only for this shuffle) so the ρ measured on it is the
-    honest out-of-sample number for the fitted production constants."""
+    """Which fires are in the held-out half. Same seed, same fraction, same
+    per-bucket shuffle as the fitting script, or the number isn't honest."""
     rng = np.random.default_rng(SEED)
     test_idx: list = []
     for b in BUCKETS:
@@ -71,7 +58,7 @@ def _heldout_test_mask(df: pd.DataFrame) -> np.ndarray:
 
 
 def main() -> None:
-    # 1. Load the frozen feature set (offline; no API, no sample drift).
+    # The frozen features, so no API and no sample drift.
     if not CSV_PATH.exists():
         raise SystemExit(
             f"{CSV_PATH} not found — run scripts/freeze_hindcast_dataset.py first."
@@ -83,9 +70,8 @@ def main() -> None:
     print(f"loaded {len(ew)} fires from {CSV_PATH.name}; with real KBDI: {n_with_kbdi}")
     print(ew["size_bucket"].value_counts().reindex(BUCKETS).to_string())
 
-    # 2. Score with the production path (fitted constants via DEFAULT_PARAMS).
-    #    Real KBDI where available; days_since_rain fallback otherwise — the
-    #    documented live behavior when Open-Meteo Archive is unavailable.
+    # Score exactly as production does, KBDI where we have it and days since rain
+    # where we don't, which is also what happens live when the archive is down.
     def per_row_score(r: pd.Series) -> float:
         kbdi_val = r["kbdi"] if pd.notna(r["kbdi"]) else None
         out = compute_risk(
@@ -102,13 +88,12 @@ def main() -> None:
     ew["risk_v4"] = ew.apply(per_row_score, axis=1)
     ew["log_size"] = np.log10(ew["fire_size"] + 1.0)
 
-    # The production constants were fit on ~70% of these fires, so anything
-    # measured on the full set is an in-sample hindcast (descriptive only).
-    # The whole figure below reports the SAME held-out test split those
-    # constants never saw: bars, CIs, and the headline rho all come from it.
+    # The constants were fit on most of these fires, so anything measured across
+    # the whole set only describes it. Every number in the figure comes from the
+    # held-out half instead.
     test = ew.loc[_heldout_test_mask(ew)]
 
-    # 4. Per-bucket discrimination + 95% CIs, on the held-out test split.
+    # Bucket means with their error bars.
     def mean_ci(values: pd.Series) -> tuple[float, float]:
         if len(values) < 2:
             return float(values.iloc[0]) if len(values) else 0.0, 0.0
@@ -123,7 +108,7 @@ def main() -> None:
         rows_agg.append({"bucket": b, "mean": m, "ci": ci, "n": int(len(sub))})
     agg = pd.DataFrame(rows_agg).set_index("bucket")
 
-    # 5. Continuous correlation (log size vs predicted score).
+    # How well the score tracks fire size overall.
     spearman_full = float(ew[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
     pearson_full = float(ew[["log_size", "risk_v4"]].corr(method="pearson").iloc[0, 1])
     spearman_test = float(test[["log_size", "risk_v4"]].corr(method="spearman").iloc[0, 1])
@@ -141,7 +126,7 @@ def main() -> None:
         ascii_lbl = LABELS[b].replace("–", "-")
         print(f"  {ascii_lbl:<14} mean={row['mean']:.3f}  ci=+/-{row['ci']:.3f}  n={int(row['n'])}")
 
-    # CIs non-overlap test for the headline claim
+    # Do the smallest and largest buckets actually separate?
     small_hi = agg.loc["small", "mean"] + agg.loc["small", "ci"]
     vlarge_lo = agg.loc["very_large", "mean"] - agg.loc["very_large", "ci"]
     non_overlap = vlarge_lo > small_hi
@@ -151,7 +136,7 @@ def main() -> None:
         f"(small_hi={small_hi:.3f}, vlarge_lo={vlarge_lo:.3f})"
     )
 
-    # 6. Chart — single panel, bar means + CI whiskers, color-coded.
+    # The chart itself.
     import _chart_theme as chart_theme
     pal = chart_theme.apply()
     fig, ax = plt.subplots(figsize=(9.5, 5.4))
@@ -167,7 +152,7 @@ def main() -> None:
         linewidth=0.8,
         alpha=0.92,
     )
-    # Value labels above each bar
+    # Numbers above the bars.
     y_max = float((agg["mean"] + agg["ci"]).max())
     for i, b in enumerate(BUCKETS):
         m = float(agg.loc[b, "mean"])
@@ -181,8 +166,8 @@ def main() -> None:
             fontweight="bold",
             color=pal["fg"],
         )
-        # n=125 caption — positioned in axes-fraction coords so it sits
-        # cleanly below the x-tick labels regardless of the data y_max.
+        # Positioned against the axes rather than the data, so it sits below the
+        # tick labels whatever the bars do.
         ax.annotate(
             f"n={int(agg.loc[b, 'n'])}",
             xy=(i, 0),

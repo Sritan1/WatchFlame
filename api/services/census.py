@@ -1,14 +1,8 @@
-"""US Census Bureau reverse-geocoder.
+"""Census Bureau reverse-geocoder, turning coordinates into a state and county.
+Free, no key.
 
-Converts (lat, lon) → state + county. Free, no key, no auth.
-We use this to scope OpenFEMA disaster lookups to the user's actual county
-rather than their whole state.
-
-Endpoint:
-  https://geocoding.geo.census.gov/geocoder/geographies/coordinates
-  ?x=LON&y=LAT&benchmark=Public_AR_Current&vintage=Current_Current
-  &layers=86&format=json
-  (layer 86 = Counties; Public_AR_Current = current address ranges)
+We need the county so a FEMA lookup is about where the user actually lives rather
+than their whole state.
 """
 
 from __future__ import annotations
@@ -24,9 +18,8 @@ from ..core.source_health import SourceUnavailable
 
 CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
 
-# FIPS-to-state-code map. Census's STUSAB field is sometimes empty in the
-# coordinate-geographies response, so we derive it from the FIPS code (always
-# populated). Static data; this list never changes.
+# Census leaves its state-abbreviation field empty often enough that we work the
+# state out from the FIPS code, which is always there.
 _FIPS_TO_STATE: dict[str, str] = {
     "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO",
     "09": "CT", "10": "DE", "11": "DC", "12": "FL", "13": "GA", "15": "HI",
@@ -42,24 +35,18 @@ _FIPS_TO_STATE: dict[str, str] = {
 
 _CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
-# Short-lived negative cache for transient upstream failures. Kept separate from
-# _CACHE on purpose: a success stores dict-or-None, where None means
-# "legitimately not in a US county" and is trusted for 24h. A failure must never
-# be remembered as that real answer. During a Census outage this bounds us to
-# one probe per _fail_ttl() window instead of re-hitting the failing endpoint on
-# every /risk and /disasters call, while still recovering within a minute.
-# Mirrors the degraded-cache FIRMS already keeps.
+# Failures get their own cache. A success here can be None, meaning the point is
+# genuinely not in a US county, and an outage must never be mistaken for that.
 _FAIL_CACHE: dict[str, float] = {}
 
 
 def _ttl() -> int:
-    # Reverse geocode for a given coordinate doesn't change.
-    # 24 hours is more than enough.
+    # County lines don't move, so a day is conservative.
     return int(os.getenv("CENSUS_CACHE_TTL_SECONDS", "86400"))
 
 
 def _fail_ttl() -> int:
-    # How long a transient failure suppresses re-hitting the upstream.
+    # How long a failure keeps us from trying again.
     return int(os.getenv("CENSUS_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
@@ -72,14 +59,8 @@ class CountyInfo:
 
 
 async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
-    """Return county info for a US lat/lon, or None if the point is not in a
-    US county.
-
-    Raises SourceUnavailable when the Census endpoint itself FAILS (network
-    error, 5xx, timeout) so callers can tell a real outage apart from a
-    legitimately not-in-the-US answer. Callers that just want best-effort
-    behavior catch it and treat it like None.
-    """
+    """The county a point falls in, or None if it isn't in one. A real outage raises
+    instead, so callers can tell that apart from a point that isn't in the US."""
     cache_key = f"{round(lat, 3)}|{round(lon, 3)}"
     now = time.time()
     cached = _CACHE.get(cache_key)
@@ -88,9 +69,8 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
             return None
         return CountyInfo(**cached[1])
 
-    # A recent failure for this point? Serve the outage from the negative cache
-    # so we don't re-hit a failing / rate-limited endpoint on every request, but
-    # still raise so the route surfaces `down` (never a silent not-in-US).
+    # Raise from here instead of asking again. It has to stay a raise, or the route
+    # reports "not in the US".
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         raise SourceUnavailable("census reverse-geocode failed (cached)")
@@ -110,14 +90,11 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
-        # Real outage (rate-limit, 5xx, timeout). Record a short-lived failure
-        # so we probe at most once per _fail_ttl() instead of hammering the
-        # failing endpoint, and signal `down` so the route can surface it rather
-        # than silently falling back as if the point were outside the US.
+        # A real outage. Say down, don't pretend the user is abroad.
         _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable("census reverse-geocode failed") from e
 
-    # Fetch succeeded — drop any stale failure marker for this point.
+    # Back up, so clear the failure marker.
     _FAIL_CACHE.pop(cache_key, None)
 
     geos = (
@@ -132,7 +109,7 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
     g = geos[0]
     state_fips = g.get("STATE", "")
     info = {
-        # STUSAB is sometimes empty in this response — fall back to FIPS map.
+        # Their abbreviation field is often blank, so fall back to the FIPS map.
         "state": g.get("STUSAB") or _FIPS_TO_STATE.get(state_fips, ""),
         "state_fips": state_fips,
         "county_name": g.get("BASENAME", "") or g.get("NAME", ""),

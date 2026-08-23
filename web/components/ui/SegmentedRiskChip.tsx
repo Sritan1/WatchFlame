@@ -1,9 +1,7 @@
 'use client';
 
-// Segmented risk chip — a scientific-instrument gauge shown above the Status
-// hero orb. Left: a "Fire Risk" eyebrow over the tier label. Right: an
-// ascending 4-bar index filled to the tier's level, over an "N/4 IDX" readout,
-// split by a hairline divider. Colors come from the tier tone (getRisk).
+// The chip above the Status orb, with a label on the left, four rising bars filled to
+// the tier on the right, and a hairline between them.
 
 import type { CSSProperties } from 'react';
 
@@ -27,9 +25,8 @@ export function SegmentedRiskChip({ risk, loading = false }: { risk: RiskTone; l
         gap: 13,
         padding: '9px 15px',
         borderRadius: 10,
-        // Frosted dark backdrop under the tier-glow gradient (plus a blur) so
-        // the chip reads as a solid instrument against the busy waves rather
-        // than a faint tint that blends in.
+        // A frosted backdrop under the tier glow, so the chip stays solid against
+        // the busy waves instead of washing out to a faint tint.
         background: `linear-gradient(180deg, rgba(${risk.glow}, 0.17), rgba(${risk.glow}, 0.05) 55%, rgba(255, 255, 255, 0.015)), rgba(30, 27, 25, 0.42)`,
         backdropFilter: 'blur(7px)',
         WebkitBackdropFilter: 'blur(7px)',
@@ -37,7 +34,7 @@ export function SegmentedRiskChip({ risk, loading = false }: { risk: RiskTone; l
         boxShadow: `inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(0,0,0,0.20), 0 8px 24px rgba(0,0,0,0.40), 0 0 24px rgba(${risk.glow}, 0.16)`,
       }}
     >
-      {/* Left: eyebrow + tier label */}
+      {/* Left side, the eyebrow and tier label */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <ChipEyebrow ae={ae} />
         <span
@@ -65,7 +62,7 @@ export function SegmentedRiskChip({ risk, loading = false }: { risk: RiskTone; l
         }}
       />
 
-      {/* Right: ascending index bars + N/4 IDX readout */}
+      {/* Right side, ascending index bars and the N/4 IDX readout */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 20 }}>
           {[0, 1, 2, 3].map((i) => {
@@ -105,7 +102,7 @@ export function SegmentedRiskChip({ risk, loading = false }: { risk: RiskTone; l
   );
 }
 
-/** The chip's "Fire Risk" eyebrow — shared by the live and loading renders. */
+/** The chip's "Fire Risk" eyebrow, shared by the live and loading renders. */
 function ChipEyebrow({ ae }: { ae: Ae }) {
   return (
     <span
@@ -125,13 +122,11 @@ function ChipEyebrow({ ae }: { ae: Ae }) {
   );
 }
 
-// Warm, unresolved-state ember-neutral tone — no risk color until /risk lands.
+// A warm neutral, so no risk color shows until /risk lands.
 const LOADING_GLOW = '208, 158, 122';
 
-/** Premium skeleton that keeps the segmented silhouette: the value + IDX are
- *  warm shimmer placeholders with a diagonal sheen, and the four index bars
- *  "charge" in a staggered left-to-right wave. Reads instantly as loading while
- *  staying unmistakably part of this instrument, not a gray box. */
+/** Keeps the segmented silhouette while loading, so the chip doesn't collapse to
+ *  a grey box and back. The bars fill in a staggered left-to-right wave. */
 function SegmentedLoading({ ae }: { ae: Ae }) {
   const skel = (w: number, h: number): CSSProperties => ({
     position: 'relative',
@@ -174,7 +169,7 @@ function SegmentedLoading({ ae }: { ae: Ae }) {
         boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.34), 0 0 20px rgba(${LOADING_GLOW}, 0.09)`,
       }}
     >
-      {/* Left: real eyebrow + value placeholder */}
+      {/* Left side, the real eyebrow and a value placeholder */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <ChipEyebrow ae={ae} />
         <span style={skel(71, 16)}>{sheen}</span>
@@ -186,7 +181,7 @@ function SegmentedLoading({ ae }: { ae: Ae }) {
         style={{ width: 1, height: 34, background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.12), transparent)' }}
       />
 
-      {/* Right: charging index bars + IDX placeholder */}
+      {/* Right side, charging index bars and an IDX placeholder */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 20 }}>
           {[0, 1, 2, 3].map((i) => (

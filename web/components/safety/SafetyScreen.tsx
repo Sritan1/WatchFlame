@@ -1,7 +1,8 @@
 'use client';
 
-// Safety Plan orchestrator. Pulls user location + named incidents + FEMA disasters
-// + nearby shelters, computes the escape bearing, and renders the full layout.
+// The Safety screen. Gathers the user's location, nearby fires, any federal
+// declaration and the shelters around them, works out which way to go, and lays
+// it all out.
 
 import { useEffect, useState } from 'react';
 
@@ -39,33 +40,25 @@ import {
 import { floorLow, type RiskLevel } from '@/lib/theme';
 import { useUserLocation } from '@/lib/use-location';
 
-// distanceMiles + bearingTo come from web/lib/composite-risk so the threat
-// math and the displayed numbers share one implementation. bearingTo already
-// returns a normalized 0-360 value.
-
 export function SafetyScreen() {
   const { ae } = useAesthetic();
   const loc = useUserLocation();
   const weather = useWeather(loc.coords);
   const risk = useRiskFromWeather(weather.data, loc.coords);
-  // Match the incident lookup radius to the threat radius (50 mi) so a real
-  // named incident just inside the threat band isn't dropped by a narrower
-  // default query.
+  // Full threat radius, or a fire just inside it gets dropped by the default.
   const incidents = useNamedIncidentsNear(loc.coords, THREAT_RADIUS_MI);
   const fires = useFiresAroundMe(loc.coords); // FIRMS satellite hot pixels
   const disasters = useActiveDisasters(loc.coords);
   const shelters = useNearbyShelters(loc.coords);
   const [evacMode, setEvacMode] = useState<EvacMode>('away');
 
-  // Per-source health from the X-Source-Health header. These routes degrade to
-  // an empty 200 when an upstream is down, so without these notes a FEMA or
-  // shelter-feed outage would silently look like "nothing here".
+  // These routes come back empty instead of failing, so without the health map an
+  // outage looks like good news.
   const health = useSourceHealth();
   const femaSourceNote = femaNote(health);
   const shelterSourceNote = shelterFeedNote(health);
 
-  // Pause the backdrop's (cheap) CSS motion + the compass radar sweep when the
-  // tab is hidden or a modal is open — mirrors the Status heat-reduction pattern.
+  // Stop the backdrop and the compass sweep when nobody can see them.
   const anyModalOpen = useAnyModalOpen();
   const [tabVisible, setTabVisible] = useState(true);
   useEffect(() => {
@@ -75,46 +68,36 @@ export function SafetyScreen() {
   }, []);
   const animActive = tabVisible && !anyModalOpen;
 
-  // Route the fire-weather signal through the same calibration pipeline as
-  // Status (normalizeWeather → bucketOf). Mathematically equivalent to the
-  // backend's bucket when thresholds are present, but using the shared
-  // composite-risk code path means any future tweak (e.g. EXT band tuning)
-  // propagates here automatically instead of drifting apart.
+  // Same calibration path Status uses, so a future change to the bands reaches
+  // this screen too.
   const weatherNormalized: number | null = risk.data
     ? normalizeWeather(risk.data.risk_score, risk.data.regional_thresholds ?? null)
     : null;
   const riskLevel: RiskLevel =
     weatherNormalized != null ? bucketOf(weatherNormalized) : 'moderate';
-  // Floor 'low' to 'moderate' for the *other* cards' chrome (Checklist,
-  // EvacuationCard) so the page doesn't read as washed-out / grey when
-  // conditions are calm. The AdvisoryRow banner uses raw `riskLevel` via the
-  // bannerSignal calc below so its copy is accurate ("All Clear" stays
-  // green, not amber).
+  // Floor the other cards at moderate so a calm day doesn't grey the page out.
+  // The banner keeps the real level, so All Clear stays green.
   const chromeLevel: RiskLevel = floorLow(riskLevel);
 
-  // Closest fire — pick whichever source has a closer detection. Mobile uses
-  // FIRMS for the proximity meter because satellite hits often appear before
-  // a named incident is filed. Named incidents win for evacuation routing
-  // (richer metadata, real bearing).
+  // Whichever feed has something closer. Satellites usually see a fire before
+  // anyone files paperwork on it.
   const nearestIncident = incidents.data?.[0] ?? null;
   const nearestSatHit = (() => {
     if (!fires.data?.features?.length) return null;
     let best: { feature: typeof fires.data.features[number]; dist: number } | null = null;
     for (const f of fires.data.features) {
       const d = distanceMiles(loc.coords, { lat: f.properties.lat, lon: f.properties.lon });
-      // The FIRMS feed spans a wide (~250 mi) bbox, but only pixels inside the
-      // threat radius count as "nearby" here — the same gate Status uses via
-      // findThreatDriver. Without it, a far-off satellite pixel would pose as
-      // the closest active fire, suppress the calm all-clear state, and drive a
-      // misleading evacuation compass for a fire nowhere near the user.
+      // The feed covers 250 miles, so gate it the way Status does. Otherwise a
+      // far pixel poses as the closest fire, kills the all-clear, and points the
+      // evacuation compass at nothing.
       if (d > THREAT_RADIUS_MI) continue;
       if (!best || d < best.dist) best = { feature: f, dist: d };
     }
     return best;
   })();
 
-  // Source-of-truth for the Closest Active Fire card. Prefer the closer of
-  // the two sources; named incident details (name) win the tie if equal.
+  // What the Closest Active Fire card reads from. Nearer wins, and a named
+  // incident takes a tie.
   const closestDistanceMi: number | null = (() => {
     const fromIncident = nearestIncident?.distance_mi ?? null;
     const fromSat = nearestSatHit?.dist ?? null;
@@ -135,10 +118,7 @@ export function SafetyScreen() {
 
   const nearestBearing = closestCoords ? bearingTo(loc.coords, closestCoords) : 0;
 
-  // FIRMS detection age (hours) — drives the smooth staleness dampener inside
-  // personalThreatBucket. Only meaningful when the winning fire is a FIRMS
-  // pixel (no named incident); null for incidents (no staleness damp). Reuses
-  // the shared helper so the age math lives in one place.
+  // Damps the threat as it ages. Only applies when a satellite pixel won.
   const closestFirmsAgeHours =
     !closestIsIncident && nearestSatHit
       ? firmsAgeHours(
@@ -147,13 +127,9 @@ export function SafetyScreen() {
         )
       : null;
 
-  // Severity for the closest detection. Uses the SHARED personalThreatBucket
-  // (same inputs: distance + size + wind alignment + containment dampener +
-  // stale-FIRMS dampener) so any given fire buckets identically across screens.
-  // NOTE: this is the *closest* fire by distance, which is intentionally
-  // different from Status's "Active Fire Threat" — that surfaces the single
-  // *highest-threat* fire in range (findThreatDriver), while Safety answers
-  // "what is nearest to me". The two can name different fires, by design.
+  // The NEAREST fire, not the question Status asks. Status surfaces the most
+  // threatening fire in range, Safety answers "what is closest to me", so the two
+  // can name different fires and both be right.
   const nearestSeverity: RiskLevel | null =
     closestDistanceMi == null
       ? null
@@ -170,33 +146,19 @@ export function SafetyScreen() {
 
   const activeDisaster = disasters.data?.active[0];
 
-  // Combined Safety Status banner: factors in BOTH local fire-weather (from
-  // /risk) AND the closest fire's threat heuristic (distance + size). Rules:
-  //   - Both signals at EXTREME → "Evacuation Warning"
-  //   - Either signal at HIGH or EXTREME → "Stay Aware" (copy reflects which)
-  //   - Otherwise (both ≤ MODERATE) → "All Clear"
-  // We never escalate to a literal "Evacuate Immediately" — that's a
-  // 911-class call we shouldn't claim authority over.
   const weatherSignal: RiskLevel | null = risk.data ? riskLevel : null;
   const bannerSignal = computeBannerSignal(weatherSignal, nearestSeverity);
 
-  // Loading state: skeleton until ALL inputs we depend on are resolved
-  // enough to compute the banner. Uses isLoading (not isFetching) so
-  // stale-while-revalidate refetches don't flash a skeleton.
+  // Keyed on the first load, not any fetch, so a background refresh doesn't flash.
   const bannerLoading =
     weather.isLoading || risk.isLoading || incidents.isLoading || fires.isLoading;
-  // The "Closest Active Fire" tile picks the nearer of the incident + FIRMS
-  // detections, so it isn't trustworthy until BOTH feeds have settled — until
-  // then it could show an incident 42 mi away as "closest" and then jump when a
-  // nearer satellite pixel lands. Hold its value (skeleton) until both resolve.
+  // Compares two feeds, so it means nothing until both have landed. Show it early
+  // and it announces a far fire as the closest, then jumps when a nearer pixel
+  // arrives.
   const closestReady = !incidents.isLoading && !fires.isLoading;
 
-  // CRITICAL safety state: if any core live signal errored, we CANNOT compute a
-  // trustworthy banner. Without this guard the banner falls through to "All
-  // Clear" (green) on a backend/network failure — affirmatively telling the
-  // user they're safe with no data behind it. Show an explicit "unavailable"
-  // state + Retry instead. (weather feeding risk means a weather error also
-  // surfaces here; risk stays disabled until weather resolves.)
+  // This one matters. Without the guard, a core signal being down falls through
+  // to a green All Clear, telling someone they are safe on no data at all.
   const safetyDataFailed =
     weather.isError || risk.isError || incidents.isError || fires.isError;
   const retryCoreData = () => {
@@ -210,8 +172,7 @@ export function SafetyScreen() {
 
   return (
     <>
-      {/* Signature "Still Waters" backdrop — fixed behind the page; content
-          scrolls over it (mirrors the Status backdrop pattern). */}
+      {/* Fixed behind the page, same pattern as the Status backdrop. */}
       <SafetyScene active={animActive} />
 
       <div
@@ -258,10 +219,8 @@ export function SafetyScreen() {
             </p>
           </div>
 
-          {/* FEMA banner — active declaration, or a compact note when the FEMA
-              lookup itself failed (so an outage doesn't silently hide a possible
-              declaration). When the core data failed the top banner already covers
-              it, so don't double up. */}
+          {/* A note when the lookup failed, so an outage never hides a real
+              declaration. The top banner already covers a core-data failure. */}
           {disasters.isError && !safetyDataFailed ? (
             <DataErrorState
               compact
@@ -272,18 +231,13 @@ export function SafetyScreen() {
           ) : activeDisaster ? (
             <FemaBanner disaster={activeDisaster} />
           ) : femaSourceNote && !disasters.isLoading && !safetyDataFailed ? (
-            // FEMA (or the Census county lookup it depends on) returned a real
-            // outage, not a genuine "no active declaration". Name it so an
-            // outage isn't read as "all clear, nothing declared". Gated on
-            // !isLoading so the GLOBAL source-health store (which persists a
-            // `down` for ~20 min and is not location-scoped) can't flash a stale
-            // note from a previous location/visit while this query is still
-            // loading — the note only shows once THIS query has resolved.
+            // Gated on loading. The health store isn't location-scoped and remembers
+            // an outage for twenty minutes, which flashes a stale warning otherwise.
             <SourceNote text={femaSourceNote} style={{ marginTop: 6, marginBottom: 6 }} />
           ) : null}
 
-          {/* Status band — full width (banner + closest-fire), or the blocking
-              "safety data unavailable" state when a core signal errored. */}
+          {/* Status band, full width with the banner and closest fire, or the
+              blocking "safety data unavailable" state if a core signal died. */}
           {safetyDataFailed ? (
             <DataErrorState
               title="Safety data unavailable"
@@ -304,8 +258,7 @@ export function SafetyScreen() {
             />
           )}
 
-          {/* Action band — the two "what to do" cards: the wider preparation
-              checklist beside the gold "Suggested Direction" command card. */}
+          {/* Action band, the checklist beside the suggested-direction card. */}
           <div
             className="app-stack"
             style={{
@@ -319,16 +272,10 @@ export function SafetyScreen() {
             <ChecklistCard riskLevel={chromeLevel} />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* The action card always renders once we're past the core-data
-                  error gate — it never collapses to nothing. It shows the
-                  compass when a fire is nearby, a calm all-clear when none is,
-                  and a shelter view (with its own loading / empty / error
-                  states) in shelter mode. The one exception: if the
-                  fire/incident lookups THEMSELVES errored, away-from-fire
-                  routing is impossible, so we show the routing-unavailable state
-                  instead. Keyed off the EVAC queries, NOT safetyDataFailed — if
-                  only the weather/risk data behind the left banner were down but
-                  fires/incidents loaded, the card still renders. */}
+              {/* Past the core-data gate this card always renders something. The
+                  exception is the fire lookups failing, because routing away from a
+                  fire needs to know where it is. Reads the evac queries, not
+                  safetyDataFailed. */}
               {incidents.isError || fires.isError ? (
                 <DataErrorState
                   title="Evacuation routing unavailable"
@@ -351,13 +298,9 @@ export function SafetyScreen() {
                 />
               )}
 
-              {/* Shelter source-health: one feed dropping still leaves the
-                  others, so name which one and reassure the rest are listed.
-                  Suppressed when the whole route errored (covered above), core
-                  data failed (the top banner covers it), or the query is still
-                  loading (the global source-health store persists a `down` for
-                  ~20 min and is not location-scoped, so without this gate a
-                  stale note flashes over the loading shelter card). */}
+              {/* One feed dropping still leaves the others, so name which one. The
+                  loading gate matters because the health store keeps a down for about
+                  20 minutes and isn't location-scoped. */}
               {shelterSourceNote && !shelters.isLoading && !shelters.isError && !safetyDataFailed ? (
                 <SourceNote text={shelterSourceNote} />
               ) : null}
@@ -369,33 +312,9 @@ export function SafetyScreen() {
   );
 }
 
-/** Build the Safety Status banner from the two independent signals.
- *
- *  - **weather**: raw fire-weather risk from /risk (low | moderate | high |
- *    extreme). Driven by VPD × wind × drought × NDVI/season at the user's
- *    location.
- *  - **threat**: per-fire distance + size + wind + containment + staleness
- *    heuristic for the CLOSEST active fire (low | moderate | high | extreme),
- *    computed upstream as `nearestSeverity` via personalThreatBucket(). This is
- *    deliberately the nearest fire, not Status's highest-threat fire, so the
- *    two screens can name different fires for the same location.
- *
- *  Decision matrix (per user spec — no "EVACUATE IMMEDIATELY" copy, since
- *  that's a 911-class instruction we shouldn't claim authority over):
- *
- *  | weather | threat  | banner                                    |
- *  | ------- | ------- | ----------------------------------------- |
- *  | EXT     | EXT     | Evacuation Warning (orange)               |
- *  | HIGH+   | HIGH+   | Stay Aware — combined copy (amber)        |
- *  | HIGH+   | ≤ MOD   | Stay Aware — weather copy (amber)         |
- *  | ≤ MOD   | HIGH+   | Stay Aware — threat copy (amber)          |
- *  | ≤ MOD   | ≤ MOD   | All Clear (green)                         |
- *
- *  Returns `level` as the palette tier (low | moderate | high — never
- *  'extreme' since the only EXT+EXT case maps to 'high' / orange).
- *
- *  `BannerSignal` is defined in AdvisoryRow (the component that renders it).
- */
+/** The banner, from the fire weather and the nearest fire. It never says "evacuate
+ *  immediately", which is a 911-class instruction and not ours to give. The level is
+ *  a palette tier and never extreme, the worst case already maps onto orange. */
 function computeBannerSignal(
   weather: RiskLevel | null,
   threat: RiskLevel | null,

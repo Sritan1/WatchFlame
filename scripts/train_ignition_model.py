@@ -1,14 +1,10 @@
-"""Phases 1-2 of the ML feature - baseline + gradient-boosted ignition classifier.
+"""Compare a logistic-regression baseline against the boosted model.
 
-Evaluates two models on data/ignition_dataset.csv with a leakage-safe protocol:
-  * logistic regression                 (the baseline / bar to beat)
-  * HistGradientBoostingClassifier       (the real model)
-each under a RANDOM split (naive/leaky) and a SPATIAL GroupKFold split (honest,
-whole 2-degree regions held out at once). We also print train-vs-test ROC to
-expose overfitting (when a model memorizes instead of generalizing).
+Each runs twice, once on a random split, which leaks, and once holding out whole
+regions at a time, which doesn't. Printing both makes the size of the leak
+obvious. Train and test scores print side by side to show up memorization.
 
-Usage:
-    python scripts/train_ignition_model.py
+Run with python scripts/train_ignition_model.py
 """
 from __future__ import annotations
 
@@ -42,7 +38,7 @@ SEED = 7
 
 
 def make_logreg() -> Pipeline:
-    """Linear baseline. Needs scaling (it's sensitive to feature magnitude)."""
+    """The baseline. Needs its features scaled, unlike the trees."""
     pre = ColumnTransformer([
         ("num", StandardScaler(), NUMERIC),
         ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
@@ -54,9 +50,9 @@ def make_logreg() -> Pipeline:
 
 
 def make_gbm() -> Pipeline:
-    """Gradient-boosted trees. No scaling needed - trees split on thresholds,
-    so they're scale-invariant. Season is one-hot encoded; numerics pass
-    through. Regularized (shallow-ish leaves + L2) to limit overfitting."""
+    """The real model. Trees split on thresholds, so scaling is pointless. The
+    categoricals get one-hot encoded and the numbers pass straight through.
+    Held back a bit with big leaves and some regularization."""
     pre = ColumnTransformer(
         [("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL)],
         remainder="passthrough",
@@ -70,8 +66,8 @@ def make_gbm() -> Pipeline:
 
 
 def cv_scores(model, X, y, splitter, groups=None):
-    """Per-fold held-out ROC-AUC + PR-AUC, plus per-fold TRAIN ROC-AUC so we
-    can see the train-vs-test gap (the fingerprint of overfitting)."""
+    """Scores per fold, including the training score. The gap between the two is what
+    tells you a model memorized."""
     roc_te, pr_te, roc_tr = [], [], []
     for tr, te in splitter.split(X, y, groups):
         m = clone(model).fit(X.iloc[tr], y.iloc[tr])

@@ -1,16 +1,8 @@
 'use client';
 
-// 380px right rail: header (with explainer info icon + "Live" pill) +
-// scrolling list of premium incident cards + kind-aware detail card in the
-// footer. Selection can be either a named incident (NIFC/Cal Fire) OR a
-// FIRMS satellite hot-pixel — the footer renders the appropriate fields per
-// kind, with a "Limited data" callout for incidents missing acres/containment.
-//
-// Visual: premium glass aesthetic ported from web-map.jsx — left hairline
-// + inner shadow so the rail reads overlaid on the map; ambient accent glow
-// when a fire is selected; cards with severity bar, cursor-following shine,
-// hover lift, and shimmer pip on urgent chips. NO containment progress bar
-// inside cards (per design spec).
+// The rail down the right of the map. A header, a scrolling list of fire cards, and
+// a footer describing whatever is selected, incident or pixel. The hairline and inner
+// shadow are what make it look overlaid on the map instead of sitting beside it.
 
 import Link from 'next/link';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,9 +21,8 @@ import { getRisk, RISK_LEVELS, type RiskLevel } from '@/lib/theme';
 import { firmsNote, incidentFeedNote, useSourceHealth } from '@/lib/source-health';
 import { formatDistance, useUnits } from '@/lib/use-units';
 
-/** Which feed the rail list is showing. Both are co-equal citizens now:
- *  'incidents' = named NIFC/Cal Fire incidents, 'hotspots' = FIRMS satellite
- *  detections (previously map-click-only). */
+/** Which feed the list is showing. Named incidents or satellite detections, and
+ *  neither outranks the other. */
 export type RailTab = 'incidents' | 'hotspots';
 
 export function IncidentsRail({
@@ -54,34 +45,30 @@ export function IncidentsRail({
   satellitesUpdatedAt,
 }: {
   fires: NamedIncident[];
-  /** FIRMS satellite hot-pixels in view (already capped + shown on the map).
-   *  Now also rendered as browsable cards under the Hotspots tab. */
+  /** The satellite detections on the map, also browsable as cards here. */
   satellites: FireFeature[];
   selection: MapSelection | null;
   onSelect: (sel: MapSelection | null) => void;
   locationLabel: string;
   severityOf: (f: NamedIncident) => RiskLevel;
   isLoading?: boolean;
-  /** The FIRMS satellite feed is still loading (drives the Hotspots tab's
-   *  skeletons + count placeholder). */
+  /** The satellite feed is still loading. */
   satellitesLoading?: boolean;
-  /** The named-incident feed (NIFC/Cal Fire) failed to load. */
+  /** The incident feed failed. */
   incidentsError?: boolean;
-  /** The FIRMS satellite feed failed to load. Independent of incidentsError:
-   *  the two are separate feeds, so one failing still shows the other. */
+  /** The satellite feed failed. Tracked separately, because one feed going down
+   *  shouldn't hide the other. */
   satellitesError?: boolean;
   onRetry?: () => void;
-  /** Active feed tab. Lifted to MapScreen so a map selection can surface the
-   *  matching tab. */
+  /** The open tab. MapScreen owns it, so clicking a marker can switch to it. */
   tab: RailTab;
   onTabChange: (t: RailTab) => void;
-  /** User's current focus point — needed to compute distance to satellite
-   *  hits (named incidents carry their own distance). */
+  /** Where the user is. Needed to measure distance to satellite pixels, which
+   *  don't carry their own the way incidents do. */
   userCoords: LatLon;
-  /** Search radius shown in the subtitle ("Within N mi of …"). */
+  /** The radius named in the subtitle. */
   radiusMi?: number;
-  /** When each feed last successfully fetched (epoch ms from the query's
-   *  dataUpdatedAt). Shown as "Checked HH:MM" on the empty-state panel. */
+  /** When each feed last landed, shown as "Checked HH:MM" on the empty state. */
   incidentsUpdatedAt?: number;
   satellitesUpdatedAt?: number;
 }) {
@@ -94,9 +81,7 @@ export function IncidentsRail({
   const selectedSatKey = selection?.kind === 'fire' ? satKey(selection.feature) : null;
   const [explainerOpen, setExplainerOpen] = useState(false);
 
-  // Hotspot list — same capped set the map shows, but ordered by distance
-  // (most useful for a list; the map orders by brightness). Same members, so
-  // every dot on the map still has a corresponding card here.
+  // The same pixels the map draws, resorted by distance, so every dot has a card.
   const satList = useMemo(
     () =>
       [...satellites].sort(
@@ -107,23 +92,14 @@ export function IncidentsRail({
     [satellites, userCoords],
   );
 
-  // Per-source health from the X-Source-Health header. Lets the rail tell a
-  // real feed outage apart from a genuinely-empty result — so a FIRMS outage
-  // reads as "Satellite feed down" instead of a misleading "no detections",
-  // and a single-feed incident outage names which one dropped.
+  // So an outage says "feed down" and not "nothing out there".
   const health = useSourceHealth();
   const firmsDown = firmsNote(health) !== null;
   const incidentsFullyDown = health.nifc === 'down' && health.calfire === 'down';
 
-  // Source-aware subtitle — always describes the ACTIVE feed honestly, so
-  // "0 reported" reads in context next to the satellite hotspots that ARE on
-  // the map (the old single "No active incidents within range" was the bug).
-  // Order matters: a genuine error wins, then a cold load ("Loading…"), then the
-  // source-health note. The health store is GLOBAL, source-keyed, and persists a
-  // `down` for ~20 min (it is not location-scoped), so checking the note before
-  // the loading state would flash a stale "feed down" from a previous
-  // location/visit while THIS query is still loading. Loading-before-note keeps
-  // the subtitle honest until the current fetch resolves and refreshes health.
+  // Order matters. A real error wins, then loading, then the feed-down note. The
+  // health store isn't location-scoped and remembers an outage for twenty minutes, so
+  // checking it first flashes a stale warning while this fetch is still in the air.
   const railSubtitle = (() => {
     if (tab === 'incidents') {
       if (incidentsError) return 'Incident feed unavailable';
@@ -141,12 +117,9 @@ export function IncidentsRail({
     return 'NASA FIRMS · last 24h · may include controlled burns';
   })();
 
-  // Auto-scroll the selected card into view inside the rail — for either feed.
-  // Fires on selection OR tab change (so when a map-click flips the tab, the
-  // just-revealed card scrolls into focus). Also re-runs when the list data
-  // arrives: a selection set while the target feed is still loading finds no
-  // card on the first pass, so depend on fires/satellites to retry once the
-  // card mounts. `block: 'nearest'` makes it a no-op when already visible.
+  // Scroll the selected card into view, so a marker click brings it into focus.
+  // Re-runs when the list arrives too, because a selection made while the feed was
+  // loading finds no card to scroll to on the first pass.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -173,7 +146,7 @@ export function IncidentsRail({
         isolation: 'isolate',
       }}
     >
-      {/* Left edge hairline — makes the rail feel overlaid on the map */}
+      {/* Left edge hairline, makes the rail feel overlaid on the map */}
       <div
         aria-hidden
         style={{
@@ -221,7 +194,7 @@ export function IncidentsRail({
         />
       ) : null}
 
-      {/* ── Header ─────────────────────────────────────────────────── */}
+      {/* Header */}
       <div
         style={{
           position: 'relative',
@@ -309,7 +282,7 @@ export function IncidentsRail({
               Live
             </span>
 
-            {/* Explainer info button — preserved */}
+            {/* Explainer info button */}
             <button
               type="button"
               onClick={() => setExplainerOpen(true)}
@@ -333,10 +306,8 @@ export function IncidentsRail({
           </div>
         </div>
 
-        {/* Dual-feed segmented control. Replaces the old single "N fires in
-            region" headline that hid the satellite layer entirely and made a
-            bare "0" read as "nothing here" even with the map full of FIRMS
-            dots. Both feeds are now co-equal, browsable, and counted. */}
+        {/* Both feeds are co-equal here. A single headline count used to hide the
+            satellite layer and read "0" with the map full of FIRMS dots. */}
         <RailTabs
           tab={tab}
           onTabChange={onTabChange}
@@ -381,7 +352,7 @@ export function IncidentsRail({
         </div>
       </div>
 
-      {/* ── List ───────────────────────────────────────────────────── */}
+      {/* List */}
       <div
         ref={scrollContainerRef}
         className="inc-rail-scroll"
@@ -414,9 +385,8 @@ export function IncidentsRail({
                 onViewSibling={() => onTabChange('hotspots')}
               />
             ) : null}
-            {/* Both incident feeds degraded to an empty 200 (health=down, not an
-                isError). Without this the list body would be blank whitespace
-                under the "Unavailable" tab — show the feed-down panel instead. */}
+            {/* A degraded feed returns an empty 200, not an isError, so without
+                this the "Unavailable" tab would be blank space. */}
             {!incidentsError && !isLoading && fires.length === 0 && incidentsFullyDown ? (
               <DataErrorState
                 compact
@@ -468,8 +438,7 @@ export function IncidentsRail({
                 onViewSibling={() => onTabChange('incidents')}
               />
             ) : null}
-            {/* FIRMS degraded to an empty 200 (health=down, not an isError) —
-                show the feed-down panel instead of a blank list body. */}
+            {/* Same for a degraded FIRMS feed. */}
             {!satellitesError && !satellitesLoading && satellites.length === 0 && firmsDown ? (
               <DataErrorState
                 compact
@@ -499,12 +468,8 @@ export function IncidentsRail({
         )}
       </div>
 
-      {/* ── Kind-aware detail footer ───────────────────────────────────
-       *  Minimal "Selected" rail per the design spec — dot + label + name
-       *  + distance + "Open Incident Report" CTA. The verbose detail card
-       *  (3-stat grid, Limited-data callout, close X) is removed because
-       *  the same data already lives in the card list above, and clicking
-       *  the selected card / marker a second time unselects it. */}
+      {/* The selection footer, kept thin. Everything it could show is already on
+          the card above, and clicking that card again unselects it. */}
       {selection?.kind === 'incident' && selected && selectedRisk ? (
         <DetailFooter
           label="Selected"
@@ -539,10 +504,8 @@ export function IncidentsRail({
   );
 }
 
-/** Three at-a-glance stats for a FIRMS satellite pixel, formatted for the
- *  rail's detail footer. Mirrors the IncidentCard's Dist/Size/Cont strip so
- *  the satellite footer reads with the same rhythm as a named-incident
- *  footer — gives the user something concrete before they click through. */
+/** Three quick stats for a satellite pixel, laid out like the incident card's
+ *  strip so both footers read the same way. */
 function buildSatelliteStats(feature: FireFeature): FooterStat[] {
   const p = feature.properties;
   return [
@@ -562,10 +525,8 @@ function buildSatelliteStats(feature: FireFeature): FooterStat[] {
   ];
 }
 
-/** FIRMS confidence is reported either as one of L/N/H (MODIS) or a 0-100
- *  integer (VIIRS). Normalize both to a short word; "—" when missing. */
-/** Compact "20m" / "3h" / "2d" formatter for the footer stats strip — short
- *  enough to fit alongside Brightness + Confidence without wrapping. */
+/** Ages as "20m", "3h" or "2d", short enough to sit beside the other stats
+ *  without wrapping. */
 function firmsAgeShort(ageHr: number | null): string {
   if (ageHr == null) return '—';
   if (ageHr < 1) return `${Math.max(1, Math.round(ageHr * 60))}m`;
@@ -573,7 +534,7 @@ function firmsAgeShort(ageHr: number | null): string {
   return `${Math.round(ageHr / 24)}d`;
 }
 
-// ─── Incident Card ────────────────────────────────────────────────────────
+// Incident card
 
 function IncidentCardImpl({
   fire,
@@ -596,10 +557,8 @@ function IncidentCardImpl({
 }) {
   const { ae } = useAesthetic();
 
-  // Cursor-following highlight — sets CSS vars used by .inc-card-shine.
-  // getBoundingClientRect() forces a synchronous layout flush, so we cache
-  // it on mouseEnter (and refresh per-card on each hover entry) instead of
-  // paying the cost on every one of the ~60 mousemove events/sec.
+  // Measuring the card forces a layout, so do it once on enter and not sixty times
+  // a second while the cursor moves.
   const rectRef = useRef<DOMRect | null>(null);
   const onEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
     rectRef.current = e.currentTarget.getBoundingClientRect();
@@ -689,7 +648,7 @@ function IncidentCardImpl({
         />
       ) : null}
 
-      {/* Row 1: severity chip + ID + chevron */}
+      {/* Row 1, the severity chip, ID and chevron */}
       <div
         style={{
           display: 'flex',
@@ -748,7 +707,7 @@ function IncidentCardImpl({
         </span>
       </div>
 
-      {/* Row 2: name */}
+      {/* Row 2, name */}
       <div style={{ marginTop: 10 }}>
         <div
           style={{
@@ -767,7 +726,6 @@ function IncidentCardImpl({
         </div>
       </div>
 
-      {/* Row 3: 3-stat grid with vertical dividers (NO containment bar) */}
       <div
         style={{
           marginTop: 12,
@@ -862,12 +820,10 @@ function Stat({
   );
 }
 
-// ─── Dual-feed tabs ────────────────────────────────────────────────────────
+// Dual-feed tabs
 
-/** Two co-equal feed tabs (Reported incidents / Satellite hotspots), each
- *  showing its own live count. Per-feed loading shows a count skeleton and
- *  per-feed error shows a neutral "—" + amber dot — so neither feed's state
- *  can be misread as the other's. */
+/** The two feed tabs, each with its own count. Loading and failure states are
+ *  per tab, so neither feed's trouble can be mistaken for the other's. */
 function RailTabs({
   tab,
   onTabChange,
@@ -968,12 +924,9 @@ function RailTabButton({
       }}
     >
       {error && !loading ? (
-        // Feed down — no count to show. Drop the giant em-dash and let
-        // "Unavailable" be the prominent text instead. minHeight matches a
-        // normal tab's two rows so paired tabs stay aligned when only one is
-        // down. The amber dot carries the warning tone. Gated on !loading so a
-        // stale global-health `down` can't show "Unavailable" over a cold load
-        // (the count skeleton wins until this fetch settles).
+        // The height matches a normal tab so the pair stays aligned when only one
+        // is down. Gated on loading, or a stale outage from an earlier visit would
+        // show over a cold fetch.
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 53 }}>
           <span
             aria-hidden
@@ -1055,8 +1008,8 @@ function RailTabButton({
   );
 }
 
-/** Four placeholder cards — shared by both feeds' loading state (same footprint
- *  as a real card so the swap when data lands doesn't jolt the list height). */
+/** Placeholder cards, sized like real ones so the list doesn't jump when the
+ *  data lands. */
 function SkeletonCards() {
   const { ae } = useAesthetic();
   return (
@@ -1106,13 +1059,11 @@ function SkeletonCards() {
   );
 }
 
-// ─── Empty-state panel ──────────────────────────────────────────────────────
+// Empty-state panel
 
-/** Fills the list area when a feed has no items in range (success state, not
- *  loading/error). Replaces the dead blank space below the tabs with a
- *  centered all-clear panel: radar glyph + headline + search context +
- *  last-checked time, plus a button across to the sibling feed when it has
- *  items. */
+/** What fills the list when a healthy feed genuinely has nothing in range. An
+ *  all-clear panel beats blank space, and it offers a jump to the other feed
+ *  when that one does have something. */
 function EmptyFeedPanel({
   kind,
   locationLabel,
@@ -1248,11 +1199,10 @@ function EmptyFeedPanel({
   );
 }
 
-// ─── Satellite Hotspot Card ─────────────────────────────────────────────────
+// Satellite hotspot card
 
-/** A FIRMS satellite detection rendered as a card (orange, no severity tier —
- *  hot-pixels aren't NIFC-bucketed). Mirrors IncidentCard's rhythm so the two
- *  feeds read as siblings. Clicking selects the same pixel on the map. */
+/** A satellite detection as a card. No severity tier, because nobody has assessed a
+ *  raw pixel. Shaped like the incident card so the feeds look like siblings. */
 function SatelliteCardImpl({
   feature,
   index,
@@ -1266,8 +1216,7 @@ function SatelliteCardImpl({
   index: number;
   isSelected: boolean;
   distanceMi: number;
-  /** Compass sector from the user to this pixel (e.g. "NE"), used to give each
-   *  otherwise-nameless detection a distinguishable, location-based title. */
+  /** Which way it lies from the user, which is how these get their titles. */
   directionLabel: string;
   distanceUnit: 'mi' | 'km';
   onClick: () => void;
@@ -1279,9 +1228,8 @@ function SatelliteCardImpl({
   const distLabel = formatDistance(distanceMi, distanceUnit, 1);
   const brightLabel = p.brightness != null ? Math.round(p.brightness).toString() : '—';
   const confLabel = confidenceLabel(p.confidence);
-  // No name exists for a FIRMS pixel — title it by where it is relative to the
-  // user so each card is distinguishable (they'd otherwise all read the same
-  // satellite platform). The platform name still appears in the detail footer.
+  // Nobody names a satellite pixel, so title it by where it is, or every card
+  // reads the same.
   const name = `${distLabel} ${directionLabel}`;
 
   return (
@@ -1336,7 +1284,7 @@ function SatelliteCardImpl({
         }}
       />
 
-      {/* Row 1: SATELLITE chip + chevron */}
+      {/* Row 1, the SATELLITE chip and chevron */}
       <div
         style={{
           display: 'flex',
@@ -1393,7 +1341,7 @@ function SatelliteCardImpl({
         </span>
       </div>
 
-      {/* Row 2: name */}
+      {/* Row 2, name */}
       <div style={{ marginTop: 10 }}>
         <div
           style={{
@@ -1412,7 +1360,7 @@ function SatelliteCardImpl({
         </div>
       </div>
 
-      {/* Row 3: 3-stat grid (Dist / Bright / Seen) */}
+      {/* Row 3, 3-stat grid (Dist / Bright / Seen) */}
       <div
         style={{
           marginTop: 12,
@@ -1449,9 +1397,8 @@ const SatelliteCard = memo(
     prev.distanceUnit === next.distanceUnit,
 );
 
-// onClick is a fresh inline closure on every parent render — we know that's
-// expected (it captures isSelected + onSelect from the parent). Skip it in
-// the comparator so the card can bail when nothing visible actually changed.
+// onClick is a new closure every parent render by design, so leave it out of the
+// comparison and let the card skip a re-render when nothing visible moved.
 const IncidentCard = memo(IncidentCardImpl, (prev, next) =>
   prev.fire === next.fire &&
   prev.severity === next.severity &&
@@ -1464,17 +1411,9 @@ const IncidentCard = memo(IncidentCardImpl, (prev, next) =>
   prev.risk.label === next.risk.label,
 );
 
-// ─── Minimal selected-row footer ──────────────────────────────────────────
+// Minimal selected-row footer
 
-/** Compact selection footer pinned to the bottom of the rail. Shows only:
- *  dot + "Selected" label + fire name + distance, then a single
- *  Open-Incident-Report CTA below. No 3-stat grid, no Limited-data callout,
- *  no close X — the user unselects by clicking the same card (or marker)
- *  again. The same data is still visible in the card list above, so this
- *  footer just confirms "what's selected" and provides the route-through
- *  to the full detail page. */
-/** Optional stat tile rendered in the footer's mid-strip. Same shape as the
- *  IncidentCard's Dist/Size/Cont tiles so the visual rhythm carries over. */
+/** A stat tile for the footer strip, shaped like the ones on the cards. */
 export type FooterStat = { label: string; value: string; unit?: string };
 
 function DetailFooter({
@@ -1492,10 +1431,8 @@ function DetailFooter({
   accentColor: string;
   accentGlow: string;
   detailHref: string;
-  /** Optional 3-up stat strip rendered between the summary row and the
-   *  CTA. Used for satellite pixels where the rail has no card with the
-   *  Brightness/Confidence/Detected info — gives the footer enough
-   *  substance to stand on its own. */
+  /** Stats between the summary and the button. Satellite pixels use it, because
+   *  their brightness and confidence appear nowhere else in the rail. */
   stats?: FooterStat[];
 }) {
   const { ae } = useAesthetic();

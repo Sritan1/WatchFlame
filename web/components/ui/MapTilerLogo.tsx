@@ -1,9 +1,6 @@
-// Required MapTiler attribution for the Free plan: a visible MapTiler logo that
-// links to maptiler.com, shown in the corner of every map. The logo SVG is
-// MapTiler's hosted branding asset (no API key, not a tile, so it doesn't count
-// toward tile usage). Sizing is responsive via `.maptiler-logo` in globals.css
-// so it shrinks on phones. Rendered as an absolute overlay, so its parent must
-// be position:relative.
+// The MapTiler attribution their free plan requires, in the corner of every map.
+// The SVG is their hosted branding asset, so it needs no key and doesn't count
+// toward tile usage. An absolute overlay, so the parent must be position:relative.
 export function MapTilerLogo() {
   return (
     <a
