@@ -16,7 +16,7 @@ geojson>=3.1
 pandas>=2.2.4
 numpy>=2.2
 scikit-learn>=1.5
-joblib>=1.4
+joblib>=1.5.3
 
 # Floors for transitive deps pip-audit flagged. Starlette is FastAPI's ASGI core.
 # httpx pulls idna for hostname encoding.
