@@ -1,13 +1,8 @@
-"""Tiny Open-Meteo historical weather client used by the V2 validation notebook.
+"""Small Open-Meteo archive client for the offline validation and calibration
+scripts. Free, no key needed.
 
-Free archive API, no key required:
-    https://archive-api.open-meteo.com/v1/archive
-
-For each fire we pull the 60 days ending on the fire's discovery date so we can
-derive day-of-fire temperature, humidity, wind, and days_since_rain in one call.
-
-Responses are cached to a JSON file so the notebook can be re-run without
-re-hitting the API.
+One call per fire covers the days up to its discovery date. Responses go into a
+JSON cache so a re-run costs no quota.
 """
 
 from __future__ import annotations
@@ -57,10 +52,7 @@ def fetch_window(
     timeout: float = 20.0,
     retries: int = 3,
 ) -> dict[str, Any] | None:
-    """Fetch `days+1` days of weather ending on `end_date` for one location.
-
-    Returns the raw Open-Meteo JSON, or None on failure.
-    """
+    """Fetch days+1 days of weather ending on end_date, or None on failure."""
     if cache is None:
         cache = _load_cache()
     k = _key(lat, lon, end_date, days)
@@ -96,30 +88,25 @@ def fetch_window(
                 continue
             last_exc = RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
             break
-        except Exception as e:  # network error, retry
+        except Exception as e:
             last_exc = e
             time.sleep(2 ** attempt)
 
     if rate_limited and last_exc is None:
-        # All retries returned 429. Do NOT cache None — rate limits are
-        # transient, and caching would force a manual cleanup before any
-        # future run could recover. Print so the eventual "0 fires for
-        # {state}" message has a visible cause upstream.
+        # Never cache a 429. It is temporary, and a cached None would need
+        # hand-deleting before any later run could recover.
         print(
             f"[openmeteo] rate-limited after {retries} attempts at "
             f"{lat:.3f},{lon:.3f} ({end_date.isoformat()}, days={days}); "
             f"not cached, will retry on next run"
         )
-        # Long backoff so a quota-exhausted run doesn't burn through the
-        # remaining fire list at full speed. Open-Meteo's per-minute window
-        # sometimes clears on its own; 30s gives it a chance without making
-        # the daily-cap case much worse (still bounded by 3 attempts above).
+        # Sit out so a quota-exhausted run doesn't tear through the rest of the
+        # fire list. The per-minute window often clears in that time.
         time.sleep(30)
         return None
 
     if last_exc is not None:
-        # Permanent-ish failure (4xx other than 429, network error, bad date).
-        # Cache None so we don't retry forever.
+        # Looks permanent, so cache the None and stop retrying it.
         cache[k] = None
     return None
 
@@ -128,14 +115,8 @@ def summarize_window(
     raw: dict[str, Any] | None,
     fire_date: date,
 ) -> dict[str, float | int | None]:
-    """Convert a raw window into the four scalars our risk algorithm needs.
-
-    - temperature_c    : fire-day max temp
-    - humidity_pct     : fire-day mean humidity (avg of hourly)
-    - wind_kph         : fire-day max wind
-    - days_since_rain  : count of consecutive days with precip < 1mm working
-                         backwards from fire_date (inclusive of fire_date)
-    """
+    """Reduce a raw window to the four numbers the risk algorithm wants. Fire-day max
+    temp, mean hourly humidity, max wind, and days back to 1mm of rain."""
     if raw is None:
         return {"temperature_c": None, "humidity_pct": None, "wind_kph": None,
                 "days_since_rain": None}
@@ -155,7 +136,7 @@ def summarize_window(
     temp = temps[idx] if idx < len(temps) else None
     wind = winds[idx] if idx < len(winds) else None
 
-    # days_since_rain: walk backwards from fire_date until precip >= 1mm
+    # Walk back from the fire day until we hit 1mm of rain.
     days_since_rain: int | None = None
     for j in range(idx, -1, -1):
         p = precip[j] if j < len(precip) else None
@@ -165,14 +146,13 @@ def summarize_window(
             days_since_rain = idx - j
             break
     if days_since_rain is None and precip:
-        # entire window dry → cap at window length
+        # Never rained in the whole window, so cap at the window length.
         days_since_rain = idx + 1
 
-    # humidity: average hourly humidity for the fire date
     hourly = raw.get("hourly", {}) or {}
     h_times: list[str] = hourly.get("time", []) or []
     h_hum: list[float | None] = hourly.get("relative_humidity_2m", []) or []
-    fire_iso_prefix = iso  # hourly times are "YYYY-MM-DDTHH:MM"
+    fire_iso_prefix = iso  # hourly stamps look like "YYYY-MM-DDTHH:MM"
     hums: list[float] = []
     for t, h in zip(h_times, h_hum):
         if h is None:
@@ -194,9 +174,7 @@ def enrich_iter(
     cache: dict[str, Any] | None = None,
     on_progress=None,
 ) -> list[dict[str, Any]]:
-    """Take dicts with lat, lon, fire_date (date) keys; yield the same dicts
-    with the four real-weather scalars added. Persists cache after each call.
-    """
+    """Add the four weather numbers to dicts keyed lat, lon and fire_date."""
     if cache is None:
         cache = _load_cache()
     out: list[dict[str, Any]] = []
@@ -213,21 +191,16 @@ def enrich_iter(
     return out
 
 
-# --- KBDI-enabled variants ----------------------------------------------------
-#
-# The 60-day window above is enough for days_since_rain but not for KBDI —
-# KBDI integrates evaporation + rain over a year, so we pull 365-day windows.
-# Keep these as separate functions so the V2 validation notebook (which uses
-# the 60-day form for days_since_rain comparison) is unaffected.
+# KBDI integrates a year of rain and evaporation, so it needs a 365-day window
+# where days_since_rain only needed 60. Separate function so callers wanting the
+# cheap 60-day form still have it.
 
 def summarize_window_with_kbdi(
     raw: dict[str, Any] | None,
     fire_date: date,
 ) -> dict[str, float | int | None]:
-    """Like summarize_window, but also runs the Keetch-Byram integrator over
-    the full window and returns the KBDI value AT fire_date. Mean annual
-    precipitation is approximated from the in-window total.
-    """
+    """summarize_window plus the fire-day KBDI, from running the Keetch-Byram
+    integrator over the window. Mean annual precip is the window total."""
     base = summarize_window(raw, fire_date)
     base["kbdi"] = None
     base["mean_annual_precip_mm"] = None
@@ -240,10 +213,8 @@ def summarize_window_with_kbdi(
     precs: list[float | None] = daily.get("precipitation_sum", []) or []
 
     iso = fire_date.isoformat()
-    # The three daily arrays must align: compute_kbdi_series requires equal
-    # temp/precip lengths, and series[fire_idx] indexes by the time array. A
-    # partial upstream response (one array short) would otherwise raise instead
-    # of degrading to a null KBDI.
+    # The three daily arrays have to line up because the integrator needs equal
+    # lengths. A short array from upstream gives a null KBDI, not an exception.
     if (
         iso not in times
         or len(temps) < 30
@@ -254,7 +225,7 @@ def summarize_window_with_kbdi(
         return base
     fire_idx = times.index(iso)
 
-    # Carry-forward / zero-fill missing days so the integrator never sees None.
+    # Fill the gaps so the integrator never sees a None.
     last_t = 15.0
     t_filled: list[float] = []
     for v in temps:
@@ -265,8 +236,7 @@ def summarize_window_with_kbdi(
             t_filled.append(last_t)
     p_filled: list[float] = [float(v) if v is not None else 0.0 for v in precs]
 
-    # Local import keeps openmeteo.py importable without the api package
-    # being on the Python path (notebooks/CLIs hit it both ways).
+    # Local import so this module still loads when the api package isn't on the path.
     from .kbdi import compute_kbdi_series
 
     mean_annual_mm = float(sum(p_filled))
@@ -282,9 +252,7 @@ def enrich_iter_kbdi(
     on_progress=None,
     window_days: int = 365,
 ) -> list[dict[str, Any]]:
-    """KBDI-enabled enrichment. Pulls a 365-day window per fire and adds
-    `kbdi` + `mean_annual_precip_mm` alongside the four scalar weather fields.
-    """
+    """enrich_iter on a 365-day window, adding kbdi and mean_annual_precip_mm."""
     if cache is None:
         cache = _load_cache()
     out: list[dict[str, Any]] = []

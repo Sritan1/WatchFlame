@@ -1,26 +1,12 @@
-"""Phase 5a - train + persist the final calibrated ignition model.
+"""Train the shipped ignition model into api/models/, where it is committed so the
+deployed backend never retrains.
 
-Ships the production model to api/models/ignition_model.joblib (committed, so the
-deployed backend loads it without retraining). Two pieces are fit WITHOUT the
-same-location sibling leakage the honest scorecard (evaluate_ignition_model.py)
-guards against:
+The artifact holds a base booster trained on every row, a calibrator fitted on
+out-of-fold scores grouped by region, and ref_scores, that same distribution sorted,
+which turns a probability into the percentile people see. Grouping matters. A fire
+day and its own quiet days are near-duplicates, and random folds split them apart.
 
-  * base model      - a GBM trained on ALL rows (production predictor).
-  * calibrator      - isotonic, fit on GROUPED out-of-fold raw scores. Every
-                      score it calibrates came from a model that never trained on
-                      that row's 2-degree region, so a fire's positive and its
-                      near-duplicate same-location negatives can't leak across the
-                      calibration fit (a plain CalibratedClassifierCV(cv=3) splits
-                      them randomly and does leak).
-  * ref_scores      - the sorted CALIBRATED out-of-fold scores, so the live
-                      percentile index maps against an honest (not in-sample,
-                      overconfident) reference distribution.
-
-At serve time (api/services/ignition.py): prob = calibrator(base.predict_proba),
-percentile = searchsorted(ref_scores, prob).
-
-Usage:
-    python scripts/train_final_ignition_model.py
+Run with python scripts/train_final_ignition_model.py
 """
 from __future__ import annotations
 
@@ -51,24 +37,20 @@ def main() -> int:
 
     print(f"training on {len(df):,} rows, {groups.nunique()} spatial blocks...")
 
-    # Out-of-fold RAW probabilities via spatial GroupKFold: each row is scored by
-    # a model that never trained on its region, so the calibrator + reference
-    # built from these are free of same-location sibling leakage.
+    # Score every row with a model that never saw its region.
     gkf = GroupKFold(n_splits=N_SPLITS)
     oof_raw = cross_val_predict(
         make_gbm(), X, y, cv=gkf, groups=groups,
         method="predict_proba", n_jobs=-1,
     )[:, 1]
 
-    # Isotonic calibrator fit on the out-of-fold raw scores (NOT in-sample).
+    # Calibrate on those, never on in-sample scores.
     calibrator = IsotonicRegression(out_of_bounds="clip").fit(oof_raw, y)
 
-    # Production base model: train on ALL rows (the calibrator stays separate).
+    # The shipped predictor sees everything. The calibrator stays separate.
     base = make_gbm().fit(X, y)
 
-    # Reference distribution = sorted CALIBRATED out-of-fold scores. A score's
-    # percentile at serve = fraction of these below it. Out-of-fold (not
-    # in-sample) so the mapping isn't skewed by training-set overconfidence.
+    # A live score's percentile is just how many of these fall below it.
     ref = np.sort(calibrator.transform(oof_raw))
 
     artifact = {

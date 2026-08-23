@@ -2,12 +2,9 @@
 
 import { useId } from 'react';
 
-// WatchFlame brand mark — the "Radar W". A flame-tipped W monogram (WatchFlame's
-// initial doubling as its flame) with a single fading radar sweep arc + emitter
-// ping, on a dark warm stone. This is the one canonical mark: the sidebar and
-// mobile top-bar lockups render it, and the favicon (app/icon.svg) mirrors the
-// same paths so all three match. The W path, gradient, sweep, and dot come from
-// the approved "Radar W" design; the inner mark is ~72% of the stone (23/32).
+// A flame-tipped W, so the initial doubles as the flame. The sidebar and the
+// topbar both render this. app/icon.svg repeats the same paths by hand, so if you
+// change one, change the other.
 
 export function BrandMark({
   size = 32,
@@ -16,8 +13,8 @@ export function BrandMark({
   size?: number;
   style?: React.CSSProperties;
 }) {
-  // Unique per-instance gradient ids (sidebar + mobile can both be mounted).
-  // useId can contain ':' which is invalid inside url(#…), so strip it.
+  // Per-instance gradient ids, because the sidebar and topbar can both be mounted.
+  // useId can contain a colon, which is invalid inside url(), so strip it.
   const id = 'wf' + useId().replace(/:/g, '');
   const inner = Math.round((size * 23) / 32);
 
@@ -32,7 +29,7 @@ export function BrandMark({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        // Dark warm stone (opaque base so it also holds up as a favicon).
+        // Opaque, so the mark also holds up as a favicon.
         background:
           'linear-gradient(160deg, rgba(255,122,58,0.16), rgba(255,122,58,0.04)), #100b0a',
         border: '0.5px solid rgba(255,122,58,0.40)',

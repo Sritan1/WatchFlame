@@ -1,17 +1,9 @@
-"""Regression tests for the source-health outage signal on the incident /
-shelter feeds.
+"""The outage signal on the incident and shelter feeds.
 
-Before this, nifc / calfire / overpass / nces / open_shelters caught their
-upstream errors and returned `[]`. The /incidents/near and /shelters routes
-decide `down` via `isinstance(result, Exception)`, so a real outage looked
-identical to a genuinely-empty feed and was reported `ok` — the exact
-misleading state the source-health system exists to prevent.
-
-These pin the fix: on a caught upstream failure each service now raises
-SourceUnavailable (so the route reports `down`) AND records a short-lived
-negative-cache marker so repeated calls within the failure-TTL window don't
-re-hit the failing endpoint. Network-free — httpx is stubbed with a
-call-counting client.
+These services used to swallow upstream errors and return []. The routes read down
+off an exception, so an outage looked exactly like an empty feed and got reported as
+ok, the one thing source health exists to prevent. Now each service raises and leaves
+a short-lived marker.
 """
 from __future__ import annotations
 
@@ -37,9 +29,8 @@ class _Resp:
 
 
 class _FlipClient:
-    """Async-context-manager drop-in for httpx.AsyncClient that counts upstream
-    calls and either raises an outage error or returns a canned payload,
-    switchable mid-test via the shared `mode` dict."""
+    """httpx.AsyncClient stand-in that counts calls and either raises or returns
+    a canned payload, flipped mid-test through the shared `mode` dict."""
 
     def __init__(self, calls: list, mode: dict, payload):
         self._calls = calls
@@ -71,7 +62,7 @@ def _patch(monkeypatch, mod, calls, mode, payload):
     )
 
 
-# --- nifc (global cache) -----------------------------------------------------
+# nifc, global cache
 
 def test_nifc_outage_raises_and_backs_off(monkeypatch):
     nifc._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
@@ -101,7 +92,7 @@ def test_nifc_recovers_after_fail_ttl(monkeypatch):
     assert nifc._CACHE["fail_ts"] == 0.0  # cleared on success
 
 
-# --- calfire (global cache) --------------------------------------------------
+# calfire, global cache
 
 def test_calfire_outage_raises_and_backs_off(monkeypatch):
     calfire._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
@@ -139,11 +130,11 @@ def test_calfire_skips_non_dict_rows(monkeypatch):
     assert rows[0].name == "Test Fire"
 
 
-# --- overpass (per-key cache, POST) ------------------------------------------
+# overpass, per-key cache, POST
 
 def test_overpass_outage_raises_and_backs_off(monkeypatch):
-    """COLD cache (never fetched) + a failing upstream still reports down, and
-    backs off to a single probe within the fail-TTL window."""
+    """A cold cache with a dead upstream reports down, and only probes once
+    inside the backoff window."""
     overpass._CACHE.clear()
     overpass._FAIL_CACHE.clear()
     calls: list = []
@@ -158,11 +149,9 @@ def test_overpass_outage_raises_and_backs_off(monkeypatch):
 
 
 def test_overpass_serves_stale_cache_on_failure(monkeypatch):
-    """WARM cache (fetched successfully once) + a later failing upstream serves
-    the last good result instead of raising, so /shelters reports shelters_osm
-    OK (no false 'Mapped shelters down') — these 'potential' shelters are static,
-    so a stale list is fine. A backoff-window call also serves stale without
-    re-hitting the upstream."""
+    """With a warm cache, a later failure serves the last good result instead of
+    raising. These mapped shelters barely change, so a stale list is fine and
+    /shelters should not claim the feed is down."""
     overpass._CACHE.clear()
     overpass._FAIL_CACHE.clear()
     calls: list = []
@@ -180,7 +169,7 @@ def test_overpass_serves_stale_cache_on_failure(monkeypatch):
     }
     _patch(monkeypatch, overpass, calls, mode, payload)
 
-    # 1) First fetch succeeds and warms the cache.
+    # Warm the cache.
     first = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
     assert [s.name for s in first] == ["Test Center"]
 
@@ -189,19 +178,18 @@ def test_overpass_serves_stale_cache_on_failure(monkeypatch):
     monkeypatch.setattr(overpass, "_ttl", lambda: 0)
     mode["fail"] = True
 
-    # 2) Refresh fails, but the warm cache is served (no raise → route = OK).
+    # The refresh fails, but the warm cache is served, so nothing raises.
     stale = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
     assert [s.name for s in stale] == ["Test Center"]
 
-    # 3) A further call inside the backoff window also serves stale WITHOUT
-    #    re-hitting the flaky upstream.
+    # Inside the backoff window it serves stale without touching the upstream.
     calls_before = len(calls)
     stale2 = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
     assert [s.name for s in stale2] == ["Test Center"]
     assert len(calls) == calls_before
 
 
-# --- nces (per-key cache) ----------------------------------------------------
+# nces, per-key cache
 
 def test_nces_outage_raises_and_backs_off(monkeypatch):
     nces._CACHE.clear()
@@ -217,7 +205,7 @@ def test_nces_outage_raises_and_backs_off(monkeypatch):
     assert len(calls) == 1
 
 
-# --- open_shelters (per-key cache) -------------------------------------------
+# open_shelters, per-key cache
 
 def test_open_shelters_outage_raises_and_backs_off(monkeypatch):
     monkeypatch.setenv("MOCK_OPEN_SHELTERS", "0")

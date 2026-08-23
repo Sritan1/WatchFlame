@@ -1,20 +1,18 @@
-# Development, CI, and validation-notebook dependencies — NOT installed in prod.
-# Includes the production set below, so this single file sets up a full dev env:
+# Dev, CI and notebook deps. Never installed in prod. Pulls in the production set
+# too, so this one file gets you a working dev env.
 #     pip install -r api/requirements-dev.txt
 -r requirements.txt
 
-# Test + lint + supply-chain audit
+# Test, lint, audit
 pytest>=8.3
-# Pinned (not >=): ruff ships new default lint rules in minor releases, so a
-# floating version fails CI on rules the code never opted into. Bump this
-# deliberately after running `ruff check api/` locally on the new version.
+# Pinned, not floating. Ruff adds default rules in minor releases and CI then
+# fails on rules the code never opted into. Bump it after running it locally.
 ruff==0.15.12
 pip-audit>=2.7
 pip-tools>=7.4   # pip-compile --generate-hashes for the deploy lock (see SECURITY.md)
 
-# Validation notebook + offline chart generation (scripts/*.py, notebooks/).
-# These never run in the served backend, so their CVEs don't reach production —
-# floors are kept current anyway so the dev env + CI audit stay clean.
+# Notebook and chart generation (scripts/*.py, notebooks/). None of this runs in
+# the served backend. Floors kept current anyway so the CI audit stays quiet.
 jupyter>=1.0
 jupyter-server>=2.18.0   # PYSEC-2026-67/68/69, CVE-2026-40110
 tornado>=6.5.6           # CVE-2026-49854 (via jupyter/ipykernel)

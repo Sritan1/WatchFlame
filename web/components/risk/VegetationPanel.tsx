@@ -1,8 +1,7 @@
 'use client';
 
-// Vegetation Signal panel — left half of the inputs row pair with Drought.
-// "Season proxy" mode shows the 4 season buttons with their multipliers.
-// "Vegetation (NDVI)" mode swaps in an NDVI anomaly slider [-0.30..+0.30].
+// The vegetation panel, paired with Drought. Season mode shows the four season
+// buttons and their multipliers, NDVI mode swaps in an anomaly slider.
 
 import { useState, type ReactNode } from 'react';
 
@@ -37,18 +36,16 @@ export function VegetationPanel({
   onNdviChange: (n: number) => void;
   color: string;
   glowRgb: string;
-  /** Slot rendered inside the NDVI InputPanel when mode === 'ndvi'. Used for
-   *  the "Couldn't fetch NDVI" warning when CDSE Sentinel-2 fetch fails. */
+  /** Slot inside the NDVI panel, carrying the warning when the fetch fails. */
   ndviFooter?: ReactNode;
-  /** True during location-switch transitions — renders skeletons for the
-   *  season-button grid (or the inner NDVI slider via its own isLoading)
-   *  so the panel matches the slider tiles' loading rhythm. */
+  /** Skeletons the season grid during a location switch, so the panel matches the
+   *  slider tiles. */
   isLoading?: boolean;
 }) {
   const { ae } = useAesthetic();
   const [dismissed, setDismissed] = useState(false);
-  // Once the callout is dismissed in season mode, center the season buttons in
-  // the freed-up vertical space instead of leaving a gap at the bottom.
+  // Once the callout is dismissed, center the buttons in the freed space instead of
+  // leaving a gap at the bottom.
   const centerBoxes = mode === 'season' && dismissed;
 
   return (
@@ -77,8 +74,8 @@ export function VegetationPanel({
         <GlassSegmented<VegMode>
           value={mode}
           options={[
-            // NDVI listed first so the default "measured satellite data"
-            // option reads as primary; the season estimate reads as the fallback.
+            // NDVI first, so the measured option leads and the season estimate
+            // looks like the fallback it is.
             { id: 'ndvi', label: 'Vegetation (NDVI)' },
             { id: 'season', label: 'By season' },
           ]}
@@ -184,8 +181,7 @@ export function VegetationPanel({
       )}
       </div>
 
-      {/* Backup-estimate callout — only in season mode, dismissible via the ×.
-       *  Shares the component with DroughtPanel. */}
+      {/* Season mode only, and dismissible. Shared with DroughtPanel. */}
       {mode === 'season' && !dismissed ? (
         <BackupEstimateCallout
           onDismiss={() => setDismissed(true)}

@@ -1,8 +1,7 @@
 'use client';
 
-// Opens from an info icon on the Map screen's right-rail header.
-// Explains the difference between satellite detections vs named incidents,
-// and what each field on an incident card means.
+// Explains the difference between satellite detections and named incidents, and
+// what each field on an incident card means.
 
 import { FlameGlyph, IncidentGlyph } from '@/components/map/marker-glyphs';
 import { Modal } from '@/components/ui/Modal';
@@ -19,7 +18,7 @@ export function FireFieldsExplainerModal({
   const { ae } = useAesthetic();
   return (
     <Modal open={open} onClose={onClose} eyebrow="Live Map" title="What you&apos;re looking at" maxWidth={620}>
-      {/* Visual key — which marker is which, before the words. */}
+      {/* Visual key, so which marker is which lands before the words. */}
       <div
         style={{
           display: 'flex',

@@ -1,4 +1,4 @@
-"""Smoke test: regional_level returns distinct levels across calibrated states."""
+"""Check that one score really does read differently state to state."""
 import sys
 from pathlib import Path
 

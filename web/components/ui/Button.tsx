@@ -1,7 +1,7 @@
 'use client';
 
-// Primary / secondary / ghost button. Mouse-tracking radial highlight + slow
-// conic sheen on primary variant — px-btn / px-primary rules in globals.css.
+// Primary, secondary and ghost buttons. The primary variant carries a
+// cursor-tracking highlight, styled by the px-btn rules in globals.css.
 
 import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 

@@ -1,23 +1,9 @@
-"""Activated / open evacuation shelters — the tier-1 "open right now" layer.
+"""Shelters open right now, from FEMA's National Shelter System. Layer 0 is the open
+ones.
 
-Source: **FEMA National Shelter System (NSS)** — the authoritative federal feed,
-fed by the American Red Cross and state/local Emergency Management. Published as
-a public ArcGIS Feature Service; layer 0 is "Open Shelters" (currently
-operating), with separate Closed/Full/Alert layers:
-    https://gis.fema.gov/arcgis/rest/services/NSS/FEMA_NSS/FeatureServer/0
-
-**Independent of FEMA disaster declarations.** Shelters open on local/state EM
-and Red Cross decisions — for events that never get a federal declaration, and
-often before one is issued. So we query this layer directly; it is NOT gated on
-a declaration (the OpenFEMA banner is separate context).
-
-Reality of this feed: nationwide there are usually only a handful of open
-shelters at any moment (often zero near a given user), and records are sometimes
-missing coordinates or capacity. So:
-  • we parse defensively and skip shelters with no usable point geometry;
-  • MOCK_OPEN_SHELTERS=1 forces a small fixture set near the query point so the
-    tier-1 UI is demonstrable on demand (the real feed is too sparse to rely on
-    for a demo). Default (flag off) hits the live NSS feed.
+No federal declaration needed. Shelters open on local decisions, often before one
+arrives. Records turn up missing coordinates, so parsing is defensive. Set
+MOCK_OPEN_SHELTERS=1 for fixtures, the real feed is too sparse to demo with.
 """
 from __future__ import annotations
 
@@ -65,7 +51,7 @@ _OUT_FIELDS = ",".join(
 
 _CACHE: dict[str, tuple[float, list["OpenShelter"]]] = {}
 
-# Short-lived negative cache for transient upstream failures (see census.py).
+# Failures cached separately from results, as in census.py.
 _FAIL_CACHE: dict[str, float] = {}
 
 
@@ -76,17 +62,15 @@ class OpenShelter:
     lat: float
     lon: float
     address: str | None
-    status: str                 # OPEN | STANDBY | FULL
+    status: str                 # OPEN, STANDBY or FULL
     capacity: int | None
     occupancy: int | None
     pet_friendly: bool | None
     ada_accessible: bool | None
     managing_org: str | None
-    # Both timestamps are FEMA NSS record fields (NOT our fetch time):
-    #   updated_at = when NSS last reported this shelter's status (reporting_period)
-    #   opened_at  = when the shelter opened (shelter_open_date)
-    # The UI labels them "Updated"/"Opened" accordingly; reporting_period is
-    # often null in practice, so opened_at is the usual freshness signal.
+    # Both timestamps come from FEMA's record, not from when we fetched it.
+    # updated_at is the last status report, opened_at is when it opened. The status
+    # report is usually missing, so opened_at is what people normally see.
     updated_at: str | None      # ISO8601 UTC
     opened_at: str | None       # ISO8601 UTC
 
@@ -96,8 +80,7 @@ def _mock_enabled() -> bool:
 
 
 def _ttl() -> int:
-    # Open-shelter status shifts over minutes-to-hours during operations; 5 min
-    # is a good balance of freshness vs. politeness to the FEMA endpoint.
+    # During an operation this changes by the hour, so keep it short.
     return int(os.getenv("OPEN_SHELTERS_CACHE_TTL_SECONDS", "300"))
 
 
@@ -109,7 +92,7 @@ def _grid_key(lat: float, lon: float, radius_mi: float) -> str:
     return f"{round(lat, 1)}|{round(lon, 1)}|{round(radius_mi)}"
 
 
-# ── Field parsing (defensive — NSS records are frequently partial) ───────────
+# Field parsing, defensive because these records are often half empty.
 
 def _epoch_ms_to_iso(v: Any) -> str | None:
     try:
@@ -128,7 +111,7 @@ def _int_or_none(v: Any) -> int | None:
 
 
 def _yn(v: Any) -> bool | None:
-    """Map FEMA Y / N / UNK (case-insensitive) to bool | None."""
+    """FEMA's Y, N and UNK into a bool or None."""
     if not isinstance(v, str):
         return None
     s = v.strip().upper()
@@ -163,8 +146,8 @@ def _address(a: dict[str, Any]) -> str | None:
 def _map_feature(feat: dict[str, Any]) -> OpenShelter | None:
     a = feat.get("attributes") or {}
     geom = feat.get("geometry") or {}
-    # Coordinates live in the point geometry (the latitude/longitude attribute
-    # fields are frequently null). No geometry → can't place it → skip.
+    # Read coordinates from the geometry. The latitude and longitude attribute
+    # fields are usually null. Nothing to place means nothing to show.
     lon, lat = geom.get("x"), geom.get("y")
     if lon is None or lat is None:
         return None
@@ -183,7 +166,7 @@ def _map_feature(feat: dict[str, Any]) -> OpenShelter | None:
     if occupancy is None:
         occupancy = _int_or_none(a.get("general_population"))
 
-    # Status: layer 0 is "open", but flag FULL when occupancy meets capacity.
+    # Everything on this layer is open, but say FULL once it hits capacity.
     status = "OPEN"
     raw_status = (a.get("shelter_status_code") or "").strip().upper()
     if raw_status in ("FULL",) or (
@@ -215,27 +198,24 @@ def _map_feature(feat: dict[str, Any]) -> OpenShelter | None:
     )
 
 
-# ── Live FEMA NSS query ──────────────────────────────────────────────────────
-
 async def _fetch_nss_open_shelters(
     lat: float, lon: float, radius_mi: float
 ) -> list[OpenShelter]:
-    """Query FEMA NSS layer 0 (Open Shelters) within an envelope around the
-    point. Returns [] on any upstream failure (graceful degrade)."""
+    """Query FEMA NSS layer 0 within an envelope around the point."""
     cache_key = _grid_key(lat, lon, radius_mi)
     now = time.time()
     cached = _CACHE.get(cache_key)
     if cached and now - cached[0] < _ttl():
         return cached[1]
 
-    # Recent failure for this area? Back off and signal the outage so /shelters
-    # reports shelters_open `down` rather than a misleading empty list.
+    # Failed recently. Report down instead of an empty list
+    # that reads like "no shelters near you".
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         raise SourceUnavailable("open-shelters failed (cached)")
 
-    # Bounding-box envelope around the point (the route trims to the exact
-    # radius with haversine afterward, so a slightly-larger box is fine).
+    # A box around the point. The route trims to the real radius afterward, so
+    # asking for slightly too much is fine.
     min_lon, min_lat, max_lon, max_lat = bbox_around(lat, lon, radius_mi)
     params = {
         "where": "1=1",
@@ -256,13 +236,12 @@ async def _fetch_nss_open_shelters(
             resp.raise_for_status()
             data = resp.json()
     except (httpx.HTTPError, ValueError) as e:
-        # Real outage. Back off and signal `down` so /shelters shows a feed-down
-        # note instead of a misleading empty open-shelter list.
+        # A real outage, so note it and report down.
         logger.warning("FEMA NSS open-shelters query failed: %s", e)
         _FAIL_CACHE[cache_key] = now
         raise SourceUnavailable("open-shelters upstream failed") from e
 
-    # ArcGIS reports query errors in-body with a 200 — a real upstream problem.
+    # ArcGIS returns its query errors in the body with a 200 status.
     if isinstance(data, dict) and data.get("error"):
         logger.warning("FEMA NSS returned error: %s", data["error"])
         _FAIL_CACHE[cache_key] = now
@@ -279,12 +258,9 @@ async def _fetch_nss_open_shelters(
     return out
 
 
-# ── Mock fixtures (demo override) ────────────────────────────────────────────
-
 def _fixtures(lat: float, lon: float) -> list[OpenShelter]:
-    """Fixture open shelters at small offsets from the query point so they land
-    within a typical radius regardless of the user's location (~0.02° lat ≈
-    1.4 mi). Varied status/capacity/ADA/pet so the tier-1 UI is exercised."""
+    """Demo shelters a mile or two from the user, with varied statuses and
+    capacities to exercise the UI."""
     now = datetime.now(timezone.utc)
 
     def ago(minutes: int) -> str:
@@ -342,13 +318,8 @@ def _fixtures(lat: float, lon: float) -> list[OpenShelter]:
 async def fetch_open_shelters(
     lat: float, lon: float, radius_mi: float = 50.0
 ) -> list[OpenShelter]:
-    """Open/activated shelters near (lat, lon).
-
-    Default: live FEMA National Shelter System (layer 0, Open Shelters).
-    MOCK_OPEN_SHELTERS=1 forces fixtures near the point for demos (the real
-    feed is too sparse to demo reliably). Distance trimming happens in the
-    route, same as the candidate sources.
-    """
+    """Open shelters near a point, live from FEMA unless MOCK_OPEN_SHELTERS is
+    set. The route trims by distance, same as it does for the candidates."""
     if _mock_enabled():
         return _fixtures(lat, lon)
     return await _fetch_nss_open_shelters(lat, lon, radius_mi)

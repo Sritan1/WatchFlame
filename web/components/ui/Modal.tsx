@@ -1,8 +1,7 @@
 'use client';
 
-// Generic centered dialog. Click backdrop or press Escape to close.
-// Renders via React portal into document.body so z-index ordering is correct
-// regardless of where the trigger lives. Constrained max-width for readability.
+// Generic centered dialog, closed by the backdrop or Escape. Portalled into the
+// body, so stacking is right wherever the trigger lives.
 
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,10 +29,9 @@ export function Modal({
   const { ae } = useAesthetic();
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  // Keep the latest onClose in a ref so the trap effect doesn't depend on it.
-  // Callers pass inline-arrow onClose handlers whose identity changes on every
-  // parent render; depending on it would tear down + re-run the whole focus
-  // trap (stealing focus and churning the modal-open store) on each render.
+  // Callers pass inline-arrow onClose handlers whose identity changes every parent
+  // render. Depending on it would tear down and re-run the focus trap each time,
+  // stealing focus and churning the modal-open store.
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -42,7 +40,7 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     pushModalOpen(); // signal ambient background work (e.g. Status waves) to pause
-    // Restore focus to whatever was focused before the dialog opened (a11y).
+    // Restore focus to whatever held it before the dialog opened.
     const prevFocused = document.activeElement as HTMLElement | null;
 
     const focusables = (): HTMLElement[] => {
@@ -52,13 +50,13 @@ export function Modal({
         panel.querySelectorAll<HTMLElement>(
           'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
         ),
-        // getClientRects() is empty for display:none but non-empty for visible
-        // elements including position:fixed ones (offsetParent is null for
-        // fixed, which would wrongly drop them from the tab cycle).
+        // getClientRects() is empty for display:none but non-empty for anything
+        // visible, fixed included. offsetParent is null for fixed elements and
+        // would wrongly drop them from the tab cycle.
       ).filter((el) => el.getClientRects().length > 0);
     };
 
-    // Move focus into the dialog so screen-reader / keyboard users land inside it.
+    // Move focus inside, so keyboard and screen-reader users land in the dialog.
     (focusables()[0] ?? panelRef.current)?.focus();
 
     const onKey = (e: KeyboardEvent) => {

@@ -1,9 +1,8 @@
 'use client';
 
-// Opens from an info icon on the Regional Risk Index card.
-// Explains how state-based calibration shifts the level thresholds without
-// changing the score itself; then renders the live 17-state ladder showing
-// where the user's current fire-weather score lands in each state's tier band.
+// Explains how per-state calibration shifts the tier thresholds without changing
+// the score, then renders the ladder showing where the user's score lands in each
+// state's bands.
 
 import { CalibrationLadder } from '@/components/status/CalibrationLadder';
 import { Modal } from '@/components/ui/Modal';
@@ -20,12 +19,10 @@ export function CalibrationModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** User's current raw fire-weather score (from /risk). Null while loading or when
-   *  the request hasn't been issued yet (e.g. modal opens before risk
-   *  resolves). The ladder still renders without it. */
+  /** The raw fire-weather score. Null while /risk is still resolving, and the
+   *  ladder renders without it. */
   userScore?: number | null;
-  /** User's resolved state code from /risk's regional_state. Null when the
-   *  user is outside the 17 fitted states. */
+  /** Null when the user is outside the fitted states. */
   userState?: string | null;
 }) {
   const { ae } = useAesthetic();
@@ -39,9 +36,8 @@ export function CalibrationModal({
         Extreme.
       </p>
 
-      {/* Live ladder — shows where the user's current score lands across
-          all 17 fitted states. The "same score, different tier" headline
-          becomes visceral instead of abstract. */}
+      {/* Live ladder showing where the current score lands in all 17 fitted
+          states, which makes "same score, different tier" concrete. */}
       <Section ae={ae} title="Your score in every calibrated state">
         {calibration.isLoading ? (
           <LadderSkeleton />
@@ -117,9 +113,8 @@ function Section({ ae, title, children }: { ae: ReturnType<typeof useAesthetic>[
 }
 
 function LadderSkeleton() {
-  // Roughly mirror the row count + heights so the modal doesn't reflow when
-  // calibration resolves. Eight placeholder rows are enough to suggest the
-  // shape without rendering all 17.
+  // Roughly mirrors the row count and heights, so the modal doesn't reflow when
+  // calibration resolves.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {Array.from({ length: 8 }).map((_, i) => (

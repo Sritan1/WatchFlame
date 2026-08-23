@@ -1,4 +1,4 @@
-"""Find why FL/GA/NC/SC fires got 0 'complete weather' rows."""
+"""Work out why the Southeastern states came back with no usable weather."""
 import json
 import sys
 from pathlib import Path
@@ -11,7 +11,7 @@ from datetime import date
 cache = _load_cache()
 print(f"total: {len(cache):,}")
 
-# How many cache entries fall in Florida's bbox?
+# How much of the cache is even in Florida?
 def in_florida(lat, lon):
     return 24.5 <= lat <= 31.5 and -88 <= lon <= -80
 
@@ -49,7 +49,7 @@ else:
         print(f"  hourly.time len:       {len(hourly.get('time', []))}")
         print(f"  hourly.humidity len:   {len(hourly.get('relative_humidity_2m', []) or [])}")
 
-        # Try to summarize this entry assuming the file's fire_date is in there
+        # Summarize it, assuming the fire date is somewhere in the window.
         times = daily.get("time", []) or []
         if times:
             fire_iso = times[-1]
@@ -59,7 +59,7 @@ else:
             for kk, vv in summary.items():
                 print(f"    {kk}: {vv}")
 
-# Also count *which* states have cached 365-day entries (rough state via simple bbox)
+# And which states have year-long entries at all, by rough bounding box.
 def rough_state(lat, lon):
     if 32.5 <= lat <= 42 and -125 <= lon <= -114: return "CA"
     if 42 <= lat <= 46.5 and -125 <= lon <= -116: return "OR"

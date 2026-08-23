@@ -1,11 +1,8 @@
-"""Generate docs/regional_thresholds.png — the README's regional calibration chart.
+"""Draw the calibration chart for the README.
 
-Reads api/data/regional_thresholds.json and renders each fitted state as a
-horizontal 4-segment bar (LOW / MOD / HIGH / EXT bands). Drops a vertical
-probe line at score 0.45 to drive the headline insight: the same fire-weather score
-maps to materially different danger tiers depending on the state.
-
-Standalone script (no notebook dependency); regenerate with:
+Each fitted state becomes a horizontal bar split into its four tier bands, with a
+vertical line dropped through all of them at one score. That line is the whole point.
+The same number means very different things in different states.
 
     python scripts/build_regional_calibration_chart.py
 """
@@ -24,8 +21,7 @@ DATA_PATH = PROJECT_ROOT / "api" / "data" / "regional_thresholds.json"
 DOCS_OUT = PROJECT_ROOT / "docs" / "regional_thresholds.png"
 FIGURES_OUT = PROJECT_ROOT / "notebooks" / "figures" / "regional_thresholds.png"
 
-# Tier colors. Match the app's RISK_LEVELS palette so the chart and the UI
-# read as one design system.
+# Matched to the app's palette, so the chart and the UI look related.
 import _chart_theme as chart_theme  # noqa: E402
 
 _PAL = chart_theme.palette()
@@ -39,11 +35,8 @@ COLOR_AXIS = _PAL["muted"] if chart_theme.is_dark() else "#374151"
 COLOR_LABEL = _PAL["fg"]
 COLOR_MUTED = _PAL["muted"]
 
-# Probe score — drives the "same score, different tier" callout.
-# Picked at 0.45 because it sits in distinct tiers across the spread:
-#   - LOW in fire-prone West (CA, AZ, NV — their LOW band extends further)
-#   - MOD/HIGH in the Mountain West (CO, ID, UT, MT, WY)
-#   - HIGH/EXT in the Southeast belt (FL, GA, NC, SC)
+# Where to drop the line. 0.45 reads EXTREME across the Southeast and the West
+# Coast, and only HIGH through the Mountain West.
 PROBE_SCORE = 0.45
 
 
@@ -52,8 +45,8 @@ def main() -> None:
     states = data["states"]
     global_t = data["global"]
 
-    # Sort ascending by EXT threshold so the visual gradient runs from
-    # "easiest state to hit EXT" (humid SE) up to "hardest" (fire-prone West).
+    # Order by how hard EXTREME is to reach, so the gradient runs from the humid
+    # Southeast up to the fire-prone West.
     ordered = sorted(states.items(), key=lambda kv: kv[1]["thresholds"]["extreme"])
     codes = [s for s, _ in ordered]
     lows = np.array([info["thresholds"]["low"] for _, info in ordered])
@@ -67,16 +60,14 @@ def main() -> None:
     chart_theme.apply()
     fig, ax = plt.subplots(figsize=(11.5, 7.5))
 
-    # Per-state 4-segment bars (side-by-side, not stacked — each segment
-    # spans its own tier so the band widths are directly visible).
-    # Use explicit lefts so segments butt against each other cleanly.
+    # Four segments per state, laid end to end rather than stacked, so you can
+    # see how wide each tier band is. Explicit left edges keep them flush.
     ax.barh(y, lows,                left=0,    height=bar_h, color=COLOR_LOW,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
     ax.barh(y, mods - lows,         left=lows, height=bar_h, color=COLOR_MOD,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
     ax.barh(y, exts - mods,         left=mods, height=bar_h, color=COLOR_HIGH, edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
     ax.barh(y, 1.0 - exts,          left=exts, height=bar_h, color=COLOR_EXT,  edgecolor=_PAL["bg"], linewidth=0.6, zorder=2)
 
-    # Vertical probe line at PROBE_SCORE — the visual hook for the
-    # "same score, different danger" story.
+    # The line that makes the point.
     ax.axvline(
         PROBE_SCORE,
         color=COLOR_PROBE,
@@ -103,7 +94,7 @@ def main() -> None:
         zorder=5,
     )
 
-    # Per-state tier-at-probe-score labels next to the bar.
+    # What tier that line lands in, spelled out beside each bar.
     def tier_at(score: float, low: float, mod: float, ext: float) -> str:
         if score < low: return "LOW"
         if score < mod: return "MOD"
@@ -123,7 +114,7 @@ def main() -> None:
             color=color,
         )
 
-    # Tick configuration.
+    # Ticks.
     ax.set_yticks(y)
     ax.set_yticklabels(codes, fontsize=11, color=COLOR_LABEL)
     ax.set_xlim(0, 1.12)
@@ -133,14 +124,14 @@ def main() -> None:
     ax.tick_params(axis="y", colors=COLOR_LABEL)
     ax.set_ylim(-0.7, n + 0.4)
 
-    # Hide the chart-junk spines; keep bottom axis.
+    # Drop the box, keep the bottom axis.
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_color(COLOR_AXIS)
     ax.spines["bottom"].set_linewidth(0.8)
     ax.grid(axis="x", color=COLOR_AXIS, linewidth=0.4, alpha=0.18, zorder=0)
 
-    # Title + subtitle stacked, framing the takeaway.
+    # Title and subtitle, stacked.
     fig.suptitle(
         "Same fire-weather score, different danger level",
         fontsize=15,
@@ -159,7 +150,7 @@ def main() -> None:
         loc="left",
     )
 
-    # Legend (top-right, inside the plot area).
+    # Legend, inside the plot.
     handles = [
         mpatches.Patch(color=COLOR_LOW,  label="LOW"),
         mpatches.Patch(color=COLOR_MOD,  label="MOD"),
@@ -178,7 +169,7 @@ def main() -> None:
         bbox_transform=ax.transAxes,
     )
 
-    # Bottom-left footer w/ source.
+    # Source credit at the bottom.
     ax.text(
         0.0, -0.12,
         f"17 fitted states - global fallback cutoffs: LOW <{global_t['low']:.1f} / MOD <{global_t['moderate']:.1f} / HIGH <{global_t['extreme']:.1f} / EXT >={global_t['extreme']:.1f}",

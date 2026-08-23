@@ -1,23 +1,11 @@
-"""Freeze the fire-weather hindcast feature set to data/hindcast_features.csv.
+"""Freeze the hindcast features to data/hindcast_features.csv.
 
-The fire-weather constants we want to fit (VPD/wind scales, multiplicative
-exponents, floors) are applied INSIDE compute_risk — they do not affect the
-per-fire weather features themselves. So once we've pulled each fire's real
-day-of-fire weather + KBDI from Open-Meteo, that feature table is immutable
-and every downstream step (fitting, benchmarking, chart regen) can run
-offline and reproducibly against this CSV — no Open-Meteo quota, no cache
-drift.
+The fitted constants live in compute_risk and have no bearing on the weather each
+fire actually had, so once the day-of weather and KBDI are pulled the table never
+changes. Fitting, benchmarking and charts all run offline against it. Cache-first,
+so re-running after a quota refresh fills gaps without re-fetching.
 
-This also permanently fixes the "validation cache instability" bug: the
-sample is now deterministic (api.core.validation.load_fires_sample uses a
-stable OBJECTID ordering + seeded down-sample), so re-runs hit the cache
-instead of re-fetching 500 new fires every time.
-
-Usage:
-    python scripts/freeze_hindcast_dataset.py
-
-Re-runnable: enrichment is cache-first, so a second run after a quota refresh
-fills any gaps left by 429s without re-fetching what already landed.
+Run with python scripts/freeze_hindcast_dataset.py
 """
 from __future__ import annotations
 
@@ -44,8 +32,7 @@ PER_BUCKET = 125  # 4 * 125 = 500-fire stratified sample (matches validate_firew
 
 OUT_PATH = PROJECT_ROOT / "data" / "hindcast_features.csv"
 
-# Columns persisted to the frozen CSV. Everything compute_risk needs, plus
-# identity/label columns for reproducibility and per-bucket analysis.
+# Everything the scorer needs, plus enough to identify each fire afterward.
 FEATURE_COLS = [
     "objectid",
     "lat",
@@ -63,7 +50,7 @@ FEATURE_COLS = [
 
 
 def main() -> int:
-    # 1. Deterministic stratified 500-fire sample (125 per bucket).
+    # 500 fires, evenly split across the size buckets, same ones every run.
     print("loading FPA-FOD pool (deterministic, OBJECTID-ordered)…")
     pool = load_fires_sample(n=80_000, seed=SEED)
     pool["size_bucket"] = pool["fire_size"].apply(bucket_fire_size)
@@ -77,7 +64,7 @@ def main() -> int:
     print(f"  sampled {len(sample)} fires")
     print(sample["size_bucket"].value_counts().to_string())
 
-    # 2. Enrich with real per-fire weather + KBDI (cache-first; 365-day window).
+    # Add each fire's real weather and KBDI, from cache where possible.
     print("\nenriching with weather + KBDI (cache-first)…")
     cache = _load_cache()
     cache_size_before = len(cache)
@@ -91,8 +78,7 @@ def main() -> int:
     print(f"  cache: {cache_size_before:,} -> {len(cache):,} entries "
           f"(+{len(cache) - cache_size_before:,})")
 
-    # 3. Assemble the feature frame. Keep only fires with complete weather —
-    #    a fire missing temp/humidity/wind/days_since_rain can't be scored.
+    # Keep only fires with complete weather. Anything missing can't be scored.
     ew = pd.DataFrame(enriched)
     ew["fire_date"] = ew["fire_date"].apply(lambda d: d.isoformat())
     before = len(ew)
@@ -112,8 +98,8 @@ def main() -> int:
     out.to_csv(OUT_PATH, index=False)
     print(f"\nsaved frozen feature set: {OUT_PATH}  ({len(out)} fires)")
 
-    # Coverage warning: if a quota lockout left gaps, the CSV is still usable
-    # but smaller than 500. A re-run after the quota refresh fills it in.
+    # A quota lockout leaves a smaller but still usable CSV. Re-run tomorrow to
+    # fill the gaps.
     if len(out) < PER_BUCKET * len(BUCKETS):
         print(
             f"  NOTE: {PER_BUCKET * len(BUCKETS) - len(out)} fires lack complete "

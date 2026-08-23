@@ -1,12 +1,8 @@
-"""NIFC WFIGS Current Wildland Fire Incident Locations client.
+"""The official nationwide active-fires feed, from the interagency geospatial
+service that replaced the retired HIFLD one. Public ArcGIS, no auth.
 
-Replaces the old (retired) HIFLD Open wildfire feed. WFIGS = Wildland Fire
-Interagency Geospatial Services — the official nationwide active-fires feed.
-ArcGIS FeatureServer, public, no auth.
-
-Typical record count: 300–1500 active+recent fires depending on season.
-The full national list is small enough to fetch entirely and cache; per-request
-geographic filtering happens in the route handler.
+It runs 300 to 1500 fires depending on the season, small enough that we pull the
+whole country and cache it. The route does the geographic filtering.
 """
 
 from __future__ import annotations
@@ -26,7 +22,7 @@ WFIGS_URL = (
     "WFIGS_Incident_Locations_Current/FeatureServer/0/query"
 )
 
-# Single global cache — same response served to all requests.
+# One cache for everyone. The feed is nationwide.
 _CACHE: dict[str, Any] = {"ts": 0.0, "data": []}
 
 
@@ -35,7 +31,7 @@ def _ttl() -> int:
 
 
 def _fail_ttl() -> int:
-    # How long a transient upstream failure suppresses re-hitting WFIGS.
+    # How long a failure keeps us from trying again.
     return int(os.getenv("NIFC_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
@@ -59,15 +55,14 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
     if not force and _CACHE["data"] and now - _CACHE["ts"] < _ttl():
         return [_to_inc(r) for r in _CACHE["data"]]
 
-    # A recent failure? Back off (at most one probe per _fail_ttl()) and signal
-    # the outage so /incidents/near reports nifc `down` rather than conflating a
-    # real outage with a genuinely-empty feed.
+    # Back off and say down. An empty list would read as "no fires near you", the
+    # thing this whole system exists to avoid.
     if not force and now - _CACHE.get("fail_ts", 0.0) < _fail_ttl():
         raise SourceUnavailable("nifc upstream failed (cached)")
 
     params = {
-        # Filter to actual wildfires only — exclude RX (prescribed burns) and
-        # training exercises which dominate the raw feed off-season.
+        # Real wildfires only. Prescribed burns and training exercises are most of
+        # the raw feed out of season.
         "where": "IncidentTypeCategory='WF'",
         "outFields": (
             "IrwinID,IncidentName,IncidentSize,PercentContained,"
@@ -89,12 +84,9 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
-        # Real outage. Record a short-lived failure marker so we probe at most
-        # once per _fail_ttl() instead of hammering WFIGS, and raise so
-        # /incidents/near reports `down` (an empty list would read as "no fires
-        # nearby" — the misleading state the source-health system exists to fix).
+        # A real outage. Note it and raise so the route can flag the feed.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[nifc] upstream {status} ({type(e).__name__}); reporting down"
@@ -107,10 +99,8 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
         props = feat.get("properties") or {}
         geom = feat.get("geometry") or {}
         coords = geom.get("coordinates")
-        # Prefer geometry; fall back to InitialLat/Lon fields. Coordinates can
-        # be present-but-null on incidents with unset geometry, so coerce
-        # defensively and skip the single row rather than aborting the whole
-        # feed (the route swallows our exceptions via gather()).
+        # Either can be present but null, so skip the row rather than killing the
+        # whole parse.
         lon = lat = None
         if coords and len(coords) >= 2:
             lon, lat = safe_float(coords[0]), safe_float(coords[1])
@@ -147,7 +137,7 @@ def _to_inc(r: dict[str, Any]) -> NifcIncident:
 
 
 def _iso_from_arcgis(v: Any) -> str | None:
-    """ArcGIS returns datetimes as epoch milliseconds. Convert to ISO 8601."""
+    """ArcGIS sends times as epoch milliseconds. Turn them into ISO strings."""
     if v is None:
         return None
     try:
@@ -155,8 +145,7 @@ def _iso_from_arcgis(v: Any) -> str | None:
         from datetime import datetime, timezone
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
     except (TypeError, ValueError, OSError, OverflowError):
-        # OSError/OverflowError: an out-of-range epoch makes fromtimestamp raise
-        # (notably on Windows) — must not abort the whole feed parse. Fall back
-        # to the raw value only if it's already a non-empty string (e.g. a
-        # pre-formatted ISO date); a bad numeric epoch degrades to None.
+        # An out-of-range epoch makes fromtimestamp raise, especially on Windows,
+        # and that must not take the feed down. Keep the raw value only when it
+        # already looks like a date string.
         return str(v) if isinstance(v, str) and v else None

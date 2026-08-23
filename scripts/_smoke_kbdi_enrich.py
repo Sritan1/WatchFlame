@@ -1,6 +1,6 @@
-"""Two-fire dry run of the KBDI-enabled enricher + compute_risk override path.
+"""Run two fires through the enricher and the scorer, as a sanity check.
 
-Run from project root:  python -m scripts._smoke_kbdi_enrich
+Run from the project root with python -m scripts._smoke_kbdi_enrich
 """
 import sys
 from datetime import date

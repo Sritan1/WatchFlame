@@ -1,18 +1,13 @@
-// GENERATED — full mirror of api/data/regional_thresholds.json
-// (version v4, fitted 2026-05-31).
-//
-// Bundled into the web app so the Risk Calculator works FULLY OFFLINE: compute a
-// score (web/lib/risk-local.ts), bucket it per state, render the calibration
-// ladder, and auto-resolve the calibration state from a location's coordinates
-// — all without a /risk or /risk/calibration round-trip. The backend remains the
-// authority for the live Status/Safety flows. REGENERATE this whenever the
-// calibration re-runs (scripts/build_regional_thresholds.py); it is static data
-// that changes only on recalibration.
+// GENERATED from api/data/regional_thresholds.json, fitted 2026-05-31, shaped the
+// way /risk/calibration answers. Global cutoffs come from regional_calibration.py,
+// the JSON has none. Bundled so the what-if calculator runs with no backend.
+
+// Regenerate whenever scripts/build_regional_thresholds.py re-runs.
 
 import type { CalibrationInfo, RegionalThresholds } from '@/lib/api';
 
-/** The complete per-state calibration block (same shape /risk/calibration
- *  returns). Drives the offline calibration ladder. */
+/** Every state's calibration block, shaped like /risk/calibration returns it.
+ *  This is what the offline ladder reads. */
 export const CALIBRATION_INFO: CalibrationInfo = {
   "version": "v4",
   "fitted_at": "2026-05-31",
@@ -471,15 +466,14 @@ export const CALIBRATION_INFO: CalibrationInfo = {
   }
 };
 
-/** Global fallback cutoffs (uncalibrated states). `score_max` is 1.0 since the
- *  global band spans the full 0–1 range. */
+/** Cutoffs for unfitted states. score_max is 1.0, since the global scale runs the
+ *  whole range. */
 export const GLOBAL_THRESHOLDS: RegionalThresholds = {
   ...CALIBRATION_INFO.global_thresholds,
   score_max: 1.0,
 };
 
-/** Per-state {low, moderate, high, extreme, score_max} derived from the full
- *  block — the shape the score gauge + composite bucketing consume. */
+/** Just the cutoffs per state, which is all the gauge and the bucketing want. */
 export const REGIONAL_THRESHOLDS: Record<string, RegionalThresholds> =
   Object.fromEntries(
     Object.entries(CALIBRATION_INFO.states).map(([code, s]) => [
@@ -488,7 +482,7 @@ export const REGIONAL_THRESHOLDS: Record<string, RegionalThresholds> =
     ]),
   );
 
-/** Thresholds for a state code, or null for Global (uncalibrated). */
+/** Thresholds for a state, or null when we have no fit for it. */
 export function thresholdsForState(
   state: string | null | undefined,
 ): RegionalThresholds | null {
@@ -496,12 +490,9 @@ export function thresholdsForState(
   return REGIONAL_THRESHOLDS[state] ?? null;
 }
 
-/** Resolve a calibrated state from coordinates — the client-side mirror of
- *  api/core/regional_calibration.py `lookup_state`: bbox containment with a
- *  nearest-centroid (equirectangular) tiebreak for overlapping Mountain-West
- *  borders. Returns null outside every fitted state's bbox. Used to auto-select
- *  the Risk Calculator's calibration region offline (online, the backend's
- *  authoritative Census-geocoded `regional_state` is preferred). */
+/** The state from coordinates, mirroring lookup_state. Box containment, with the
+ *  nearest centroid settling Mountain West overlaps. Picks the what-if region
+ *  offline. Online, the backend's Census answer wins. */
 export function lookupStateLocal(lat: number, lon: number): string | null {
   const inBox: Array<{ code: string; centroid: [number, number] }> = [];
   for (const [code, s] of Object.entries(CALIBRATION_INFO.states)) {

@@ -1,6 +1,5 @@
-// Status route — orchestrated by StatusScreen (client component)
-// because every panel reads from TanStack Query hooks + browser geolocation.
-// The Shell layer stays server-rendered.
+// StatusScreen runs on the client because every panel reads a query hook and
+// browser geolocation. Shell stays server-rendered.
 
 import { Shell } from '@/components/Shell';
 import { StatusScreen } from '@/components/status/StatusScreen';

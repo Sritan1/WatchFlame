@@ -1,7 +1,6 @@
 'use client';
 
-// "Watching" location picker — opens from the sidebar Watching button.
-// Mirrors mobile app/locations.tsx: GPS radio + saved-cities list + city search.
+// The "Watching" location picker, a GPS option, the saved cities, and a search.
 
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -36,12 +35,9 @@ export function LocationsModal({
     staleTime: 5 * 60_000,
   });
 
-  // The results area must reflect the CURRENT input, not the previous debounced
-  // query. `search` lags behind by the 350ms debounce, so during that window
-  // (or any in-flight fetch) show "Searching…" and HIDE the stale results /
-  // "No matches" / error. Otherwise a corrected typo ("Pariss" -> "Paris")
-  // would keep showing "No matches." for the word the user just fixed, and the
-  // "type 3 characters" hint could render next to a full stale result list.
+  // Results must reflect the current input, not the previous debounced query. search
+  // lags by the debounce, so stale results and "No matches" stay hidden in that
+  // window. Otherwise correcting a typo keeps showing "No matches" for the old word.
   const q = query.trim();
   const searchInFlight = q.length >= 3 && (query !== debouncedQ || search.isFetching);
   const resultsFresh = q.length >= 3 && query === debouncedQ && !search.isFetching;
@@ -51,9 +47,8 @@ export function LocationsModal({
   const onAdd = (hit: GeocodeHit) => {
     const label = [hit.name, hit.state, hit.country].filter(Boolean).join(', ');
     const id = add({ label, lat: hit.lat, lon: hit.lon });
-    // null = at the cap and this is a new city. The search UI is hidden at the
-    // limit so this is a safety net; bail without setActive(null), which would
-    // otherwise switch the picker back to GPS.
+    // Null means at the cap with a new city. Bail without setActive(null), which
+    // would switch the picker back to GPS.
     if (id === null) return;
     setActive(id);
     setQuery('');

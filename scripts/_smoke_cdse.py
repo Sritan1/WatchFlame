@@ -1,20 +1,11 @@
-"""One-off smoke test: verify CDSE OAuth + Process API actually work.
+"""Check that the Copernicus credentials and the vegetation API still work.
 
-Run from project root:
-
-    .\.venv\Scripts\Activate.ps1
+    .\\.venv\\Scripts\\Activate.ps1
     python -m scripts._smoke_cdse
 
-What to expect:
-  - First line: "OK token" (OAuth succeeded → keys are valid + portal reachable)
-  - Then 6 lines, one per city, each showing current NDVI + May climatology.
-  - Healthy values: current NDVI roughly 0.05–0.85 depending on biome,
-    climatology in the same range. None means the satellite saw too much
-    cloud in the window (rerun later).
-
-If you see "RuntimeError: CDSE_CLIENT_ID is not set" → keys are missing from
-api/.env. If you see HTTP 401 → keys are wrong / expired (regenerate in the
-CDSE dashboard).
+A good run prints "OK token" then a line per city with a current NDVI and a May norm.
+0.05 to 0.85 is normal depending on biome, and None just means too much cloud. A
+missing-key error means the credentials aren't in api/.env. A 401 means regenerate.
 """
 
 import asyncio
@@ -24,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Load .env BEFORE importing the service module so os.getenv sees the keys.
+# Load .env before importing the service, or it won't see the keys.
 try:
     from dotenv import load_dotenv
 
@@ -32,8 +23,7 @@ try:
 except ImportError:
     print("(python-dotenv not installed — assuming env is set in shell)")
 
-# Turn on per-request progress prints from cdse so a slow run is visibly
-# making progress (otherwise minutes of silence look like a hang).
+# Print per request, so a slow run doesn't look like a hang.
 os.environ["CDSE_VERBOSE"] = "1"
 
 from api.services.cdse import (  # noqa: E402
@@ -42,14 +32,13 @@ from api.services.cdse import (  # noqa: E402
     fetch_ndvi_current,
 )
 
-# Use only the last 3 years for the smoke test — enough to prove the API
-# works without blowing the rate-limit budget on a verification run. The
-# production fetch defaults to the full 2018–2025 window.
+# Three years is enough to prove the API works without spending the whole rate
+# budget just checking.
 _SMOKE_YEARS = [2023, 2024, 2025]
 
 
 async def main() -> None:
-    # Step 1: OAuth handshake. Fails fast if creds are wrong.
+    # Handshake first, which fails immediately on bad credentials.
     try:
         token = await _get_token()
         print(f"OK token  (len={len(token)})")
@@ -57,9 +46,8 @@ async def main() -> None:
         print(f"FAIL token  {type(e).__name__}: {e}")
         return
 
-    # Step 2: two fetches per city — current + same-month climatology.
-    # Pick May (month=5) so the climatology call is meaningful regardless of
-    # when this is run.
+    # Then a current reading and a monthly norm per city. May, so the norm means
+    # something whenever this gets run.
     cities = [
         ("Phoenix, AZ",  33.45, -112.07),
         ("Seattle, WA",  47.61, -122.33),

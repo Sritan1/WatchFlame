@@ -1,7 +1,6 @@
 'use client';
 
-// Tiny mono numeric label (e.g. "01", "02") — used for ordering input panels
-// and checklist items. Two digits zero-padded.
+// A small zero-padded numeric label, for ordering input panels and checklist rows.
 
 import { useAesthetic } from '@/lib/aesthetic';
 

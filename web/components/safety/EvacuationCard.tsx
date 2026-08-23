@@ -1,10 +1,7 @@
 'use client';
 
-// "Suggested Direction" featured card. Compass shows escape bearing (opposite
-// of nearest-fire bearing); "Get Directions" opens Google Maps with a real
-// destination computed from spherical trig (destPoint helper).
-// The segmented toggle swaps between "Away From Fire" and "Nearest Shelter".
-// Info icon (shelter mode only) → ShelterInfoModal.
+// The suggested-direction card. The compass points away from the nearest fire, and
+// Get Directions opens maps at a real destination rather than a heading.
 
 import { useMemo, useState } from 'react';
 
@@ -26,8 +23,8 @@ import { formatDistance, useUnits } from '@/lib/use-units';
 
 export type EvacMode = 'away' | 'shelter';
 
-// Route the user to the edge of the threat zone — the same "edge of relevance"
-// radius the proximity meter and the threat model use, so they never disagree.
+// The edge of the threat radius, the same distance the proximity meter and the
+// threat model use, so none of them contradict each other.
 const EVAC_DISTANCE_MI = THREAT_RADIUS_MI;
 
 export function EvacuationCard({
@@ -44,25 +41,22 @@ export function EvacuationCard({
   onSheltersRetry,
 }: {
   origin: LatLon;
-  /** Bearing FROM user TO nearest fire (deg, 0=N). Null while loading. */
+  /** Which way the nearest fire lies, in degrees. Null while loading. */
   fireBearingDeg: number | null;
-  /** Distance to nearest fire in miles (for the "fire is X at Y mi" caption). Null while loading. */
+  /** How far away it is, in miles. Null while loading. */
   fireDistanceMi: number | null;
   riskLevel: RiskLevel;
   mode: EvacMode;
   onModeChange: (m: EvacMode) => void;
-  /** Nearby shelters, sorted activated-first then by distance (from
-   *  /shelters). The first is the nearest target; activated ones get the
-   *  confirmed/live treatment. */
+  /** Open ones first, then by distance. The first is the destination. */
   shelters: Shelter[] | undefined;
-  /** Fires/incidents query is in flight — show skeletons in 'away' mode. */
+  /** The fire feeds are in flight, so the away mode shows skeletons. */
   fireLoading?: boolean;
-  /** Shelters query is in flight — show skeletons in 'shelter' mode. */
+  /** The shelter feed is in flight, so shelter mode shows skeletons. */
   sheltersLoading?: boolean;
-  /** Shelters query errored — shelter mode shows a distinct "unavailable"
-   *  empty state (with retry) rather than a bare "none nearby". */
+  /** Gets its own state, not a bare "none nearby". */
   sheltersError?: boolean;
-  /** Retry the shelters query from the shelter-mode error state. */
+  /** Try the shelters again from that error state. */
   onSheltersRetry?: () => void;
 }) {
   const { ae, accent } = useAesthetic();
@@ -70,68 +64,54 @@ export function EvacuationCard({
   const r = getRisk(riskLevel, accent);
   const [shelterInfoOpen, setShelterInfoOpen] = useState(false);
 
-  // Nearest shelter is the compass target; activated shelters sort first, so
-  // when any are open the target is the nearest open one. `otherOpen` powers a
-  // compact list of the remaining open shelters beneath the detail tile.
+  // Open ones sort first, so this is the nearest open shelter whenever any are.
   const nearestShelter = shelters?.[0] ?? null;
   const otherOpen = (shelters ?? []).filter(
     (s) => s.activated && s.id !== nearestShelter?.id,
   );
 
-  // Body (compass + headline + subtext + CTA) shows skeletons when the data
-  // for the current mode is still in flight. Chrome (eyebrow + toggle +
-  // caveat) stays interactive so the user can flip modes during the load.
-  // When `shelters` resolves with no nearby results, `nearestShelter` is
-  // null but we're NOT loading — the existing fallback (silently using the
-  // away-from-fire compass/heading in shelter mode) takes over.
+  // The middle skeletons while its mode's data loads, but the toggle stays live
+  // so you can switch modes during the wait.
   const isBodyLoading =
     mode === 'shelter' ? sheltersLoading ?? false : fireLoading ?? false;
 
-  // "Away" mode with no nearby fire (the query resolved, nothing in range) —
-  // show a calm all-clear state instead of a misleading compass or a perpetual
-  // skeleton. The card still renders so the Nearest Shelter mode stays reachable.
+  // An all-clear beats a compass pointing away from a fire that isn't there. The
+  // card stays, so shelter mode is still reachable.
   const noFire =
     mode === 'away' &&
     !(fireLoading ?? false) &&
     (fireBearingDeg == null || fireDistanceMi == null);
 
-  // "Shelter" mode with no shelter to route to (query resolved OR errored, not
-  // loading). Distinct from the loading state so we show a real empty/error
-  // panel instead of silently falling back to the away-from-fire compass and a
-  // "Get Directions" button that points nowhere.
+  // Kept apart from the loading state, or the card falls back to the away compass
+  // and offers directions to nowhere.
   const noShelter =
     mode === 'shelter' && !(sheltersLoading ?? false) && !nearestShelter;
 
-  // Opposite of fire bearing — where to run to. Default to 0 when fire data
-  // hasn't arrived; the skeleton hides this anyway.
+  // Straight away from the fire. Zero until the data lands, behind the skeleton.
   const escapeBearing = fireBearingDeg != null ? (fireBearingDeg + 180) % 360 : 0;
   const fireCardinal = fireBearingDeg != null ? cardinal8(fireBearingDeg) : '';
 
-  // Away-from-fire destination, resolved to avoid open water near a coast:
-  // straight-away point → ±60° → nearest shelter in that arc → direction-only.
-  // (Only meaningful in away mode with a fire; cheap + memoized either way.)
+  // Where "away" actually lands, avoiding the ocean. See evac.ts for the order.
   const awayRes = useMemo(
     () => resolveEvacDestination(origin, escapeBearing, EVAC_DISTANCE_MI, shelters),
     [origin, escapeBearing, shelters],
   );
-  // If every straight-line point is water AND shelters are still loading, hold
-  // the CTA/note in a transient "finding a route" state — a shelter may still
-  // resolve, so don't flash the direction-only verdict.
+  // Every direction is water and the shelters haven't arrived. Wait instead of
+  // announcing there is nowhere to go. One might still turn up.
   const awayResolving =
     mode === 'away' && awayRes.kind === 'direction' && (sheltersLoading ?? false);
 
   const inShelterMode = mode === 'shelter' && nearestShelter != null;
 
-  // Heading drives the compass + "Head [cardinal]". It follows the ACTUAL chosen
-  // direction (shelter bearing, or the resolved away bearing) so it never
-  // contradicts where "Get Directions" sends you — same as shelter mode already.
+  // The compass follows the chosen destination, so it can never point one way
+  // while the directions button sends you another.
   const headingBearing = inShelterMode
     ? bearingTo(origin, { lat: nearestShelter!.lat, lon: nearestShelter!.lon })
     : awayRes.bearing;
   const headingCardinal = cardinalOf(headingBearing);
   const headingLabel = cardinal8(headingBearing);
 
-  // CTA destination (null = no drive-to point → the button is hidden).
+  // Where the button goes. Null hides it.
   const dest: LatLon | null = inShelterMode
     ? { lat: nearestShelter!.lat, lon: nearestShelter!.lon }
     : awayRes.kind === 'direction'
@@ -141,9 +121,7 @@ export function EvacuationCard({
   const ctaLabel =
     mode === 'away' && awayRes.kind === 'shelter' ? 'Directions to shelter' : 'Get Directions';
 
-  // A small fallback chip under the heading so a coastal adjustment is always
-  // visible (the primary/direct route shows none). Neutral tone — this is
-  // informational, not an alarm.
+  // Only shows when the route had to be adjusted around water.
   const fallbackChip: string | null =
     mode !== 'away' || awayResolving
       ? null
@@ -155,8 +133,7 @@ export function EvacuationCard({
             ? 'Direction only, no route'
             : null;
 
-  // Routing note — every distance goes through formatDistance (mi/km follows the
-  // Units preference).
+  // Every distance here honors the miles or kilometres preference.
   const fireNote =
     fireDistanceMi != null
       ? `Fire is ${fireCardinal} at ${formatDistance(fireDistanceMi, units.distance, 0)}`
@@ -176,7 +153,7 @@ export function EvacuationCard({
             : `Head inland away from the fire · ${fireNote}`;
   }
 
-  // Footer caveat for away mode (shelter mode keeps its own, below).
+  // The caveat under away mode. Shelter mode has its own further down.
   const awayFooter = awayResolving
     ? 'Suggestion only. Finding a drive-to point away from the fire. Always follow official guidance.'
     : awayRes.kind === 'primary'
@@ -198,7 +175,7 @@ export function EvacuationCard({
         borderRadius: ae.radiusLg,
       }}
     >
-      {/* Top radial glow — the command card's "lit from above" signature. */}
+      {/* Top radial glow, the command card's "lit from above" signature. */}
       <div
         aria-hidden="true"
         style={{
@@ -283,7 +260,7 @@ export function EvacuationCard({
           />
         </div>
 
-        {/* Compass + headline (skeleton while the data for this mode loads) */}
+        {/* Compass and headline (skeleton while the data for this mode loads) */}
         <div
           className="app-flex-col"
           style={{ marginTop: 26, display: 'flex', gap: 18, alignItems: 'center' }}
@@ -347,10 +324,7 @@ export function EvacuationCard({
                     letterSpacing: '-0.04em',
                     color: ae.text,
                     lineHeight: 0.95,
-                    // Wrap instead of clipping: the card sits in a narrow 1fr
-                    // grid column on laptop, so a 2-letter cardinal ("Head NW")
-                    // can exceed the text column. It fits on one line at typical
-                    // widths and gracefully wraps on smaller ones.
+                    // Wrap, don't clip. "Head NW" outruns a narrow column.
                     overflowWrap: 'break-word',
                     textShadow: `0 0 34px rgba(${r.glow}, 0.26)`,
                   }}
@@ -397,8 +371,8 @@ export function EvacuationCard({
           )}
         </div>
 
-        {/* Shelter detail — confirmed/live vs potential, integrated into the
-            shelter flow. Only in shelter mode once shelter data has resolved. */}
+        {/* Shelter detail, live against potential. Shelter mode only, and only
+            once the shelter data has resolved. */}
         {mode === 'shelter' && !isBodyLoading && nearestShelter ? (
           <>
             <ShelterDetailTile shelter={nearestShelter} ae={ae} />
@@ -433,8 +407,8 @@ export function EvacuationCard({
           </p>
         </div>
 
-        {/* CTA — skeleton while loading; hidden when there's no destination to
-            route to (the no-fire all-clear, or shelter mode with no shelter). */}
+        {/* CTA. Skeleton while loading, hidden when there is nowhere to route to.
+            That's the all-clear, or shelter mode with no shelter. */}
         {!noFire && !noShelter ? (
           <div style={{ marginTop: 18 }}>
             {isBodyLoading || awayResolving ? (
@@ -460,9 +434,8 @@ export function EvacuationCard({
   );
 }
 
-/** Calm all-clear state for "Away From Fire" when nothing is burning nearby.
- *  Mirrors the compass + text layout so the card stays visually consistent,
- *  and offers a path into the shelter view. */
+/** The all-clear. Laid out like the compass it replaces, so the card holds its
+ *  shape, with a way into shelter mode. */
 function NoFirePanel({
   ae,
   hasShelters,
@@ -559,10 +532,8 @@ function NoFirePanel({
   );
 }
 
-/** Empty / error state for "Nearest Shelter" mode when there's no shelter to
- *  route to. Mirrors NoFirePanel's ring + text rhythm so the card height stays
- *  stable, and stacks cleanly on mobile via the parent's `app-flex-col`. Uses a
- *  neutral grey tone (no shelter is not an alarm state). */
+/** Shelter mode with nowhere to send anyone. Grey, not red. No shelter nearby is
+ *  not an emergency by itself. */
 function NoShelterPanel({
   ae,
   error,

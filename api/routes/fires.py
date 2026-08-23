@@ -7,9 +7,8 @@ router = APIRouter(prefix="/fires", tags=["fires"])
 
 
 def _canonical_bbox(bbox: str) -> str:
-    """Validate a user bbox and return a canonical 'minLon,minLat,maxLon,maxLat'
-    string. Raises 422 on anything malformed — this is the trust boundary that
-    keeps arbitrary text out of the upstream FIRMS URL path."""
+    """Rebuild a caller's bbox in canonical form, rejecting anything malformed.
+    This is what keeps arbitrary text out of the FIRMS URL."""
     parts = bbox.split(",")
     if len(parts) != 4:
         raise HTTPException(status_code=422, detail="bbox must be 'minLon,minLat,maxLon,maxLat'")
@@ -37,9 +36,8 @@ async def get_fires(
     ),
 ):
     clean_bbox = _canonical_bbox(bbox) if bbox else None
-    # FIRMS signals a real outage by raising (same mechanism as the other
-    # degrading feeds). Report firms=down and fall back to an empty
-    # FeatureCollection so the frontend shows "feed down", not "no fires".
+    # Mark the feed down on an outage, so the frontend says "feed down" not "no
+    # fires".
     try:
         data = await fetch_fires_geojson(days=days, bbox=clean_bbox)
         set_source_health(response, {"firms": OK})

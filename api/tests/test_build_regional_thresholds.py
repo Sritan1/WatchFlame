@@ -1,13 +1,8 @@
 """Tests for the calibration-runner control flow in scripts/build_regional_thresholds.
 
-What's pinned here is the circuit-breaker contract that decides when to bail
-out of a long-running fit. The actual SQLite/Open-Meteo work is mocked out —
-we only care that:
-  - 3 consecutive data_poverty states trip the breaker
-  - quota_exhausted does NOT count (that's what the pre-run probe is for)
-  - thin_pool / no_pool / thin_data do NOT count
-  - a successful state resets the consecutive counter
-  - write_progress merges the new states INTO whatever's already on disk
+Pins the circuit breaker. SQLite and Open-Meteo are mocked, so all this checks is
+that three data_poverty states in a row trip the breaker, quota_exhausted and thin
+pools don't, a success resets the streak, and write_progress merges with disk.
 """
 from __future__ import annotations
 
@@ -40,7 +35,7 @@ def _ok_result(state: str) -> dict:
 class _FitDriver:
     """Replays a scripted sequence of outcomes for run_calibration."""
     def __init__(self, plan: list[tuple[str, dict]]):
-        # plan is [(state, diag), ...] — one entry per expected fit_fn call
+        # plan is [(state, diag), ...], one entry per expected fit_fn call
         self._plan = list(plan)
         self.calls: list[str] = []
 
@@ -58,7 +53,7 @@ def test_breaker_trips_after_three_consecutive_data_poverty():
         ("CA", _diag("data_poverty")),
         ("OR", _diag("data_poverty")),
         ("WA", _diag("data_poverty")),
-        # Should never reach this — the breaker should fire after WA.
+        # Should never reach this, the breaker should fire after WA.
         ("ID", _diag("ok", _ok_result("ID"))),
     ]
     driver = _FitDriver(plan)
@@ -77,7 +72,6 @@ def test_breaker_trips_after_three_consecutive_data_poverty():
 
 
 def test_successful_state_resets_breaker_counter():
-    """data_poverty, data_poverty, ok, data_poverty, data_poverty → no trip."""
     plan = [
         ("CA", _diag("data_poverty")),
         ("OR", _diag("data_poverty")),
@@ -98,10 +92,8 @@ def test_successful_state_resets_breaker_counter():
 
 
 def test_quota_exhausted_does_not_count_toward_breaker():
-    """A state that came back all-429 is a quota signal, not a data-poverty
-    signal — the pre-run probe is responsible for catching wholesale lockout,
-    so the breaker must not double-count.
-    """
+    """An all-429 state means quota, not thin data, and the pre-run probe already
+    catches a wholesale lockout."""
     plan = [
         ("CA", _diag("quota_exhausted")),
         ("OR", _diag("quota_exhausted")),
@@ -120,9 +112,8 @@ def test_quota_exhausted_does_not_count_toward_breaker():
 
 
 def test_thin_pool_and_thin_data_do_not_count_toward_breaker():
-    """Skips for upstream sample sparseness must not trip the breaker — the
-    breaker is for "sampled & enriched fine but produced zero usable scores".
-    """
+    """The breaker is for a state that sampled and enriched fine but produced no
+    usable scores, not for a sparse upstream sample."""
     plan = [
         ("CA", _diag("thin_pool")),
         ("OR", _diag("no_pool")),
@@ -143,9 +134,8 @@ def test_thin_pool_and_thin_data_do_not_count_toward_breaker():
 
 
 def test_write_progress_called_after_every_state():
-    """The point of incremental save is that a kill at any point preserves
-    progress — so write_progress must fire each iteration, including on skips.
-    """
+    """Incremental save only helps if a kill at any point keeps the progress, so
+    this has to fire on skipped states too."""
     plan = [
         ("CA", _diag("ok", _ok_result("CA"))),
         ("OR", _diag("thin_pool")),
@@ -159,8 +149,8 @@ def test_write_progress_called_after_every_state():
         write_progress_fn=lambda r: snapshots.append(dict(r)),
         breaker_threshold=3,
     )
-    # 3 states, 3 snapshots — the OR skip still triggered a write so a
-    # mid-run kill there wouldn't lose CA.
+    # Three states, three snapshots. The OR skip still wrote, so a kill there
+    # would not have lost CA.
     assert len(snapshots) == 3
     assert "CA" in snapshots[0]
     assert "CA" in snapshots[1]
@@ -169,11 +159,9 @@ def test_write_progress_called_after_every_state():
 
 
 def test_write_progress_merges_with_existing_on_disk(tmp_path):
-    """If the JSON already has 10 calibrated states from a prior run, a partial
-    re-run that calibrates only WY must NOT erase the other 10.
-    """
+    """A partial re-run must not wipe out what an earlier run already wrote."""
     out_path = tmp_path / "regional_thresholds.json"
-    # Pre-existing file with 2 already-calibrated states (stand-in for the 10).
+    # Two already-calibrated states standing in for a full prior run.
     out_path.write_text(json.dumps({
         "version": "v2",
         "states": {
@@ -196,9 +184,7 @@ def test_write_progress_merges_with_existing_on_disk(tmp_path):
 
 
 def test_write_progress_overrides_existing_state_when_refit(tmp_path):
-    """A state re-fit in the current run should replace its older entry
-    (fresh data wins), not be silently dropped because the old entry exists.
-    """
+    """Fresh data wins, so an old entry on disk can't shadow this run's fit."""
     out_path = tmp_path / "regional_thresholds.json"
     out_path.write_text(json.dumps({
         "version": "v2",
@@ -217,7 +203,7 @@ def test_write_progress_overrides_existing_state_when_refit(tmp_path):
 
 
 def test_write_progress_handles_missing_output_file(tmp_path):
-    """First-ever run: no file on disk yet, should still write cleanly."""
+    """A first-ever run has no file on disk yet."""
     out_path = tmp_path / "subdir" / "regional_thresholds.json"
     assert not out_path.exists()
     write_progress({"WY": _ok_result("WY")}, output_path=out_path)

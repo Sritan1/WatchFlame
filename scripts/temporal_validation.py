@@ -1,22 +1,12 @@
-"""Temporal (out-of-time) validation for the ignition model.
+"""Can the model predict forward, not just sideways?
 
-The spatial-block CV already reported holds out whole regions, but it still lets
-the *future* leak into the *past*: a model can train on a 2015 fire-day and be
-tested on a 2005 one. In production the model never has that luxury — it only
-has the past to predict the future. This script splits strictly by TIME instead,
-so the test set is always "later than" everything the model trained on. A model
-that still holds up earns the stronger claim: validated across SPACE *and* TIME.
+Holding out whole regions stops it memorizing places but still lets the future leak
+into the past. A model can train on 2015 and be tested on 2005, which is never how
+production works. This splits strictly by date, so surviving both cuts earns the
+claim that it works across space and time. Analysis only, never touches the shipped
+model.
 
-    data/ignition_dataset.csv (rows 1991-2015):
-    train rows < 2010, test rows >= 2010. Retrain the same HistGradientBoosting
-    pipeline on the past, report ROC-AUC / PR-AUC on the future rows, next to
-    the spatial-CV reference (~0.840).
-
-Pure analysis: writes docs/temporal_validation.png + stdout only. Touches no
-production code and never loads or modifies the live model artifact.
-
-Usage:
-    python scripts/temporal_validation.py
+Run with python scripts/temporal_validation.py
 """
 from __future__ import annotations
 
@@ -27,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-# Windows consoles default to cp1252, which can't encode +- in our output.
+# Windows consoles default to a codepage that can't print the symbols we use.
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except (AttributeError, ValueError):

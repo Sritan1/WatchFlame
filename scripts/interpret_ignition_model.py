@@ -1,18 +1,12 @@
-"""Phase 4 - interpretability: what the model relies on + confound check + map.
+"""What the model is actually leaning on.
 
-Three things:
-  1. Permutation importance (on a held-out spatial split): how much the ROC-AUC
-     drops when each feature is scrambled = how much the model relies on it.
-  2. Confound check: retrain without the calendar features (season, month) - and
-     also without temperature - to see whether the day-to-day weather/drought
-     signal predicts on its own, or the model is mostly reading "it's summer."
-  3. A regional heat-map of model-estimated ignition-proneness.
+Three checks. Scramble each feature and see how far the score falls. Retrain without
+the calendar, then without temperature, to find out whether the weather predicts on
+its own or the model is mostly noticing that it's summer. Then a map of where it
+thinks fires start. Scrambling understates overlapping features, and VPD is built
+from temperature and humidity, so read the moisture ones as a group.
 
-Caveat: permutation importance understates CORRELATED features (VPD is derived
-from temp+humidity), so read the moisture group together, not in isolation.
-
-Usage:
-    python scripts/interpret_ignition_model.py
+Run with python scripts/interpret_ignition_model.py
 """
 from __future__ import annotations
 
@@ -45,7 +39,7 @@ FIG = PROJECT_ROOT / "notebooks" / "figures" / "ignition_interpret.png"
 
 
 def build_gbm(numeric: list[str], categorical: list[str]) -> Pipeline:
-    """A GBM over an arbitrary feature subset (same hyperparams as make_gbm)."""
+    """The same model, over whichever features you hand it."""
     if categorical:
         pre = ColumnTransformer(
             [("cat", OneHotEncoder(handle_unknown="ignore"), categorical)],
@@ -64,11 +58,11 @@ def main() -> int:
     df = pd.read_csv(DATA)
     X, y, g = df[FEATURES], df[TARGET], df[GROUP]
 
-    # One leakage-safe split: hold out 25% of REGIONS for the importance test.
+    # Hold out whole regions, not random rows.
     gss = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=SEED)
     tr, te = next(gss.split(X, y, g))
 
-    # ── 1. Permutation importance ───────────────────────────────────────────
+    # What breaks when each feature is scrambled
     model = make_gbm().fit(X.iloc[tr], y.iloc[tr])
     r = permutation_importance(model, X.iloc[te], y.iloc[te], scoring="roc_auc",
                                n_repeats=10, random_state=SEED, n_jobs=-1)
@@ -78,7 +72,7 @@ def main() -> int:
         print(f"  {FEATURES[i]:18s} {r.importances_mean[i]:+.4f} "
               f"+/- {r.importances_std[i]:.4f}")
 
-    # ── 2. Confound check (feature-group ablation, same held-out split) ──────
+    # Is it just reading the calendar?
     def holdout_auc(num, cat):
         cols = num + cat
         m = build_gbm(num, cat).fit(X.iloc[tr][cols], y.iloc[tr])
@@ -95,14 +89,14 @@ def main() -> int:
     print("  -> if these stay high, day-to-day weather/drought (not the "
           "calendar) carries the signal.")
 
-    # ── 3. Regional heat-map (full-fit model; in-sample, for visualization) ──
+    # Where it thinks fires start. In-sample, just for the picture.
     fullmodel = make_gbm().fit(X, y)
     df = df.assign(pred=fullmodel.predict_proba(X)[:, 1])
     blk = df.groupby("spatial_block").agg(
         lat=("lat", "mean"), lon=("lon", "mean"), pred=("pred", "mean"),
         n=("pred", "size")).reset_index()
 
-    # ── Charts ───────────────────────────────────────────────────────────────
+    # Charts
     import _chart_theme as chart_theme
     pal = chart_theme.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 5.0))

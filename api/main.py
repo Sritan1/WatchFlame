@@ -13,7 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Always load api/.env regardless of CWD or how uvicorn is launched.
+# Absolute path, so it loads no matter where uvicorn was started from.
 load_dotenv(Path(__file__).parent / ".env")
 
 from .core.config import get_settings  # noqa: E402  (must come after load_dotenv)
@@ -36,20 +36,13 @@ logger = logging.getLogger("wildfire")
 settings = get_settings()
 
 
-# The limiter is keyed by client IP (see core/rate_limit.client_ip, which reads
-# the entry the trusted proxy appended to X-Forwarded-For rather than the
-# client-controlled leftmost one). The global default applies to every route via
-# SlowAPIMiddleware; expensive routes override it with a tighter @limiter.limit
-# decorator, and /healthz is exempt.
 def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> Response:
     return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Slow down."})
 
 
-# ── Middleware ────────────────────────────────────────────────────────────────
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Adds defensive response headers to every response. HSTS is only sent in
-    production (sending it from http://localhost would pin the dev origin to
-    HTTPS in the browser)."""
+    """Defensive headers on every response. HSTS only in production. From localhost
+    it would pin the dev origin to HTTPS in the browser."""
 
     def __init__(self, app, is_prod: bool):
         super().__init__(app)
@@ -61,7 +54,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-        # This is a JSON API; nothing should ever be framed or scripted from it.
+        # A JSON API has no business being framed or running scripts.
         resp.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
         if self._is_prod:
             resp.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
@@ -69,8 +62,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def _replay_receive(buffered: dict, real_receive):
-    """A receive() that yields one pre-buffered ASGI message, then defers to the
-    real channel (so the downstream app still sees http.disconnect etc.)."""
+    """Replay one already-read message, then hand back the real channel so the app
+    downstream still sees things like http.disconnect."""
     sent = False
 
     async def receive():
@@ -84,14 +77,11 @@ def _replay_receive(buffered: dict, real_receive):
 
 
 class BodySizeLimitMiddleware:
-    """Reject oversized request bodies before they're buffered/parsed.
+    """Turn away oversized bodies before anything parses them.
 
-    Pure-ASGI (not BaseHTTPMiddleware) so it can cap a STREAMED body that omits
-    Content-Length (chunked Transfer-Encoding): it honors the header when present,
-    then counts bytes as they arrive and aborts with 413 the moment the running
-    total exceeds the cap. The only body endpoint is POST /risk (a few hundred
-    bytes), so pre-buffering up to the cap is cheap. Added inside the CORS layer,
-    so the 413 still carries CORS + security headers."""
+    Raw ASGI so it can cap a streamed body with no Content-Length, counting bytes as
+    they arrive. Sits inside CORS so the 413 still carries the right headers.
+    """
 
     def __init__(self, app, max_bytes: int):
         self.app = app
@@ -113,7 +103,7 @@ class BodySizeLimitMiddleware:
                 await self._reject(scope, receive, send, 400, "Invalid Content-Length.")
                 return
 
-        # Buffer the body, enforcing the cap even without a Content-Length.
+        # Count as we read, in case there was no Content-Length.
         body = b""
         while True:
             message = await receive()
@@ -135,11 +125,10 @@ class BodySizeLimitMiddleware:
 
 
 class ExceptionHandlingMiddleware(BaseHTTPMiddleware):
-    """Convert an unhandled route exception into the generic 500 HERE, inside the
-    CORS + security-header layer, so the error response still carries
-    Access-Control-Allow-Origin. Starlette's outermost ServerErrorMiddleware runs
-    OUTSIDE CORS, so a 500 raised there reaches the browser with no CORS header
-    and is reported as a CORS error, masking the real failure."""
+    """Turn an unhandled route error into a 500 inside the CORS layer, so the response
+    still carries Access-Control-Allow-Origin. Starlette's own error middleware sits
+    outside CORS, so its 500 reaches the browser bare and reads as a CORS error.
+    """
 
     async def dispatch(self, request: Request, call_next):
         try:
@@ -151,8 +140,7 @@ class ExceptionHandlingMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail fast on a misconfigured production deploy (wildcard CORS, missing
-    # required secrets) rather than silently serving an open/keyless surface.
+    # Refuse to boot a misconfigured production deploy. See startup_problems.
     problems = settings.startup_problems()
     if problems:
         msg = "Insecure configuration:\n  - " + "\n  - ".join(problems)
@@ -171,16 +159,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Wire the rate limiter.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded)
 
-# Middleware is applied bottom-up (last added = outermost). CORS is added last
-# so its headers wrap every response, including error and 429 responses.
-# ExceptionHandlingMiddleware is added FIRST (innermost) so it catches route
-# exceptions and turns them into a 500 response that then flows back out through
-# the security-header + CORS layers (a raw 500 from Starlette's outermost error
-# middleware would escape CORS — see the class docstring).
+# Order reads backwards, so the last one added ends up outermost. CORS goes last so
+# its headers wrap everything, errors and 429s included, and exception handling
+# goes first so its 500 travels back out through CORS on the way to the browser.
 app.add_middleware(ExceptionHandlingMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_bytes)
@@ -191,24 +175,21 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
-    # Per-request source-health (see core/source_health.py). Must be exposed
-    # explicitly or the browser hides it from cross-origin JS.
+    # Without this the browser hides the feed-health header from cross-origin JS.
     expose_headers=["X-Source-Health"],
 )
 
 
-# ── Global exception handler ──────────────────────────────────────────────────
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Log the real error server-side; return a generic body so stack traces,
-    file paths, and upstream details never reach the client."""
+    """Log what really happened and return something bland, so stack traces, file
+    paths and upstream details never reach the client."""
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
 def _json_safe(obj):
-    """Replace non-finite floats (NaN/Infinity) with their string form so a body
-    can be serialized. json.dumps rejects them outright (→ 500)."""
+    """Turn NaN and infinity into strings. json.dumps refuses them, which 500s."""
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else str(obj)
     if isinstance(obj, dict):
@@ -220,9 +201,8 @@ def _json_safe(obj):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """Return a clean 422 for invalid input. The default handler echoes the
-    submitted `input` back, and a non-finite float there (e.g. temperature=NaN)
-    makes the JSON render raise → an unhelpful 500. Sanitize it first."""
+    """A clean 422 for bad input. The default handler echoes the submitted value
+    back, so a NaN temperature makes the render raise and returns a useless 500."""
     return JSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
 
 

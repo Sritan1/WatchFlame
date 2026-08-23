@@ -1,26 +1,9 @@
 'use client';
 
-// Fire-weather trajectory plot — opens from the Trajectory chip on Status.
-// X axis = TIME (now at left → +horizon at right); Y axis = fire-weather
-// score (0 bottom → 1 top). The background is a canvas-rendered "risk strata"
-// field: a continuous vertical thermal gradient where each fire-weather tier
-// (LOW/MOD/HIGH/EXT) owns a color and the calibrated thresholds are the
-// *centers* of soft transition zones, with glowing seams + atmospheric bloom.
-// It reads like stacked thermal strata rather than tiled bands.
-//
-// IMPORTANT — the strata is DYNAMIC: every threshold (the feather centers, the
-// seam positions, the dashed boundary lines, the y-axis ticks/badges) is driven
-// by `regionalThresholds` (the user's per-state calibration). Change location /
-// calibration and the whole field re-layers to match. Adapted from a canvas
-// reference; rendering is static (no animation loop) for performance, with an
-// offscreen cache so hover stays cheap.
-//
-// The composite/active-fire-threat story is preserved in the summary below the
-// plot (tier-crossing callout + headline), not in the band colors.
-//
-// Option B for the OWM/Open-Meteo "now" mismatch: the curve + scores are
-// anchored to the orb's Status score (multiplicative, preserves % deltas), and
-// the "Now" tile shows the Status (OpenWeatherMap) temp/RH/wind.
+// The trajectory plot behind the Status chip. Time left to right, fire-weather score
+// bottom to top. Every seam, tick and badge comes from the user's state calibration,
+// so changing location re-layers the field. "Now" uses the live observation, not the
+// forecast, because the two providers disagree slightly.
 
 import {
   useCallback,
@@ -52,13 +35,9 @@ const TIER_SHORT: Record<RiskLevel, string> = {
   extreme: 'EXT',
 };
 
-// ── Risk-strata rendering constants (the "classic" thermal palette, depth 0.6,
-//    softness 0.036 — the reference settings we standardized on). ────────────
 type RGB = readonly number[];
-// Distinct, saturated thermal nodes so all four tiers read clearly. The
-// previous MOD was an olive [168,168,52] that bled into both the green LOW
-// and the orange HIGH; a clean golden-yellow plus a punchier orange give each
-// tier its own identity while the feathered transitions keep it a gradient.
+// Saturated enough to tell apart through the feathering. An olive moderate bled
+// into both the green below and the orange above.
 const STRATA = {
   low: [42, 168, 102] as RGB,    // emerald green
   mod: [240, 206, 60] as RGB,    // golden yellow
@@ -75,11 +54,8 @@ const SOFTNESS = 0.046;
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
-/** Fire-weather score ON THE CURVE at a horizontal fraction (0..1) of the plot.
- *  The curve maps node index i to x-fraction i/horizon, so the fractional index
- *  at `frac` is frac*horizon; we linearly interpolate between the two nearest
- *  nodes. Used by the hover readout so it reflects the line directly above/below
- *  the cursor (not the cursor's own vertical position). */
+/** The score on the curve at a point across the plot, interpolated between the two
+ *  nearest hours, so the hover tooltip follows the line and not the cursor. */
 function scoreAtFrac(scores: number[], frac: number, horizon: number): number {
   if (scores.length === 0) return 0;
   if (scores.length === 1) return clamp01(scores[0]);
@@ -110,16 +86,16 @@ interface Bounds {
   extreme: number;
 }
 
-/** Continuous strata color at a fire-weather score, feathering each tier color
- *  into the next across the user's calibrated thresholds. */
+/** The color at a given score, feathering one tier into the next across the
+ *  user's own thresholds. */
 function strataColor(score: number, b: Bounds, f: number): RGB {
   let c: RGB = STRATA.low;
   c = mix(c, STRATA.mod, smoothstep(b.low - f, b.low + f, score));
   c = mix(c, STRATA.high, smoothstep(b.moderate - f, b.moderate + f, score));
   c = mix(c, STRATA.ext, smoothstep(b.extreme - f, b.extreme + f, score));
-  // deepen the upper-extreme region into crimson for cinematic falloff
+  // Deepen the top of extreme into crimson.
   c = mix(c, STRATA.extDeep, smoothstep(b.extreme + 0.03, 1.0, score) * 0.82);
-  // settle the very floor so the low tier has depth too
+  // And darken the very bottom, so low has some depth too.
   c = mix(c, mix(c, BASE_INK, 0.4), smoothstep(0.12, 0.0, score));
   return saturate(c, 1.24);
 }
@@ -138,7 +114,7 @@ function buildNoise(): HTMLCanvasElement {
   return n;
 }
 
-// Catmull-Rom → bezier smoothing for the forecast curve.
+// Smooths the forecast curve through its points.
 function smoothPath(ctx: CanvasRenderingContext2D, pts: [number, number][]): void {
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i - 1] || pts[i];
@@ -178,8 +154,8 @@ export function PhaseSpaceModal({
   open: boolean;
   onClose: () => void;
   weatherBucket: RiskLevel | null;
-  /** ML ignition-likelihood tier; null while loading or unavailable. Folded
-   *  into the environment axis so this modal's tier math matches the headline. */
+  /** The ignition tier, null while loading. Folded in here the same way the
+   *  headline does it, so the two can't disagree. */
   ignitionBucket: RiskLevel | null;
   threatBucket: RiskLevel | null;
   trajectory: TrajectoryResponse | null | undefined;
@@ -190,14 +166,14 @@ export function PhaseSpaceModal({
     humidityPct: number | null;
     windKph: number | null;
   };
-  /** The /trajectory query errored (vs. the backend gracefully returning null
-   *  for a location with no forecast). Drives a failure-specific message + Retry. */
+  /** The forecast request failed, as opposed to the backend answering that this
+   *  location has no forecast. Drives a different message and a retry. */
   error?: boolean;
   onRetry?: () => void;
 }) {
   const { ae } = useAesthetic();
 
-  // ── Option B anchoring ──────────────────────────────────────────────────
+  // Anchor the curve to the score Status shows.
   const frames = useMemo(() => trajectory?.frames ?? [], [trajectory]);
   const horizon = trajectory?.horizon_hours ?? (frames.length > 0 ? frames.length - 1 : 6);
   const anchorScale = useMemo(() => {
@@ -209,10 +185,9 @@ export function PhaseSpaceModal({
     () => frames.map((f) => clamp01(f.v4_score * anchorScale)),
     [frames, anchorScale],
   );
-  // Prefer the authoritative Status score (the anchor target). anchoredScores[0]
-  // already equals it in the normal case; preferring it directly keeps "Now"
-  // matching the page even when the forecast now-score is too small to anchor
-  // against (anchorScale falls back to 1, which would otherwise leave this ~0).
+  // Matches the first anchored point anyway, except when the forecast's own
+  // now-score is too small to scale against. Then this keeps "Now" agreeing with
+  // the page instead of reading near zero.
   const anchoredNow = currentWeatherScore ?? anchoredScores[0] ?? null;
   const anchoredProjected =
     anchoredScores.length > 0 ? anchoredScores[anchoredScores.length - 1] : null;
@@ -222,10 +197,9 @@ export function PhaseSpaceModal({
     return bucketOf(normalizeWeather(anchoredProjected, regionalThresholds));
   }, [anchoredProjected, regionalThresholds]);
 
-  // Fold ignition into the environment axis (Stage 1 of the headline) BEFORE the
-  // W×T matrix, exactly like StatusScreen's headline, so this modal's "your level"
-  // and tier-crossing callout match the orb. Ignition is a "today" signal, held
-  // constant across the 6 hr fire-weather horizon (only weather is projected).
+  // Fold ignition in before the threat matrix, exactly as the headline does, or
+  // this modal's tier drifts from the orb above it. Ignition is a reading for
+  // today, so it stays put across the window while only the weather moves.
   const currentComposite = useMemo(
     () => compositeFromBuckets(envFromBuckets(weatherBucket, ignitionBucket), threatBucket),
     [weatherBucket, ignitionBucket, threatBucket],
@@ -237,9 +211,8 @@ export function PhaseSpaceModal({
 
   return (
     <Modal open={open} onClose={onClose} eyebrow="Trajectory" title="Where you are, where you're heading" maxWidth={720}>
-      {/* On a forecast fetch failure, lead with a prominent callout + Retry —
-          the failure is the headline, not a footnote. The plot below still
-          renders the (accurate) "now" position. */}
+      {/* A failed forecast fetch leads with a callout and a Retry. The failure is the
+          headline, not a footnote. The plot below still draws an accurate "now". */}
       {error ? (
         <div style={{ marginBottom: 18 }}>
           <DataErrorState
@@ -287,10 +260,8 @@ export function PhaseSpaceModal({
           currentConditions={currentConditions}
         />
       ) : error ? null : trajectory === undefined ? (
-        // undefined = the forecast query hasn't resolved yet (e.g. the location
-        // changed while the modal is open). Distinct from null (below), which is
-        // the backend's "no forecast available" answer. Without this split, a
-        // brief re-load flashed the definitive "not available" copy.
+        // Undefined is "hasn't answered yet", null is the backend saying there is
+        // no forecast. Conflate them and a reload flashes "not available".
         <p
           style={{
             marginTop: 16,
@@ -320,7 +291,7 @@ export function PhaseSpaceModal({
   );
 }
 
-// ─── Canvas strata plot ────────────────────────────────────────────────────
+// Canvas strata plot
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
@@ -356,14 +327,13 @@ function TrajectoryPlot({
   );
   const tone = trajectoryTier ? TIER_TONE[trajectoryTier] : null;
 
-  // Stash the draw inputs in a ref so the resize/draw callbacks stay stable.
+  // Keep the draw inputs in a ref, so the resize and draw callbacks stay stable.
   const dataRef = useRef({ anchoredScores, horizon, currentScore, bounds, tone, ae });
   dataRef.current = { anchoredScores, horizon, currentScore, bounds, tone, ae };
 
   if (!noiseRef.current && typeof document !== 'undefined') noiseRef.current = buildNoise();
 
-  /** Draw all static layers (everything except the hover crosshair) to the
-   *  offscreen base canvas at the current CSS size. */
+  /** Draw everything that doesn't move onto the offscreen canvas. */
   const renderBase = useCallback(() => {
     const { w: W, h: H, dpr } = sizeRef.current;
     if (!W || !H) return;
@@ -386,7 +356,7 @@ function TrajectoryPlot({
     ctx.fillStyle = rgbStr(BASE_INK);
     ctx.fillRect(0, 0, W, H);
 
-    // layered strata — one continuous vertical gradient
+    // the strata, as one continuous vertical gradient
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     const NS = 96;
     for (let k = 0; k <= NS; k++) {
@@ -483,7 +453,7 @@ function TrajectoryPlot({
     }
     ctx.stroke();
 
-    // calibrated threshold lines (dashed) — the data boundaries
+    // the calibrated tier boundaries
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 5]);
     ctx.strokeStyle = 'rgba(255,240,218,0.27)';
@@ -500,7 +470,7 @@ function TrajectoryPlot({
     ctx.strokeStyle = 'rgba(255,255,255,0.10)';
     ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
 
-    // ── forecast curve ──
+    // forecast curve
     const hasSeries = scores.length >= 2;
     if (hasSeries) {
       const pts: [number, number][] = scores.map((s, i) => [xOf(i / hz), yOf(s)]);
@@ -518,7 +488,7 @@ function TrajectoryPlot({
       ctx.fillStyle = area;
       ctx.fill();
 
-      // curve line — white for readability over the thermal field, tier glow
+      // the curve itself, white so it reads over the colors, with a tier glow
       ctx.save();
       ctx.shadowColor = `rgba(${lineRgb}, 0.7)`;
       ctx.shadowBlur = 8;
@@ -540,7 +510,7 @@ function TrajectoryPlot({
         ctx.fill();
       }
 
-      // +horizon projected dot (tier-colored) + arrowhead + label
+      // the projected dot at the far end, with its arrow and label
       const last = pts[pts.length - 1];
       const prev = pts[pts.length - 2];
       const ang = Math.atan2(last[1] - prev[1], last[0] - prev[0]);
@@ -571,7 +541,7 @@ function TrajectoryPlot({
       ctx.textAlign = 'left';
     }
 
-    // NOW dot — bright halo at the left edge
+    // the now dot, haloed, at the left edge
     if (cur != null) {
       const nx = xOf(0);
       const ny = yOf(cur);
@@ -598,7 +568,7 @@ function TrajectoryPlot({
     }
   }, []);
 
-  /** Blit the cached base, then draw the hover crosshair + readout. */
+  /** Blit the cached base, then draw the hover crosshair and readout. */
   const paint = useCallback(() => {
     const canvas = canvasRef.current;
     const base = baseRef.current;
@@ -616,9 +586,7 @@ function TrajectoryPlot({
     const { bounds: b, anchoredScores: scores, tone: tn } = dataRef.current;
     const frac = clamp01(mo.x / W);
     const hourF = frac * horizon;
-    // Snap the readout to the CURVE's fire-weather at the hovered TIME (x), not
-    // the cursor's own vertical position — so the tooltip reflects the line
-    // directly above/below the cursor. Only a vertical guide is drawn now.
+    // Read the curve at the hovered time, not wherever the cursor sits vertically.
     const score = scoreAtFrac(scores, frac, horizon);
     const snapY = (1 - clamp01(score)) * H;
 
@@ -631,7 +599,7 @@ function TrajectoryPlot({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Marker dot sitting ON the curve at the hovered time (the "modern" snap).
+    // Marker dot, snapped onto the curve at the hovered time.
     if (scores.length >= 2) {
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
@@ -652,9 +620,7 @@ function TrajectoryPlot({
     ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
     const cw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
     const ch = 34;
-    // Anchor the tooltip to the curve point (the dot). Flip sides near an edge,
-    // then hard-clamp fully on-canvas so it never spills off-plot on narrow
-    // (mobile) widths.
+    // Hang the tooltip off the dot, flipping sides near an edge then clamping.
     let bx = mo.x + 14;
     if (bx + cw > W) bx = mo.x - cw - 14;
     bx = Math.max(4, Math.min(bx, W - cw - 4));
@@ -684,7 +650,7 @@ function TrajectoryPlot({
     redraw();
   }, [redraw, anchoredScores, horizon, currentScore, bounds, tone]);
 
-  // Sizing — DPR-aware, ResizeObserver + poll fallback.
+  // Sizing. Watches the element, and polls as a fallback.
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -730,9 +696,8 @@ function TrajectoryPlot({
     mouseRef.current = null;
     paint();
   };
-  // Touch: a tap/horizontal-drag scrubs the readout on mobile. `touch-action:
-  // pan-y` (on the canvas style) lets a vertical drag still scroll the modal, so
-  // this only claims the horizontal gesture along the time axis.
+  // Dragging sideways scrubs the readout. The canvas only claims that gesture, so
+  // dragging up and down still scrolls the modal.
   const onTouch = (e: ReactTouchEvent<HTMLCanvasElement>) => {
     const t = e.touches[0];
     if (t) setPointer(t.clientX, t.clientY);
@@ -742,7 +707,7 @@ function TrajectoryPlot({
     paint();
   };
 
-  // Y-axis ticks + tier badges, positioned by the dynamic thresholds.
+  // Y-axis ticks and tier badges, positioned by the dynamic thresholds.
   const yNums = [
     { v: 0, lbl: '0.00' },
     { v: bounds.low, lbl: bounds.low.toFixed(2) },
@@ -795,7 +760,7 @@ function TrajectoryPlot({
         </span>
       </div>
 
-      {/* Y gutter — numeric ticks (right) + tier badges (left) */}
+      {/* Y gutter, numeric ticks on the right and tier badges on the left */}
       <div style={{ gridColumn: 2, gridRow: 1, position: 'relative' }}>
         {yNums.map((t) => (
           <span
@@ -898,7 +863,7 @@ function TrajectoryPlot({
   );
 }
 
-// ─── Below-plot summary ──────────────────────────────────────────────────
+// Below-plot summary
 
 function TrajectorySummary({
   ae,
@@ -991,7 +956,7 @@ function TrajectorySummary({
         </div>
       </div>
 
-      {/* Tier-crossing callout — only when projected tier differs from current */}
+      {/* Tier-crossing callout, only when the projected tier differs */}
       {willCrossTier && currentComposite && projectedComposite ? (
         <div
           style={{
@@ -1018,8 +983,8 @@ function TrajectorySummary({
         </div>
       ) : null}
 
-      {/* "Now" = your current Status reading (matches the cards); "+horizon" =
-          the Open-Meteo forecast it's heading toward. */}
+      {/* "Now" is the Status reading that matches the cards. The other tile is the
+          Open-Meteo forecast it is heading toward. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 }}>
         <FrameTile
           ae={ae}
@@ -1073,8 +1038,7 @@ function FrameTile({
   humidityPct: number | null;
   windKph: number | null;
   v4Score: number | null;
-  /** Combined headline level for this snapshot (Now = current, +horizon =
-   *  projected). Null while inputs are loading. Shown as a compact tier pill. */
+  /** The combined tier at this moment, null while the inputs load. */
   overallLevel: RiskLevel | null;
 }) {
   const units = useUnits();
@@ -1121,9 +1085,9 @@ function FrameTile({
         <span style={{ color: ae.text, fontWeight: 700, textAlign: 'right' }}>{v4Score != null ? v4Score.toFixed(2) : '—'}</span>
       </div>
 
-      {/* Overall combined level for this snapshot — divided off from the raw
-          weather inputs above so it reads as the conclusion, not another input.
-          Compact tier code + flexWrap keep it safe on narrow (mobile) tiles. */}
+      {/* Combined level for this snapshot, split off from the raw weather above so
+          it lands as the conclusion and not another input. The short tier code and
+          flexWrap keep it from breaking on narrow tiles. */}
       <div
         style={{
           marginTop: 10,

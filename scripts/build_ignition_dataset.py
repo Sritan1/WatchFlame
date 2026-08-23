@@ -1,22 +1,13 @@
-"""Phase 0 of the ML feature — assemble the fire-ignition training dataset.
+"""Build the ignition training set, one row per location and day. A 1 means a fire
+really started there that day, a 0 means an ordinary day at the same place.
 
-Builds data/ignition_dataset.csv: one row per (location, day) example, labeled
-    1 = a real fire ignited that day at that location
-    0 = a typical (non-fire) day at the SAME location
-See ML.md for the full design + rationale.
+Fire records only give the days something happened, so negatives are manufactured
+from other days at the same locations, out of the cached weather windows. Sharing
+locations across both classes is the point. The model can't win by learning that
+fires happen near people, it has to learn what was different about that day.
 
-The "fire-day vs typical-day" trick: fire records only give us positives (days
-fires happened). We manufacture negatives from the SAME locations on other days,
-using the 365-day weather windows already cached in data/openmeteo_cache.json
-(each cached fire window's key is lat|lon|fire_date|365, so the key itself
-identifies the fire). Sharing locations between the two classes means the model
-can't cheat by learning "fires happen near roads/people" — it must learn what's
-different about the conditions on the day a fire actually started.
-
-Offline + reproducible: no network, fixed SEED. Re-running yields the same CSV.
-
-Usage:
-    python scripts/build_ignition_dataset.py
+No network and a fixed seed, so re-running gives the same CSV. Run with
+python scripts/build_ignition_dataset.py
 """
 from __future__ import annotations
 
@@ -38,12 +29,12 @@ from api.core.validation import doy_to_season  # noqa: E402
 from api.services.ignition import DAYS_SINCE_RAIN_CAP  # noqa: E402
 from api.services.landcover import land_cover_class_cached  # noqa: E402
 
-# ── Tunables (mirrored in ML.md "open decisions") ────────────────────────────
+# Tunables
 SEED = 7
 WINDOW_TAG = "|365"          # cache keys for 365-day fire windows
-NEG_PER_FIRE = 5             # typical days sampled per fire (→ ~17% positive)
-KBDI_WARMUP_DAYS = 90        # skip first N days: the KBDI integral must warm up
-AUTOCORR_BUFFER_DAYS = 21    # skip days just before the fire: weather autocorrelates
+NEG_PER_FIRE = 5             # quiet days per fire, 15% positives once the background set lands
+KBDI_WARMUP_DAYS = 90        # skip first N days, the KBDI integral must warm up
+AUTOCORR_BUFFER_DAYS = 21    # skip days just before the fire, weather autocorrelates
 BLOCK_SIZE_DEG = 2.0         # spatial-block grid for leakage-safe CV later
 CORE_WEATHER = ["temperature_c", "humidity_pct", "wind_kph", "days_since_rain"]
 
@@ -52,7 +43,7 @@ LC_CACHE_PATH = PROJECT_ROOT / "data" / "landcover_cache.json"  # gitignored (da
 
 
 def vpd_hpa(temp_c: float | None, humidity_pct: float | None) -> float | None:
-    """Vapor pressure deficit (hPa) — same Tetens form the fire-weather algorithm uses."""
+    """Vapor pressure deficit, same formula the risk algorithm uses."""
     if temp_c is None or humidity_pct is None:
         return None
     es = 6.1078 * math.exp(17.27 * temp_c / (temp_c + 237.3))
@@ -60,7 +51,7 @@ def vpd_hpa(temp_c: float | None, humidity_pct: float | None) -> float | None:
 
 
 def spatial_block(lat: float, lon: float) -> str:
-    """Coarse grid-cell id so nearby examples land in the same CV fold."""
+    """A coarse cell id, so neighbours end up in the same fold."""
     blat = int(math.floor(lat / BLOCK_SIZE_DEG) * BLOCK_SIZE_DEG)
     blon = int(math.floor(lon / BLOCK_SIZE_DEG) * BLOCK_SIZE_DEG)
     return f"{blat}_{blon}"
@@ -68,10 +59,10 @@ def spatial_block(lat: float, lon: float) -> str:
 
 def feature_row(window: dict, target: date, lat: float, lon: float, label: int,
                 land_cover: str):
-    """Compute one example's features at `target` date, or None if incomplete.
-    Reuses summarize_window_with_kbdi so positives + negatives are byte-for-byte
-    the same feature definitions (feature parity). `land_cover` is looked up once
-    per location and passed in (static per place)."""
+    """One example's features on a given day, or None if the window is too thin.
+    It goes through the same summarize function every other caller uses, so
+    positives and negatives are defined identically. Land cover is looked up once
+    per location and handed in."""
     s = summarize_window_with_kbdi(window, target)
     if any(s.get(c) is None for c in CORE_WEATHER):
         return None
@@ -85,7 +76,7 @@ def feature_row(window: dict, target: date, lat: float, lon: float, label: int,
         "humidity_pct": s["humidity_pct"],
         "wind_kph": s["wind_kph"],
         "days_since_rain": s["days_since_rain"],
-        "kbdi": s.get("kbdi"),  # may be None → NaN; gradient-boosted trees handle it
+        "kbdi": s.get("kbdi"),  # never missing in practice, sampling clears the warmup
         "vpd_hpa": vpd_hpa(s["temperature_c"], s["humidity_pct"]),
         "season": doy_to_season(doy),
         "month": target.month,
@@ -97,8 +88,9 @@ def feature_row(window: dict, target: date, lat: float, lon: float, label: int,
 def parse_fire_keys(
     cache: dict, exclude_keys: frozenset = frozenset()
 ) -> list[tuple[float, float, date, dict]]:
-    """Every cached 365-day window's key encodes a fire: lat|lon|firedate|365.
-    `exclude_keys` drops background-negative windows that share the same cache."""
+    """Each cached window's key already names a fire, as location and date, so
+    the cache doubles as the fire list. `exclude_keys` drops the background
+    negatives, which live in the same cache."""
     fires: list[tuple[float, float, date, dict]] = []
     for k, v in cache.items():
         if v is None or not k.endswith(WINDOW_TAG) or k in exclude_keys:
@@ -112,7 +104,7 @@ def parse_fire_keys(
         except ValueError:
             continue
         fires.append((lat, lon, fire_date, v))
-    # Deterministic order regardless of dict load order → reproducible sampling.
+    # Sort, so the sampling doesn't depend on dict ordering.
     fires.sort(key=lambda f: (f[0], f[1], f[2].isoformat()))
     return fires
 
@@ -121,8 +113,8 @@ def main() -> int:
     rng = random.Random(SEED)
     print("loading weather cache (the big ~1.1 GB file - give it a minute)...")
     cache = _load_cache()
-    # Background-negative windows live in the SAME openmeteo cache; exclude them
-    # from the fire positives or parse_fire_keys would treat them as fires.
+    # The background negatives share this cache, and without excluding them we'd
+    # read them back as fires.
     bg_path = PROJECT_ROOT / "data" / "background_negatives.csv"
     bg_keys: frozenset = frozenset()
     if bg_path.exists():
@@ -134,7 +126,7 @@ def main() -> int:
     fires = parse_fire_keys(cache, exclude_keys=bg_keys)
     print(f"  found {len(fires):,} fire windows (excluded {len(bg_keys):,} background)")
 
-    # Land-cover cache (one lookup per unique location; persisted between runs).
+    # One lookup per location, kept between runs.
     lc_cache: dict[str, str] = {}
     if LC_CACHE_PATH.exists():
         lc_cache = json.loads(LC_CACHE_PATH.read_text(encoding="utf-8"))
@@ -150,14 +142,13 @@ def main() -> int:
             continue
         fire_idx = times.index(fire_iso)
 
-        # Land cover for this fire's location (static → one lookup, reused by the
-        # positive + all its negatives). None → "unknown" categorical.
+        # Looked up once and reused by the fire day and all its quiet days.
         land_cover = land_cover_class_cached(lat, lon, lc_cache) or "unknown"
         if (fi + 1) % 100 == 0:
             LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
             print(f"    {fi + 1}/{len(fires)} fires (land-cover cache {len(lc_cache):,})")
 
-        # Positive: the fire day itself.
+        # The day the fire started.
         pos = feature_row(window, fire_date, lat, lon, 1, land_cover)
         if pos is None:
             skipped += 1
@@ -165,7 +156,8 @@ def main() -> int:
         rows.append(pos)
         n_pos += 1
 
-        # Negatives: typical days at the same location (warmed-up, buffered).
+        # Ordinary days at the same spot, far enough back to be unrelated and
+        # far enough in for the drought integrator to have settled.
         lo, hi = KBDI_WARMUP_DAYS, fire_idx - AUTOCORR_BUFFER_DAYS
         candidates = list(range(lo, hi)) if hi > lo else []
         for idx in rng.sample(candidates, min(NEG_PER_FIRE, len(candidates))):
@@ -180,17 +172,16 @@ def main() -> int:
 
     LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
 
-    # Route B: append background negatives from non-fire locations (built by
-    # scripts/build_background_negatives.py). These break the "every location is
-    # a fire location" structure so land_cover can express that developed/urban
-    # areas ignite less — fixing the over-flagging of low-fire regions.
+    # Add the negatives from places that have never burned, built by
+    # scripts/build_background_negatives.py. Without them every location in the
+    # set is a fire location, and land cover can't say that a city doesn't burn.
     bg_path = PROJECT_ROOT / "data" / "background_negatives.csv"
     n_bg = 0
     if bg_path.exists():
         bg = pd.read_csv(bg_path)
         n_bg = len(bg)
-        # Re-map land_cover with the CURRENT categorize() (codes cached in lc_cache),
-        # so background rows pick up the finer developed-intensity classes too.
+        # Re-categorize from the cached codes, so these rows pick up any change
+        # to categorize() as well.
         bg["land_cover"] = [
             land_cover_class_cached(float(r.lat), float(r.lon), lc_cache) or "unknown"
             for r in bg.itertuples()
@@ -200,19 +191,14 @@ def main() -> int:
         print(f"  + {n_bg:,} background negatives (Route B, non-fire locations)")
 
     df = pd.DataFrame(rows)
-    # Symmetric days_since_rain ceiling (see api/services/ignition.py). Same-
-    # location negatives sit earlier in the shared window than the positive, so
-    # their days_since_rain is capped at their window position while the positive
-    # — and the live server, which scores the window END — can reach ~365.
-    # Clipping every row (positive, same-location negative, background) to the
-    # common reachable ceiling removes that positional artifact, which was
-    # inflating serve-time scores for arid locations. Serving applies the same
-    # clip, so training and serving stay in parity.
+    # Clip days since rain to the ceiling every row can actually reach. Quiet days sit
+    # earlier in the window, so only the fire climbs to a full year and the model
+    # would learn that gap instead of the weather. ignition.py clips the same way.
     df["days_since_rain"] = df["days_since_rain"].clip(upper=DAYS_SINCE_RAIN_CAP)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT_PATH, index=False)
 
-    # ── Summary + a first look at the signal ─────────────────────────────────
+    # What we ended up with
     print(f"\nsaved: {OUT_PATH}  ({len(df):,} rows)")
     print(f"  positives (fire days): {n_pos:,}")
     print(f"  negatives (typical):   {n_neg:,}")

@@ -1,25 +1,8 @@
 'use client';
 
-// Status page card: the single fire driving the user's active-fire threat,
-// with a rich, type-adaptive readout. Shared chrome (summary band → identity +
-// threat-level badge → 3-panel intel grid → action footer) wraps two variants
-// that only ever show each fire type's REAL fields:
-//
-//   - FIRMS satellite pixel: "Satellite Detection". Panels = Bearing,
-//     Signal (Intensity K + Confidence), Detection (Platform + Detected + D/N).
-//   - Named incident (NIFC / Cal Fire): name + county. Panels = Bearing,
-//     Fire Facts (Size + Personnel + Cause), Containment (status + bar).
-//
-// The Bearing panel's trend chip shows the wind-relative read (Toward / Away /
-// Crosswind) from driver.wind — real data, since we don't track fire movement.
-// The Threat Level badge reuses the app's Low/Moderate/High/Extreme via
-// bucketOf(driver.threat), so it matches the composite's active-fire axis.
-//
-// Empty state: "No active threats" when no fires sit within 50 mi.
-// Loading state: skeleton matching the live layout.
-//
-// Premium chrome: TiltCard + top accent stripe + corner glow blob + grid
-// texture, mirroring the Score Breakdown cards above.
+// The card naming the fire behind the threat number. One frame around two variants,
+// each showing only the fields its kind of fire has. A pixel gets signal strength and
+// age, an incident gets size, crew and containment. Bearing is real, movement isn't.
 
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
@@ -37,9 +20,8 @@ import { confidenceLabel, firmsDetailHref, firmsPlatform } from '@/lib/firms';
 import { getRisk, RISK_LEVELS, type RiskTone } from '@/lib/theme';
 import { convertDistance, formatDistance, useUnits } from '@/lib/use-units';
 
-// Fixed warm chrome for any live threat (matches the reference Command Center
-// card). Severity is carried by the Threat Level badge, not the card color, so
-// a low-threat fire never washes the whole card green like the empty state.
+// Always warm while a fire is present. The badge carries the severity, so a
+// low-threat fire never turns the whole card green like the empty state.
 const CHROME = { color: '#FF7A3A', glow: '255, 122, 58' };
 const EMPTY = { color: RISK_LEVELS.low.color, glow: RISK_LEVELS.low.glow };
 
@@ -47,8 +29,7 @@ function formatStartedDate(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  // Pinned to en-US so the date reads consistently regardless of the visitor's
-  // browser locale (matches the app's other fixed-format numbers).
+  // Pinned to one locale, so the date reads the same for every visitor.
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
@@ -62,7 +43,7 @@ export function ThreatSourceCard({
   const { ae, accent } = useAesthetic();
   const units = useUnits();
 
-  // ── Loading ─────────────────────────────────────────────────────────────
+  // Loading
   if (isLoading) {
     return (
       <CardShell ae={ae} glow={CHROME.glow}>
@@ -93,7 +74,7 @@ export function ThreatSourceCard({
     );
   }
 
-  // ── Empty state (no fires within 50 mi) ─────────────────────────────────
+  // Nothing in range
   if (driver == null) {
     return (
       <CardShell ae={ae} glow={EMPTY.glow}>
@@ -135,7 +116,7 @@ export function ThreatSourceCard({
     );
   }
 
-  // ── Live driver (named incident or FIRMS satellite) ─────────────────────
+  // A real fire, of either kind
   const isIncident = driver.kind === 'incident';
   const tone = CHROME;
 
@@ -144,7 +125,7 @@ export function ThreatSourceCard({
   const distanceUnit = units.distance;
   const bearingCardinal = cardinal8(driver.bearingDeg);
 
-  // Threat-level badge — same bucketing the composite's active-fire axis uses.
+  // The badge, bucketed the same way the composite's threat axis is.
   const threatTone = getRisk(bucketOf(driver.threat), accent);
 
   const wTone = windTone(driver.wind);
@@ -158,9 +139,7 @@ export function ThreatSourceCard({
         : 'NIFC WFIGS'
       : 'NASA FIRMS';
 
-  // Region: county+state for incidents; satellite platform for FIRMS pixels.
-  // Treat a blank/whitespace `location` the same as missing so it doesn't
-  // short-circuit the county/state fallback and render a stray pin with no text.
+  // A blank location counts as missing, or a pin renders with no text beside it.
   const region =
     driver.kind === 'incident'
       ? driver.incident.location?.trim()
@@ -168,7 +147,7 @@ export function ThreatSourceCard({
         : [driver.incident.county, driver.incident.state].filter(Boolean).join(', ') || null
       : firmsPlatform(driver.feature.properties.satellite);
 
-  // Timing line (summary band, right).
+  // The timing line on the right of the summary band.
   const startedStr = driver.kind === 'incident' ? formatStartedDate(driver.incident.started) : null;
   const firmsAge =
     driver.kind === 'firms'
@@ -211,7 +190,7 @@ export function ThreatSourceCard({
       />
 
       <div style={{ position: 'relative', padding: '22px 28px 22px' }}>
-        {/* ── 1 · Summary band ─────────────────────────────────────────── */}
+        {/* Summary band */}
         <div
           style={{
             display: 'flex',
@@ -281,7 +260,7 @@ export function ThreatSourceCard({
           ) : null}
         </div>
 
-        {/* ── 2 · Identity + threat-level badge ────────────────────────── */}
+        {/* Identity and threat-level badge */}
         <div
           style={{
             display: 'flex',
@@ -409,7 +388,7 @@ export function ThreatSourceCard({
           </div>
         </div>
 
-        {/* ── 3 · Intel grid (Bearing + two type-tailored panels) ──────── */}
+        {/* Intel grid. Bearing, plus two panels tailored to the fire's kind. */}
         <div
           style={{
             marginTop: 20,
@@ -581,7 +560,7 @@ export function ThreatSourceCard({
           )}
         </div>
 
-        {/* ── 4 · Action footer ────────────────────────────────────────── */}
+        {/* Action footer */}
         <div
           style={{
             marginTop: 18,
@@ -628,11 +607,11 @@ export function ThreatSourceCard({
   );
 }
 
-// ─── Internal pieces ──────────────────────────────────────────────────────
+// Internal pieces
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
-/** Rounded stone that houses the header glyph. */
+/** The rounded tile the header icon sits in. */
 function iconStone(glow: string): CSSProperties {
   return {
     width: 56,
@@ -694,7 +673,7 @@ function CardShell({ ae, glow, children }: { ae: Ae; glow: string; children: Rea
   );
 }
 
-/** Ascending 4-bar meter filled to the tier's level. */
+/** Four rising bars, filled to the tier. */
 function ThreatMeter({ tone }: { tone: RiskTone }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 16 }}>
@@ -717,7 +696,7 @@ function ThreatMeter({ tone }: { tone: RiskTone }) {
   );
 }
 
-/** Label (with optional icon) on the left, value on the right, hairline rule. */
+/** A label on the left, its value on the right, a hairline between rows. */
 function VitalRow({
   ae,
   icon,
@@ -775,15 +754,14 @@ function VitalRow({
   );
 }
 
-/** Containment status badge + progress bar for the incident variant. */
+/** Containment status badge and progress bar for the incident variant. */
 function ContainmentBlock({ ae, pct }: { ae: Ae; pct: number | null }) {
   const known = pct != null;
   const contained = known && pct >= 100;
   const statusTone = contained
     ? { color: RISK_LEVELS.low.color, glow: RISK_LEVELS.low.glow }
     : { color: '#FF7A3A', glow: '255, 122, 58' };
-  // `contained` already implies `known`, so unknown and not-contained both read
-  // "Active" — no separate `known` branch needed here (it still drives the bar).
+  // Unknown and uncontained both read "Active", but the bar below still cares.
   const statusText = contained ? 'Contained' : 'Active';
   const barPct = known ? Math.max(3, Math.round(pct)) : 0;
 
@@ -853,10 +831,9 @@ function ContainmentBlock({ ae, pct }: { ae: Ae; pct: number | null }) {
   );
 }
 
-/** Compass that plots the fire's direction relative to "you" at the center — a
- *  faint needle out to a glowing dot at the bearing, over a ticked dial with an
- *  N marker. Ported from the reference (web-status-extras.jsx). Trig outputs are
- *  rounded so SSR and client stringify the SVG coordinates identically. */
+/** A compass with you at the center and the fire out at its bearing. Coordinates
+ *  are rounded, or a phone and the server disagree on the last decimal place and
+ *  React calls it a hydration mismatch. */
 function ThreatCompass({
   ae,
   tone,

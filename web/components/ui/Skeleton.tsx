@@ -1,9 +1,7 @@
 'use client';
 
-// Loading placeholder — a rounded block whose background tone pulses between two
-// shades via the `skeleton-pulse` keyframe (1.2s). Ported from
-// app/components/ui/Skeleton.tsx. Use anywhere a query is in flight and the slot
-// has a known size (most numeric readouts + headlines).
+// Loading placeholder, a rounded block pulsing between two shades. Use anywhere a
+// query is in flight and the slot has a known size.
 
 export type SkeletonRounded = 'sm' | 'md' | 'lg' | 'full';
 
@@ -28,8 +26,7 @@ export function Skeleton({
         width,
         height,
         borderRadius: RADIUS[rounded],
-        // background is animated by the `skeleton-pulse` keyframe between two
-        // shades for a more refined tonal pulse than a flat opacity fade.
+        // Pulses between two shades instead of fading opacity.
         animation: 'skeleton-pulse 1.2s ease-in-out infinite',
         ...style,
       }}

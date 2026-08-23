@@ -1,17 +1,7 @@
-"""OpenStreetMap Overpass API client for shelter / assembly-point lookups.
-
-Public, free, no key required. We're polite citizens:
-- 1-hour in-memory cache (Overpass's free tier ~10k requests/day)
-- 25 s server-side timeout
-- US bbox guard so we don't accidentally query global
-
-Tag strategy:
-  • emergency=assembly_point      — explicit gathering points (best signal)
-  • amenity=community_centre      — civic buildings often used as shelters
-  • amenity=shelter               — generic shelters; we filter out non-applicable
-                                    sub-types (picnic, public transport, etc.)
-  • social_facility=shelter       — registered social-service shelters
-                                    (homeless shelters explicitly excluded)
+"""OpenStreetMap lookups for buildings that could serve as shelters. Public and
+free, so behave. An hour of caching, a server-side timeout, and a US box so we never
+ask for the whole planet. Wants assembly points, community centres, generic shelters
+and social facilities. Picnic shelters, bus stops and homeless shelters get filtered.
 """
 
 from __future__ import annotations
@@ -30,16 +20,13 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
-# Short-lived negative cache for transient upstream failures — bounds us to one
-# probe per _fail_ttl() window instead of re-hitting a throttled mirror on every
-# request. Kept separate from _CACHE so a failure is never remembered as a real
-# "no shelters here" answer. Mirrors the pattern in census.py / firms.py.
+# Failures cached apart from results, so an outage is never remembered as a real
+# "nothing here" answer.
 _FAIL_CACHE: dict[str, float] = {}
 
 
 def _ttl() -> int:
-    # Overpass data is updated minute-to-minute by OSM contributors but for our
-    # purposes (rare event, "potential shelters" rarely move) an hour is plenty.
+    # Community centres don't move, so an hour is plenty.
     return int(os.getenv("SHELTER_CACHE_TTL_SECONDS", "3600"))
 
 
@@ -47,9 +34,7 @@ def _fail_ttl() -> int:
     return int(os.getenv("SHELTER_FAIL_CACHE_TTL_SECONDS", "60"))
 
 
-# ----- Tag filtering --------------------------------------------------------
-
-# Sub-types we explicitly DON'T want returned as evacuation shelters.
+# Things tagged as shelters that nobody should evacuate to.
 _EXCLUDED_SHELTER_TYPES = {
     "picnic_shelter",
     "public_transport",
@@ -81,7 +66,7 @@ _EXCLUDED_SOCIAL_FACILITY = {
 
 
 def _shelter_type_for(tags: dict[str, str]) -> str | None:
-    """Return a normalized human-readable category, or None to skip the row."""
+    """A readable category for this row, or None to drop it."""
     if tags.get("emergency") == "assembly_point":
         return "Assembly point"
     if tags.get("amenity") == "community_centre":
@@ -93,7 +78,7 @@ def _shelter_type_for(tags: dict[str, str]) -> str | None:
         if sub in _EXCLUDED_SHELTER_TYPES:
             return None
         if sub == "homeless_shelter":
-            # Don't surface homeless shelters as wildfire evacuation points.
+            # A homeless shelter is not an evacuation point.
             return None
         return f"Shelter ({sub})" if sub else "Shelter"
     if tags.get("social_facility") == "shelter":
@@ -103,10 +88,6 @@ def _shelter_type_for(tags: dict[str, str]) -> str | None:
         return "Social shelter"
     return None
 
-
-# ----- US bbox guard --------------------------------------------------------
-
-# ----- Public API -----------------------------------------------------------
 
 @dataclass
 class Shelter:
@@ -123,17 +104,12 @@ async def fetch_shelters(
     lon: float,
     radius_km: float = 80.0,
 ) -> list[Shelter]:
-    """Fetch potential shelters within `radius_km` of (lat, lon).
+    """Candidate shelters near a point, unsorted and possibly hundreds. The route
+    sorts and trims. Empty outside the US.
 
-    Returns up to ~hundreds of nodes; the route handler will sort by distance
-    and trim. Caching is by (rounded lat, rounded lon, rounded radius).
-    Outside US returns [].
-
-    Resilience: if the cache is stale and a refresh fails, the last good result
-    is served (stale) rather than raising — these "potential" shelters are static
-    infrastructure, so an hours-old list is fine and far better than a false
-    "Mapped shelters down" every time the flaky public Overpass mirror hiccups.
-    Only a cold cache (never fetched) + a failing upstream reports `down`."""
+    A failed refresh serves the stale list. Buildings don't move, and hours-old data
+    beats a "feed is down" every time a public mirror hiccups. Only a cold cache and
+    a failing upstream together report down."""
     if not in_us(lat, lon):
         return []
 
@@ -144,10 +120,8 @@ async def fetch_shelters(
     if cached and now - cached[0] < _ttl():
         return [_to_shelter(r) for r in cached[1]]
 
-    # Cache is stale or missing. Inside a recent-failure backoff window, don't
-    # re-hit the flaky upstream: serve the last good (stale) result if we have
-    # one — these are static "potential" shelters, so hours-old data is fine —
-    # and only signal the outage when there's nothing cached to fall back on.
+    # Stale or missing, and we're inside a backoff window. Serve whatever we last
+    # got, and only admit defeat when there is nothing to fall back on.
     failed_at = _FAIL_CACHE.get(cache_key)
     if failed_at is not None and now - failed_at < _fail_ttl():
         if cached is not None:
@@ -167,8 +141,8 @@ out body 600;
 """.strip()
 
     headers = {
-        # Overpass operators ask clients to identify themselves; without a
-        # descriptive UA the public mirror sometimes returns 406.
+        # Overpass asks clients to say who they are, and the public mirror
+        # sometimes 406s without a real user agent.
         "User-Agent": "wildfire-app/0.2 (portfolio project; contact via repo)",
         "Accept": "application/json",
     }
@@ -181,13 +155,11 @@ out body 600;
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; treat as outage
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
-        # Refresh failed (public Overpass mirrors throttle to 429 / 504 under
-        # load). Record the failure so we back off to one probe per _fail_ttl(),
-        # then PREFER the last good result over a false "down": these "potential"
-        # shelters barely change, so a stale list beats an empty one. Only raise
-        # — so /shelters reports shelters_osm `down` — when there's NOTHING cached.
+        # The public mirrors throttle under load. Note the failure, back off, and
+        # prefer the last good list over reporting down. Only raise when we have
+        # nothing cached at all.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         _FAIL_CACHE[cache_key] = now
         if cached is not None:
@@ -210,8 +182,8 @@ out body 600;
         kind = _shelter_type_for(tags)
         if kind is None:
             continue
-        # A node missing/with non-numeric lat/lon would abort the whole parse
-        # (the route swallows our exceptions via gather()); skip the row instead.
+        # One node with a bad coordinate would otherwise kill the whole parse,
+        # and the route would never see why. Skip the row.
         try:
             lat, lon = float(el["lat"]), float(el["lon"])
         except (KeyError, TypeError, ValueError):

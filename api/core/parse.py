@@ -1,9 +1,7 @@
-"""Defensive coercion helpers for untrusted upstream feed values.
+"""Coercion helpers for upstream feed values we don't trust.
 
-Upstream feeds (FIRMS CSV, WFIGS/ArcGIS, Cal Fire, FEMA NSS) routinely carry
-null or non-numeric values in numeric fields. These helpers return None on
-anything that isn't cleanly a number, so a single malformed row never raises
-out of a parse loop. Previously each service kept its own near-identical copy.
+FIRMS, WFIGS, Cal Fire and FEMA NSS all put nulls and junk strings in numeric
+fields. These return None so one bad row can't raise out of a parse loop.
 """
 from __future__ import annotations
 
@@ -12,13 +10,10 @@ from typing import Any
 
 
 def safe_float(v: Any) -> float | None:
-    """float(v), or None for null / empty-string / non-numeric input.
+    """float(v), or None for null, empty or non-numeric input.
 
-    NaN and ±Infinity are treated as non-numeric and return None: strings like
-    "NaN" / "Infinity" (which float() accepts) would otherwise poison every
-    downstream calc — NaN propagates silently through distance sorts and, once
-    it reaches _clamp(min/max), collapses to 0.0. The "None on anything that
-    isn't cleanly a finite number" contract keeps those values out entirely.
+    NaN and infinity count as non-numeric. float() accepts "NaN" and "Infinity" as
+    strings, and a NaN rides straight through distance sorts.
     """
     try:
         f = float(v) if v not in (None, "") else None
@@ -28,12 +23,10 @@ def safe_float(v: Any) -> float | None:
 
 
 def safe_int(v: Any) -> int | None:
-    """int(v), or None for null / empty / non-integer input.
+    """int(v), or None for null, empty or non-integer input.
 
-    Note: does NOT coerce float-shaped strings like "12.0" (int("12.0")
-    raises). Callers that need that (e.g. capacity fields reported as floats)
-    should use int(float(v)) explicitly — see open_shelters._int_or_none.
-    A float ±Infinity raises OverflowError from int(); caught here too.
+    A string like "12.0" comes back None because int() refuses it. Callers that want
+    those should do int(float(v)). See open_shelters._int_or_none.
     """
     try:
         return int(v) if v not in (None, "") else None

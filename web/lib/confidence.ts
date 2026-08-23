@@ -1,16 +1,6 @@
-// Confidence calculation for the Status composite tier.
-//
-// The composite tier is derived from multiple upstream signals (weather
-// observation, KBDI drought integrator, NDVI vegetation anomaly,
-// driving-fire age). Each has independent reliability characteristics. This
-// module turns "what's the state of each input?" into a single user-facing
-// confidence label and an itemized breakdown for the click-to-expand modal.
-//
-// Composition rule is weakest-link: any signal in 'bad' status pushes
-// the composite to LOW. Two or more 'warn' statuses also push to LOW.
-// One 'warn' is MEDIUM. All 'good' is HIGH.
-//
-// Pure functions, no React, easy to unit-test.
+// How much to trust the Status tier. Weighs the freshness of the weather reading,
+// KBDI, the NDVI anomaly and the driving fire's age. Weakest link decides. Any bad
+// signal or two warnings means low, one warning is medium, all clean is high.
 
 import type { RiskResponse } from '@/lib/api';
 import type { ThreatDriver } from '@/lib/composite-risk';
@@ -20,36 +10,29 @@ export type ConfidenceLevel = 'high' | 'medium' | 'low';
 export type SignalStatus = 'good' | 'warn' | 'bad';
 
 export interface ConfidenceSignal {
-  /** Short human label for the breakdown row. */
+  /** Row label in the breakdown. */
   label: string;
-  /** Right-aligned value text: "8 min ago", "California (per-state)", etc. */
+  /** The value shown on the right, like "8 min ago". */
   value: string;
   status: SignalStatus;
 }
 
 export interface ConfidenceResult {
-  /** Null while loading or when no determinate confidence can be computed.
-   *  Distinct from 'low' / 'medium' / 'high' so consumers must handle the
-   *  "no answer yet" case explicitly rather than silently rendering one
-   *  of the three semantic levels as a placeholder. */
+  /** Null while loading, kept separate from the three real levels so a caller can't
+   *  show one as a placeholder. */
   level: ConfidenceLevel | null;
   signals: ConfidenceSignal[];
-  /** True when at least one input is still resolving — caller should
-   *  render the chip as a skeleton rather than a stale level. */
+  /** An input is still resolving, so show a skeleton, not a stale level. */
   loading: boolean;
 }
 
-// ─── Thresholds ──────────────────────────────────────────────────────────
-
-/** Weather observation freshness — TanStack `dataUpdatedAt` driven. */
+/** How old a weather reading can get, in minutes. */
 const WEATHER_GOOD_MIN = 30;
 const WEATHER_WARN_MIN = 90;
 
-/** Driving fire (FIRMS satellite pixel) age thresholds. */
+/** Same for a satellite detection, in hours. */
 const FIRMS_GOOD_HR = 6;
 const FIRMS_WARN_HR = 24; // matches STALE_FIRMS_HOURS in composite-risk
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
 
 function minutesAgo(timestampMs: number | null, nowMs: number): number | null {
   if (timestampMs == null || !Number.isFinite(timestampMs) || timestampMs === 0) {
@@ -67,8 +50,7 @@ function ageLabel(minutes: number | null): string {
   return `${Math.round(hours / 24)} day${Math.round(hours / 24) === 1 ? '' : 's'} ago`;
 }
 
-/** Sub-1-hour FIRMS ages need finer granularity than `Math.round(hours)` —
- *  a 20-minute-old detection should read "20 min ago", not "0 hr ago". */
+/** Rounding hours would show a 20-minute-old detection as "0 hr ago". */
 function firmsAgeLabel(ageHr: number): string {
   if (ageHr < 1) {
     const minutes = Math.round(ageHr * 60);
@@ -78,19 +60,17 @@ function firmsAgeLabel(ageHr: number): string {
   return `satellite, ${Math.round(ageHr)} hr ago`;
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────
-
 export function computeConfidence(args: {
-  /** TanStack's `dataUpdatedAt` for the /weather query. 0 = never resolved. */
+  /** When /weather last resolved. 0 means it never has. */
   weatherUpdatedAt: number | null;
-  /** Whether the /weather query is still in its first fetch. */
+  /** True during the first /weather fetch. */
   weatherLoading: boolean;
-  /** The /risk response body, or undefined while loading. */
+  /** The /risk body, or undefined while it loads. */
   riskData: RiskResponse | null | undefined;
   riskLoading: boolean;
-  /** The fire driving the threat axis (named or FIRMS); null when none. */
+  /** The fire driving the threat axis, null when there isn't one. */
   threatDriver: ThreatDriver | null;
-  /** Override "now" for testability. Defaults to Date.now(). */
+  /** Override "now" in tests. */
   nowMs?: number;
 }): ConfidenceResult {
   const now = args.nowMs ?? Date.now();
@@ -98,17 +78,14 @@ export function computeConfidence(args: {
   let warns = 0;
   let bads = 0;
 
-  // Loading short-circuit — render skeleton, not stale level. `level: null`
-  // (not 'high') so any consumer that ignores the loading flag still doesn't
-  // see a misleadingly-confident placeholder.
+  // Null rather than 'high', so a caller ignoring the loading flag can't render a
+  // confident-looking placeholder.
   if (args.weatherLoading || args.riskLoading || args.riskData === undefined) {
     return { level: null, signals: [], loading: true };
   }
 
-  // /risk errored — distinguished from "loading" (riskData === undefined)
-  // and "succeeded" (riskData is a value). Show a single "Risk endpoint"
-  // bad-status row so the user sees the actual failure mode rather than
-  // three misleading-fallback warns for KBDI / NDVI / Calibration.
+  // /risk failed (null here, undefined means loading). One honest "unavailable"
+  // row beats three warnings that all really say the same thing.
   if (args.riskData === null) {
     const wMinErr = minutesAgo(args.weatherUpdatedAt, now);
     const errSignals: ConfidenceSignal[] = [];
@@ -125,7 +102,6 @@ export function computeConfidence(args: {
     return { level: 'low', signals: errSignals, loading: false };
   }
 
-  // 1. Weather observation freshness
   const wMin = minutesAgo(args.weatherUpdatedAt, now);
   let wStatus: SignalStatus;
   let wValue: string;
@@ -149,8 +125,8 @@ export function computeConfidence(args: {
   if (wStatus === 'warn') warns++;
   if (wStatus === 'bad') bads++;
 
-  // 2. KBDI (drought integrator) — Number.isFinite guard catches NaN values
-  // that would otherwise slip into the 'good' branch and render "value: NaN".
+  // The isFinite check stops a NaN reaching the 'good' branch and rendering as
+  // literally "NaN".
   const kbdi = args.riskData?.kbdi;
   if (kbdi == null || !Number.isFinite(kbdi)) {
     signals.push({
@@ -165,7 +141,6 @@ export function computeConfidence(args: {
       status: 'good',    });
   }
 
-  // 3. NDVI (vegetation anomaly) — same NaN guard as KBDI
   const ndvi = args.riskData?.ndvi_anomaly;
   if (ndvi == null || !Number.isFinite(ndvi)) {
     signals.push({
@@ -181,7 +156,7 @@ export function computeConfidence(args: {
       status: 'good',    });
   }
 
-  // 4. Driving fire (only when a fire is driving the threat axis)
+  // Only when a fire is actually driving the threat axis.
   const driver = args.threatDriver;
   if (driver?.kind === 'firms') {
     const ageHr = driver.ageHours;
@@ -212,9 +187,8 @@ export function computeConfidence(args: {
       value: `${driver.incident.name} (named incident)`,
       status: 'good',    });
   }
-  // No driver → no row added; threat axis is just "no fire in range."
+  // With no driver there is no row, since nothing is in range to rate.
 
-  // Composite level — weakest link.
   let level: ConfidenceLevel;
   if (bads > 0 || warns >= 2) level = 'low';
   else if (warns === 1) level = 'medium';

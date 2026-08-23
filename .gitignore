@@ -11,12 +11,9 @@ venv/
 .mypy_cache/
 .ipynb_checkpoints/
 
-# Node / Expo
+# Node
 node_modules/
-.expo/
-.expo-shared/
 dist/
-web-build/
 *.log
 .DS_Store
 
@@ -24,18 +21,12 @@ web-build/
 web/.env
 web/.env.local
 
-# Mobile app — removed from the repo (Expo/React Native client, kept locally
-# only). Untracked; do not push. Anchored to the repo root so it does NOT also
-# match web/app/ (the Next.js App Router dir).
-/app/
-
-# Data folder. The datasets and caches here are large and rebuildable from the
-# scripts, and some are past GitHub's 100 MB file limit, so nothing under data/
-# is committed. Only data/README.md is tracked, to document the folder.
+# Datasets and caches, big and rebuildable from the scripts. Some are over
+# GitHub's 100 MB limit. Only the README is tracked.
 data/*
 !data/README.md
 
-# Runtime caches (NDVI per-location JSON files, etc.)
+# Runtime caches, NDVI JSON per location
 api/cache/
 
 # OS / editors
@@ -45,84 +36,14 @@ Thumbs.db
 !.vscode/settings.json
 !.vscode/extensions.json
 
-# Claude Code runtime artifacts (lock files, local-only settings)
-.claude/*.lock
-.claude/settings.local.json
-
 # Build outputs
 *.tsbuildinfo
-ios/
-android/
-
-# Reference scaffolding from the design phase — kept locally for inspiration
-# but not part of the shipped app. Do not push.
-home.jsx
-interactions.jsx
-premium.jsx
-primitives.jsx
-screens.jsx
-tokens.jsx
-web-map.jsx
-web-risk.jsx
-web-risk-chip.jsx
-web-risk-status.jsx
-web-safety.jsx
-web-shell.jsx
-web-settings.jsx
-web-incident.jsx
-web-incident-map.jsx
-web-status.jsx
-web-hero-systems.jsx
-web-status-extras.jsx
-background-waves.jsx
-background-waves-optimized.jsx
-trajectory.jsx
-tweaks-panel.jsx
-atmos-engine.jsx
-atmos-systems-risk.jsx
-safety-scene.jsx
-# Root scaffolding image only — anchored so it does NOT match the shipped
-# web/public/safety-bg-waves.png asset.
-/safety-bg-waves.png
-styleUI.md
-handoff.md
-ML.md
-Code-comment.md
-CodeReviewPlan.md
-ReviewDoc.md
-Trajectory.html
-Ember.html
-WatchFlame Icon - W Signal Hybrids.html
-Risk Screen 1.png
-Risk Screen 2.png
-Risk Screen 3.png
-Safety screen 1.png
-Safety screen 2.png
 
 # Microsoft Office temp/lock files
 ~$*
 
-# Local-only temporary scratch (e.g. commit message drafts)
-.commit-msg.tmp
-.review-diff.tmp
-
-# One-shot probe/scratch scripts kept locally (not part of the shipped pipeline)
+# New one-off probes. _probe_openmeteo.py predates this rule and is still tracked.
 scripts/_probe_*.py
 
-# Local-only writing artifacts: README draft variants, ARCHITECTURE draft
-# variants, model-card draft variants, and the engineering study guide
-# (HTML/PDF). Kept locally for reference, not part of the shipped repo.
-docs/readme-variants/
-docs/architecture-variants/
-docs/model-card-variants/
-docs/study-guide/
-
-# Unused scoring-diagram image (dropped from the README).
-docs/scoring-diagram.png
-
-# Local archive of superseded v1/v2/v3 validation artifacts (kept locally, not published)
-_archive/
-
-# Notebook figure outputs -- regenerable chart copies; published charts live in docs/
+# Regenerable chart copies. The published ones live in docs/.
 notebooks/figures/
-

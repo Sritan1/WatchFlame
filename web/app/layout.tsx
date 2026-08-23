@@ -10,9 +10,8 @@ import { UnitsProvider } from '@/lib/use-units';
 
 import './globals.css';
 
-// Geist (Vercel's typeface) handles both body and display — single-family
-// approach reads cleaner than Inter+Inter Tight + JetBrains Mono. The 300
-// weight enables a light-caption / heavy-data contrast pattern.
+// Geist covers both body and display. One family reads cleaner here than
+// mixing three, and the 300 weight gives light captions against heavy data.
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
@@ -33,10 +32,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // width=device-width + initial-scale=1 is required for responsive breakpoints
-  // to engage on mobile (and in DevTools device mode). A custom viewport export
-  // that omits these drops the default, so the page renders at a ~980px desktop
-  // width and @media (max-width:…) never matches.
+  // Keep both. A custom viewport export replaces the default, and without them a
+  // phone renders at about 980px so no breakpoint ever fires.
   width: 'device-width',
   initialScale: 1,
   themeColor: '#0B0E12',
@@ -57,9 +54,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </UnitsProvider>
           </AestheticProvider>
         </QueryProvider>
-        {/* Vercel Web Analytics — cookieless, first-party (served from
-         *  /_vercel/insights on our own origin, so CSP 'self' covers it). No-op
-         *  off Vercel (dev / non-Vercel host). See the privacy policy. */}
+        {/* Cookieless and first-party, so the CSP 'self' rule covers it. Does
+            nothing off Vercel. */}
         <Analytics />
       </body>
     </html>

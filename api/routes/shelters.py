@@ -25,27 +25,16 @@ async def get_shelters(
     radius_mi: float = Query(50.0, ge=5.0, le=125.0),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Return up to `limit` evacuation points near (lat, lon), tiered by
-    confidence.
+    """Places to go near a point, best first.
 
-    Three sources are queried concurrently and merged:
-      • **Open shelters** (tier 1, `activated: true`) — shelters reported OPEN
-        right now by Emergency Management / the Red Cross (National Shelter
-        System). Carry live status + capacity. Independent of FEMA declarations.
-        Mock-first today (see services/open_shelters.py).
-      • **OSM Overpass** (candidate) — community-tagged assembly points,
-        community centres, shelters, fire stations, social facilities (US bbox).
-      • **NCES Public Schools** (candidate) — authoritative US K-12 dataset;
-        schools are commonly designated as evacuation shelters by county EMs.
-
-    Activated shelters sort first; the rest are sorted by distance, deduped
-    roughly by location (an open shelter wins over a candidate at the same
-    site). Candidates carry `activated: false` — the client labels them as
-    *potential* evacuation points, not officially activated shelters.
+    Open shelters come from the National Shelter System with live status and
+    capacity, no FEMA declaration needed. The other two are candidates, buildings
+    where a shelter could open, from OpenStreetMap and public schools. Open ones sort
+    first, win ties at the same address, and candidates carry activated: false.
     """
     radius_km = radius_mi * 1.60934
 
-    # Run all sources concurrently — a failure in one shouldn't kill the others.
+    # All three at once. One going down shouldn't take the others with it.
     open_task = asyncio.create_task(fetch_open_shelters(lat, lon, radius_mi=radius_mi))
     overpass_task = asyncio.create_task(fetch_shelters(lat, lon, radius_km=radius_km))
     nces_task = asyncio.create_task(fetch_schools(lat, lon, radius_mi=radius_mi))
@@ -64,8 +53,7 @@ async def get_shelters(
 
     rows: list[dict[str, object]] = []
 
-    # Tier 1 — activated/open shelters first so they win the location dedupe
-    # below and (after sorting) sit at the top of the list.
+    # Open shelters go in first so they win the dedupe below.
     if isinstance(open_res, Exception):
         logger.warning("open-shelters query failed: %s", open_res)
     else:
@@ -134,8 +122,8 @@ async def get_shelters(
                 }
             )
 
-    # Dedupe roughly by location: round to ~250 m and keep first occurrence
-    # (so OSM-tagged shelters win over NCES schools at the same site).
+    # Round to about 100m and keep the first at each spot, so a tagged shelter
+    # beats a school at the same address.
     seen: set[tuple[float, float]] = set()
     unique: list[dict[str, object]] = []
     for r in rows:
@@ -145,7 +133,7 @@ async def get_shelters(
         seen.add(key)
         unique.append(r)
 
-    # Activated (open) shelters first, then by distance.
+    # Open shelters first, then nearest.
     unique.sort(key=lambda x: (not x.get("activated", False), x["distance_mi"]))  # type: ignore[arg-type, return-value]
     return unique[:limit]
 

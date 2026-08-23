@@ -1,8 +1,8 @@
 'use client';
 
-// Saved-locations store. Persisted to localStorage. `activeId === null` means
-// "use device GPS"; any other id selects the matching saved item.
-// useUserLocation reads from this to decide whether to override GPS coords.
+// The places the user has saved, kept in localStorage. A null activeId means use
+// the device GPS, anything else picks that saved place. useUserLocation reads
+// this to decide whether to override GPS.
 
 import {
   createContext,
@@ -24,19 +24,16 @@ export interface SavedLocation {
 const STORAGE_KEY = 'ember:saved-locations';
 const STORAGE_ACTIVE_KEY = 'ember:active-location';
 
-/** Cap on saved locations. Each one is a place the user actively watches (home,
- *  family, a cabin, work), so real use sits well under this. The cap keeps the
- *  picker list scannable and localStorage bounded rather than being a technical
- *  limit — the data itself is tiny. */
+/** Keeps the picker readable. The data is tiny, so this guards nothing else. */
 export const MAX_SAVED_LOCATIONS = 10;
 
 interface SavedLocationsState {
   items: SavedLocation[];
-  /** null = use device GPS. */
+  /** Null means use device GPS. */
   activeId: string | null;
   setActive: (id: string | null) => void;
-  /** Returns the id of the saved (or matched-existing) location, or null when
-   *  the list is already at MAX_SAVED_LOCATIONS and this is a genuinely new one. */
+  /** The id of the new or already-saved location, or null when the list is full
+   *  and this one is genuinely new. */
   add: (loc: Omit<SavedLocation, 'id'>) => string | null;
   remove: (id: string) => void;
 }
@@ -47,11 +44,9 @@ function newId(): string {
   return 'loc_' + Math.random().toString(36).slice(2, 10);
 }
 
-/** Validate a value read back from localStorage. Storage can hold a non-array
- *  or a malformed entry (an older key format, a value written by another tab,
- *  manual/corrupted data); trusting the shape and calling .find/.filter/.map
- *  on a non-array would crash the whole tree, so we filter down to well-formed
- *  entries instead. */
+/** Check what came back out of localStorage, which could be an old key format,
+ *  another tab's write, or corruption. Calling .find on a non-array would take the
+ *  whole tree down, so filter first. */
 function isSavedLocation(v: unknown): v is SavedLocation {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
@@ -67,7 +62,7 @@ export function SavedLocationsProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<SavedLocation[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(null);
 
-  // Hydrate from localStorage after mount (avoids SSR mismatch).
+  // Read storage after mount, or the server and client render differently.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -78,7 +73,7 @@ export function SavedLocationsProvider({ children }: { children: ReactNode }) {
       const active = localStorage.getItem(STORAGE_ACTIVE_KEY);
       if (active) setActiveIdState(active);
     } catch {
-      // localStorage may be unavailable (private mode) — silently keep defaults.
+      // No localStorage in private mode, so just keep the defaults.
     }
   }, []);
 
@@ -103,19 +98,15 @@ export function SavedLocationsProvider({ children }: { children: ReactNode }) {
 
   const add = useCallback(
     (loc: Omit<SavedLocation, 'id'>): string | null => {
-      // Dedupe on COORDINATES (~11 m), not label: re-saving the exact same
-      // geocoder result reuses the existing row, but two distinct places that
-      // happen to render the same "name, state, country" label (they resolve to
-      // different coordinates) must stay separate — a label-only match silently
-      // merged them and pointed the picker at the wrong point. Return the
-      // existing id so the caller can still make it the active location.
+      // Match on coordinates, not the label. Two different towns can share a
+      // "name, state, country" label, and matching on that quietly merged them
+      // and pointed the picker somewhere else.
       const existing = items.find(
         (i) => Math.abs(i.lat - loc.lat) < 1e-4 && Math.abs(i.lon - loc.lon) < 1e-4,
       );
       if (existing) return existing.id;
-      // Re-saving an existing location above is always allowed (it doesn't grow
-      // the list); a genuinely new one past the cap is rejected with null so the
-      // caller can surface the limit instead of silently doing nothing.
+      // A genuinely new one past the cap returns null, so the caller can say so
+      // instead of silently doing nothing. Re-saving never grows the list.
       if (items.length >= MAX_SAVED_LOCATIONS) return null;
       const id = newId();
       persistItems([...items, { ...loc, id }]);

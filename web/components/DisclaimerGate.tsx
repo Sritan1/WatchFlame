@@ -1,9 +1,8 @@
 'use client';
 
-// First-launch safety disclaimer. A safety-adjacent app should make the "this is
-// not an emergency service / don't rely on it for life-safety" notice impossible
-// to miss — not bury it in Settings. Shown once per browser (localStorage), with
-// a required acknowledgment, then never again. Links to the full Terms.
+// First-launch safety disclaimer. The "not an emergency service" notice has to be
+// impossible to miss, so it can't just sit in Settings. Shown once per browser,
+// with a required acknowledgment, then never again.
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -17,8 +16,7 @@ const AMBER_RGB = '232, 179, 57';
 
 export function DisclaimerGate() {
   const { ae } = useAesthetic();
-  // Default hidden so SSR + first paint never flash the gate; an effect reveals
-  // it only when the ack flag is absent.
+  // Hidden by default, so the first paint never flashes the gate.
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -26,12 +24,12 @@ export function DisclaimerGate() {
     try {
       if (!localStorage.getItem(ACK_KEY)) setOpen(true);
     } catch {
-      // localStorage unavailable (private mode) — don't block the app.
+      // No localStorage in private mode, so don't block the app.
     }
   }, []);
 
-  // Trap Tab focus inside the gate so a keyboard / screen-reader user can't move
-  // into the live app behind it without acknowledging the disclaimer first.
+  // Trap Tab inside the gate, or a keyboard user can move into the live app behind
+  // it without acknowledging anything.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

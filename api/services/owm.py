@@ -20,22 +20,11 @@ def _api_key() -> str:
 
 
 async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Look up US city candidates by name via OpenWeatherMap's free Geocoding API.
+    """Find US cities by name.
 
-    The search is scoped to the United States (this is a US wildfire app): OWM's
-    geocoder restricts to a country when the query ends in ",<country code>", so
-    we append ",US" — which also makes it return US matches (up to `limit`)
-    rather than foreign cities that share the name (e.g. "London" returns
-    London KY/OH/... instead of London GB). Results are additionally filtered to
-    country == "US" as a guarantee.
-
-    Returns the matching cities, or an empty list when the query genuinely has
-    no US match (a successful lookup with zero results). Raises HTTPException(503)
-    on an upstream failure or an unexpected non-list payload, so the caller can
-    tell "the search service is down" apart from "no city by that name" — the
-    frontend shows a distinct "search unavailable" state instead of a misleading
-    "No matches". Mirrors fetch_current_weather's 503-on-outage contract. Logs a
-    one-liner so failures stay visible.
+    The query gets ",US" appended, which is how the geocoder scopes to a country.
+    Search "London" and you want Kentucky and Ohio, not England. Results are filtered
+    on country too. An empty list means no such city, an outage raises a 503.
     """
     url = "https://api.openweathermap.org/geo/1.0/direct"
     q = query.strip()
@@ -48,16 +37,15 @@ async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
             resp.raise_for_status()
             data = resp.json()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError, ValueError) as e:
-        # ValueError covers a non-JSON 200 body (resp.json() decode failure).
+        # ValueError catches a 200 that isn't JSON at all.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
             f"[owm-geocode] upstream {status} for {query!r} "
             f"({type(e).__name__}); reporting unavailable"
         )
         raise HTTPException(status_code=503, detail="Geocoding service unavailable") from e
-    # A 200 can still carry an unexpected shape (an error object, not a list).
-    # That's a real upstream problem, not a genuine empty result — surface it as
-    # an outage rather than silently returning "no matches".
+    # A 200 carrying an error object instead of a list is an outage, not an empty
+    # result.
     if not isinstance(data, list):
         print(f"[owm-geocode] non-list payload for {query!r}; reporting unavailable")
         raise HTTPException(status_code=503, detail="Geocoding service unavailable")
@@ -80,11 +68,9 @@ async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
 
 
 async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
-    """Current weather for a point. Raises HTTPException(503) on upstream
-    failure — the frontend's TanStack Query error state handles this and
-    every weather field is non-nullable in the response contract, so we
-    can't return a half-filled placeholder dict.
-    """
+    """Current weather for a point, raising a 503 when the upstream fails. Every
+    field in the response is required, so there is no half-filled dict to hand
+    back and the frontend's error state takes over instead."""
     cache_key = f"{round(lat, 2)}|{round(lon, 2)}"
     now = time.time()
     cached = _CACHE.get(cache_key)
@@ -102,7 +88,7 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
         httpx.HTTPStatusError,
         httpx.TimeoutException,
         httpx.TransportError,
-        ValueError,  # a 200 with a non-JSON body → resp.json() raises; raise 503, not 500
+        ValueError,  # a 200 that isn't JSON at all
     ) as e:
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
         print(
@@ -111,9 +97,8 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
         )
         raise HTTPException(status_code=503, detail="Weather service unavailable")
 
-    # A 200 with a null/missing `main`/`wind` or a non-dict `weather[0]` (OWM
-    # occasionally returns a bare error object) must degrade, not 500. `.get(k)
-    # or {}` handles both the missing-key and explicit-null cases.
+    # OpenWeather sometimes returns a bare error object with a 200, so the main and
+    # wind blocks can be missing. Degrade instead of 500ing.
     if not isinstance(data, dict):
         print(f"[owm] non-object payload for {lat:.2f},{lon:.2f}; raising 503")
         raise HTTPException(status_code=503, detail="Weather service unavailable")
@@ -126,7 +111,7 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
     out = {
         "temperature": main.get("temp"),
         "humidity": main.get("humidity"),
-        "wind_speed": (wind.get("speed") or 0) * 3.6,  # m/s -> km/h
+        "wind_speed": (wind.get("speed") or 0) * 3.6,  # m/s into km/h
         "wind_deg": wind.get("deg"),  # direction wind is coming FROM, 0-360
         "conditions": conditions,
         "location": {"lat": lat, "lon": lon, "name": data.get("name")},

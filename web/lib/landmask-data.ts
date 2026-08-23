@@ -1,8 +1,6 @@
-// GENERATED — do not edit by hand. Regenerate via the notes in landmask.ts.
-// Simplified land polygons: Natural Earth 1:50m "land" (public domain), clipped
-// to a US bounding box and simplified (~6%) for a COARSE on-land / over-water
-// check in the evacuation router. Not for display; classification is fuzzy
-// within a few km of complex coastline. Each ring is a flat [lon,lat,...] array.
+// GENERATED, do not edit by hand. See landmask.ts for how to regenerate it.
+// Natural Earth 1:50m land, clipped to the US and simplified for the evacuation
+// router's rough land check. Each ring is a flat array of lon, lat pairs.
 
 export const LAND_BBOX = { minLon: -170, minLat: 18, maxLon: -66, maxLat: 72 };
 

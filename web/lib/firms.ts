@@ -1,9 +1,6 @@
-// Display helpers for NASA FIRMS satellite detections.
-//
-// The FIRMS area API returns a terse `satellite` code (e.g. "N" for the Suomi
-// NPP VIIRS instrument, the default source) that's meaningless to a user and
-// reads like a typo in the UI ("N detection"). Map the known platform codes to
-// their mission names in one place, shared by the map rail and fire-detail.
+// Display helpers for NASA FIRMS detections. FIRMS reports the satellite as a short
+// code, so "N" or "NPP" for Suomi NPP, which on screen reads like a typo.
+// Mapped to mission names here, once, for both the map rail and fire-detail.
 
 import type { FireFeature } from './api/types';
 
@@ -20,8 +17,7 @@ const FIRMS_PLATFORMS: Record<string, string> = {
   AQUA: 'Aqua',
 };
 
-/** Friendly platform/mission name for a FIRMS `satellite` code, or null when
- *  the code is empty or unrecognized. */
+/** Mission name for a satellite code, null if we don't know the code. */
 export function firmsPlatform(code: string | null | undefined): string | null {
   if (!code) return null;
   const c = code.trim();
@@ -29,22 +25,19 @@ export function firmsPlatform(code: string | null | undefined): string | null {
   return FIRMS_PLATFORMS[c] ?? FIRMS_PLATFORMS[c.toUpperCase()] ?? null;
 }
 
-/** Title for a satellite detection card/footer — "Suomi NPP detection" when the
- *  platform is known, else a clean generic that never exposes the raw code. */
+/** Card title, "Suomi NPP detection". Never falls back to the raw code. */
 export function satelliteTitle(code: string | null | undefined): string {
   const platform = firmsPlatform(code);
   return platform ? `${platform} detection` : 'Satellite detection';
 }
 
-/** User-facing label for a FIRMS detection's confidence field. Handles both the
- *  categorical VIIRS codes (L/N/H, the default source) and MODIS's numeric
- *  0-100 scale, so it stays correct if FIRMS_SOURCE switches sensors. Returns
- *  '—' when the value is missing or unrecognized. */
+/** Confidence label, handling both the VIIRS letters and the MODIS 0-100 numbers
+ *  so it survives a switch of sensor. */
 export function confidenceLabel(c: string | null): string {
   if (c == null) return '—';
   const v = c.trim().toUpperCase();
-  // A present-but-blank field is "unknown", not a real reading. Guard before
-  // the numeric branch: Number('') is 0 (finite), which would fabricate "Low".
+  // Catch a blank before the numeric branch, since Number('') is 0 and would
+  // invent a "Low" reading out of nothing.
   if (v === '') return '—';
   if (v === 'L') return 'Low';
   if (v === 'N') return 'Nominal';
@@ -58,23 +51,16 @@ export function confidenceLabel(c: string | null): string {
   return '—';
 }
 
-/** Stable identity for a FIRMS satellite pixel, shared by the map rail's card
- *  selection AND the map markers so both point at the exact same detection.
- *  Keyed on coordinates PLUS the acquisition date/time: a persistent fire is
- *  detected on multiple overpasses at the same reported pixel center, so
- *  coordinates alone collide (duplicate React keys + one click highlighting two
- *  cards/markers). The rounding matches the coordinate precision Leaflet renders
- *  at. Keep this the single source of truth — the rail and MapImpl both call it,
- *  and a one-sided change would silently de-link their selections. */
+/** Identity for a satellite pixel, so a click selects the same detection in the rail
+ *  and on the map. Needs the acquisition time as well as the coordinates. A fire
+ *  burning for days hits the same pixel center every overpass. */
 export function satKey(f: FireFeature): string {
   const p = f.properties;
   return `${p.lat.toFixed(5)},${p.lon.toFixed(5)}@${p.acq_date ?? ''}T${p.acq_time ?? ''}`;
 }
 
-/** Build the /fire-detail URL for a FIRMS satellite detection, passing through
- *  every satellite-specific param the detail page reads. Shared so the Status
- *  threat card and the map rail always link to the same-fidelity detail page.
- *  URLSearchParams handles encoding. */
+/** The /fire-detail URL for a detection, so the Status threat card and the map
+ *  rail link to the same thing. */
 export function firmsDetailHref(feature: FireFeature): string {
   const p = feature.properties;
   const params = new URLSearchParams();

@@ -1,7 +1,6 @@
-// Mock implementations of every backend endpoint.
-// Scenario matches the reference screens: Berkeley, CA · Tilden Ridge Fire
-// (extreme, 4.2mi NE) · 4 incidents in region · FEMA Cow Creek (FM-5632)
-// · moderate risk overall. All RNG is seeded by lat/lon so the mock is stable.
+// Stand-ins for every backend endpoint. The scenario is Berkeley, with the Tilden
+// Ridge fire 4.2 miles northeast, four incidents around and an open FEMA
+// declaration. Random values are seeded off lat and lon, so a place is repeatable.
 
 import type {
   DisastersNearResponse,
@@ -23,15 +22,14 @@ import {
 } from '@/lib/regional-thresholds';
 import { globalDangerLevel, regionalBucket, scoreV4 } from '@/lib/risk-local';
 
-/** Pretend we made a network request — useful so callers see loading states. */
+/** Fake a network round trip, so callers still get their loading states. */
 function delay<T>(value: T, ms = 220): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 
 export const BERKELEY = { lat: 37.8716, lon: -122.2727 } as const;
 
-/** Four mocked incidents, sorted by distance. Tilden Ridge is the
- *  extreme-severity "active incident" the Status screen foregrounds. */
+/** Four incidents by distance. Tilden Ridge is the extreme one Status leads on. */
 export const MOCK_INCIDENTS: NamedIncident[] = [
   {
     source: 'calfire', id: 'CA-2026-08412', name: 'Tilden Ridge Fire',
@@ -70,7 +68,7 @@ export const MOCK_INCIDENTS: NamedIncident[] = [
   },
 ];
 
-/** Satellite point detections clustered around the Tilden Ridge perimeter. */
+/** Detections clustered around the Tilden Ridge perimeter. */
 const MOCK_FIRES: FireCollection = {
   type: 'FeatureCollection',
   features: [
@@ -85,9 +83,8 @@ const MOCK_FIRES: FireCollection = {
     geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] },
     properties: {
       lat: p.lat, lon: p.lon,
-      // Raw FIRMS codes, exactly as the backend passes them through, so the
-      // display helpers (confidenceLabel / firmsPlatform) render the same
-      // "Nominal" / "Suomi NPP" the real feed produces.
+      // Raw codes as the backend passes them through, so the display helpers
+      // render the same labels they would in production.
       brightness: p.brightness, confidence: 'n',
       acq_date: '2026-05-20', acq_time: '1314',
       satellite: 'N', frp: p.frp, daynight: 'D',
@@ -95,12 +92,9 @@ const MOCK_FIRES: FireCollection = {
   })),
 };
 
-// DEMO DEFAULT — mild "now" weather (24/50/10 → fire-weather score ~0.20 = LOW
-// for CA). Paired with the moderate ignition + the rising MOCK_TRAJECTORY below,
-// this makes the phase-space "on track to move from HIGH → EXTREME" tier-crossing
-// callout appear at the Berkeley default location, while every score stays in the
-// real observed range. The Status orb still reads HIGH — the nearby extreme
-// Tilden Ridge fire drives it; only the weather reading is calm.
+// Mild weather, scoring low for California. With the moderate ignition and rising
+// trajectory below, the phase-space crossing callout shows up at the default
+// location and every number stays realistic. The orb still reads high off the fire.
 const MOCK_WEATHER: WeatherResponse = {
   temperature: 24,
   humidity: 50,
@@ -124,9 +118,7 @@ const MOCK_DISASTERS: DisastersNearResponse = {
   ],
 };
 
-// US city dataset for the mock geocoder — covers every major metro + state
-// capitals + fire-prone Western towns. Real backend hits OpenWeatherMap's
-// geocoder which returns broader/multi-country results.
+// Cities for the mock geocoder. The real one calls OpenWeatherMap and casts wider.
 const US_CITIES: GeocodeHit[] = [
   { name: 'New York',        state: 'NY', country: 'US', lat: 40.7128, lon: -74.0060 },
   { name: 'Los Angeles',     state: 'CA', country: 'US', lat: 34.0522, lon: -118.2437 },
@@ -204,7 +196,7 @@ const US_CITIES: GeocodeHit[] = [
 ];
 
 const MOCK_SHELTERS: Shelter[] = [
-  // Tier 1 — activated/open shelters (mock). Sorted first, like the real route.
+  // Shelters that are actually open, sorted first like the real route does.
   {
     id: 'open-nss-1001', name: 'MLK Jr. Civic Center Shelter', lat: 37.8702, lon: -122.2729,
     type: 'American Red Cross', distance_mi: 0.5, address: '2151 Martin Luther King Jr Way, Berkeley, CA',
@@ -221,24 +213,22 @@ const MOCK_SHELTERS: Shelter[] = [
     updated_at: null,
     opened_at: new Date(Date.now() - 50 * 3_600_000).toISOString(),
   },
-  // Candidates (static potential evacuation points).
+  // Buildings where a shelter could open.
   { id: '1', name: 'Berkeley Community Center', lat: 37.8689, lon: -122.2737, type: 'community_centre', distance_mi: 0.3, address: '1900 Sixth St, Berkeley, CA', activated: false },
   { id: '2', name: 'Albany Senior Center', lat: 37.8870, lon: -122.2974, type: 'community_centre', distance_mi: 1.8, address: '846 Masonic Ave, Albany, CA', activated: false },
   { id: '3', name: 'Emeryville Recreation Center', lat: 37.8316, lon: -122.2855, type: 'community_centre', distance_mi: 2.9, address: '4300 San Pablo Ave, Emeryville, CA', activated: false },
 ];
 
-/** Plausible KBDI value seeded by coords — drier inland/south, wetter coastal
- *  PNW. Real backend fetches this from Open-Meteo's 60-day archive. */
+/** A believable KBDI from the coordinates, drier south and wetter north. The real
+ *  one comes from the Open-Meteo archive. */
 function syntheticKbdi(lat: number, _lon: number): number {
-  // Latitude proxy: 25°N (south) ≈ 600, 49°N (north) ≈ 150. Add a Berkeley-ish
-  // sweet spot so the demo lands at "Very dry" (matches the reference's
-  // "moderate fire weather, drying out" framing).
+  // Nudged so Berkeley lands on "Very dry" for the demo.
   const lerp = Math.max(0, Math.min(1, (49 - lat) / 24));
   return Math.round(150 + lerp * 450);
 }
 
-/** Plausible NDVI anomaly seeded by coords — slightly drier than normal
- *  for CA spring (Berkeley demo). Mobile fetches this from CDSE Sentinel-2. */
+/** A believable NDVI anomaly, a little drier than normal for a California
+ *  spring. The real one comes from Sentinel-2. */
 function syntheticNdviAnomaly(lat: number, lon: number): number {
   const state = lookupStateLocal(lat, lon);
   if (state === 'CA') return -0.05; // matches Berkeley demo scenario
@@ -247,11 +237,9 @@ function syntheticNdviAnomaly(lat: number, lon: number): number {
   return -0.02;
 }
 
-/** Mock POST /risk. Mirrors the backend's flow — synthesize kbdi/ndvi/state from
- *  coords when supplied (the real backend gathers these from KBDI / NDVI / a
- *  Census state lookup) — then score with the SAME scorer (scoreV4) and the
- *  SAME bundled calibration data the offline calculator uses. No private copy of
- *  the algorithm, constants, state-inference rectangles, or thresholds. */
+/** Mock POST /risk. Invents KBDI, NDVI and a state from the coordinates, then
+ *  scores through the same scorer and bundled calibration the offline calculator
+ *  uses, so there is no second copy of the algorithm. */
 function computeMockRisk(req: RiskRequest): RiskResponse {
   const hasCoords = req.lat != null && req.lon != null;
   const effectiveKbdi = req.kbdi ?? (hasCoords ? syntheticKbdi(req.lat!, req.lon!) : null);
@@ -288,14 +276,9 @@ function computeMockRisk(req: RiskRequest): RiskResponse {
   };
 }
 
-// DEMO DEFAULT — a believable afternoon rise (fire-weather ~0.20 → ~0.42, all
-// within the real observed range; CA's max is ~0.45). Anchored to the LOW "now"
-// score, the +6h projects to EXTREME for CA, which (with the mild weather +
-// moderate ignition) makes the combined tier cross HIGH → EXTREME, so the
-// phase-space "on track to move from X → Y" callout appears at the default
-// location. NOTE: the crossing relies on a FITTED state (Berkeley → CA); a
-// non-fitted GPS location uses the global 0.8 scale and would need a larger
-// (unrealistic) rise to cross.
+// An afternoon rise landing at extreme six hours out, which pushes the combined
+// tier over a line and shows the crossing callout. Only works in a fitted state.
+// Uncalibrated runs on the global 0.8 scale and would need an unrealistic jump.
 const MOCK_TRAJECTORY: TrajectoryResponse = {
   tier: 'rising',
   delta_pct: 110.0,
@@ -319,8 +302,7 @@ const MOCK_TRAJECTORY: TrajectoryResponse = {
     v4_score: 0.42,
   },
   dominant_driver: 'vpd',
-  // Hour-by-hour series (now .. +6 hr) — a smooth rising afternoon. frames[0]
-  // matches `now`, frames[6] matches `projected`.
+  // First frame is now, last is the projection.
   frames: [
     { label: 'now',   iso_time: '2026-05-30T12:00', temperature_c: 24.0, humidity_pct: 50.0, wind_kph: 10.0, precipitation_mm: 0.0, v4_score: 0.20 },
     { label: '+1 hr', iso_time: '2026-05-30T13:00', temperature_c: 25.5, humidity_pct: 45.0, wind_kph: 13.0, precipitation_mm: 0.0, v4_score: 0.235 },
@@ -332,9 +314,8 @@ const MOCK_TRAJECTORY: TrajectoryResponse = {
   ],
 };
 
-// DEMO DEFAULT — 'moderate' ignition. With the mild "now" weather (LOW) this keeps
-// the environment axis low enough that the rising trajectory crosses the combined
-// tier (see MOCK_WEATHER / MOCK_TRAJECTORY), so the phase-space callout appears.
+// Moderate, which keeps the environment axis low enough for the rising trajectory
+// to cross a tier line.
 const MOCK_IGNITION: IgnitionResponse = {
   percentile: 55.0,
   probability: 0.18,

@@ -1,5 +1,5 @@
-# Pre-commit hooks. Install once with:  pip install pre-commit && pre-commit install
-# Run against all files:  pre-commit run --all-files
+# Pre-commit hooks. Install once with pip install pre-commit && pre-commit install,
+# then run over everything with pre-commit run --all-files
 repos:
   # Block secrets (API keys, tokens, private keys) from ever being committed.
   - repo: https://github.com/gitleaks/gitleaks

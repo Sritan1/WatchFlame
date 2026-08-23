@@ -1,12 +1,4 @@
-"""Trajectory endpoint — short-term forward-looking signal for the composite tier.
-
-Front-end uses this to render the Trajectory chip on Status (RISING /
-STEADY / FALLING) and the projection arrow on the 2D phase-space
-visualization.
-
-Request: GET /trajectory?lat=&lon=
-Response: see TrajectoryResponse below.
-"""
+"""GET /trajectory, feeding the Status chip and the phase-space projection arrow."""
 import asyncio
 from datetime import date
 from typing import Literal
@@ -35,12 +27,8 @@ class TrajectoryFrameOut(BaseModel):
 
 
 class TrajectoryResponse(BaseModel):
-    """Trajectory result for the user's location.
-
-    `tier` drives the chip color/label; `delta_pct` is the % change in the fire-weather
-    score from `now` to `projected`; `dominant_driver` names the input
-    that shifted the most ("vpd" / "wind" / "humidity") so the UI can
-    surface a one-line context like "VPD up 18% by 3pm"."""
+    """Where conditions are heading. `tier` colors the chip, `delta_pct` is how far
+    the score moves, `dominant_driver` names whichever input moved most."""
     tier: Literal["rising", "steady", "falling"] = Field(
         ..., description="rising | steady | falling"
     )
@@ -49,8 +37,7 @@ class TrajectoryResponse(BaseModel):
     now: TrajectoryFrameOut
     projected: TrajectoryFrameOut
     dominant_driver: Literal["vpd", "wind", "humidity"]
-    # Hour-by-hour series (now .. +horizon_hours). frames[0] == now and
-    # frames[-1] == projected; powers the phase-space hour-by-hour curve.
+    # Every hour to the horizon, what the phase-space curve draws.
     frames: list[TrajectoryFrameOut]
 
 
@@ -61,30 +48,15 @@ async def get_trajectory(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
 ) -> TrajectoryResponse | None:
-    """Compute trajectory for the given coordinates.
-
-    Returns `null` rather than 5xx on upstream failures (Open-Meteo
-    timeout, sparse response, etc.) so the frontend can degrade
-    gracefully — same pattern as the rest of the API.
-    """
+    """Trajectory for these coordinates. Upstream trouble returns null rather than
+    an error, so the frontend can just hide the chip."""
     forecast = await fetch_forecast_hourly(lat, lon)
     if forecast is None:
         return None
 
-    # Hold KBDI + NDVI anomaly constant across the 6-hour projection.
-    # Both move on timescales >> 6 hr (KBDI integrates daily; NDVI
-    # cadence is multi-day). Using the same value for now and projected
-    # means the score delta reflects only the meteorological trajectory.
-    #
-    # These three fetches are independent of each other, so fan them out
-    # concurrently (same pattern as the /risk route) instead of serially —
-    # on a cold NDVI cache the serial path is ~12-22s per Status load.
-    # NDVI anomaly = current - same-month climatology; climatology cache is
-    # keyed by month, mirroring the /risk pipeline.
-    #
-    # return_exceptions=True so an unexpected raise from any single upstream
-    # (kbdi/ndvi) degrades to "no signal" instead of 500-ing the route — this
-    # endpoint's contract is null-on-failure, and /risk gathers the same way.
+    # Drought and vegetation stay fixed across the window, so the change in score
+    # is purely the weather. Run all three together, because serially a cold NDVI
+    # cache costs 12 to 22 seconds on every Status load.
     kbdi_info, ndvi_now, ndvi_clim = await asyncio.gather(
         fetch_kbdi_today(lat, lon),
         get_ndvi_current(lat, lon),

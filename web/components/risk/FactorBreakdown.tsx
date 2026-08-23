@@ -1,8 +1,7 @@
 'use client';
 
-// Right panel of the Risk hero: one bar per factor + season multiplier card.
-// Weights come from the fitted fire-weather exponents (V4_WEIGHT_PCT, mirroring the
-// backend); the factor values come from the live RiskResponse.factors.
+// The panel beside the score, a bar per factor, plus the vegetation card. The
+// weights are the fitted exponents and the values are whatever was just scored.
 
 import { useState } from 'react';
 
@@ -37,20 +36,17 @@ export function FactorBreakdown({
   vpd: number;
   wind: number;
   drought: number;
-  /** Vegetation multiplier value (NDVI-derived OR calendar-season scalar). */
+  /** The vegetation multiplier, measured or from the calendar. */
   season: number;
-  /** Short source label — "NDVI" or "Spring"/"Summer"/etc. */
+  /** Where it came from, so "NDVI" or a season name. */
   seasonLabel: string;
-  /** Three captions, one per row — provided by parent so we can keep this dumb. */
+  /** One caption per row, written by the parent. */
   caption: { vpd: string; wind: string; drought: string };
-  /** One-line context for the vegetation factor — e.g. "NDVI anomaly: -0.05
-   *  (drier than 3-yr norm)" or "Calendar season — Sentinel-2 unavailable".
-   *  Optional: falls back to the existing minimal display when absent. */
+  /** A line of context under the vegetation factor, like how the reading
+   *  compares to normal. Optional. */
   vegetationDetail?: string;
-  /** Inputs are re-seeding (e.g. a location switch). Mask the live values with
-   *  skeletons so the panel doesn't paint the PREVIOUS location's numbers next
-   *  to the rest of the hero (which is already skeletoning). The static labels
-   *  + layout stay, so the panel height doesn't jump. */
+  /** Masks the numbers while the inputs reseed, or the panel shows the previous
+   *  location's values beside a hero that is already skeletoning. */
   isLoading?: boolean;
 }) {
   const { ae } = useAesthetic();
@@ -172,13 +168,8 @@ export function FactorBreakdown({
           </div>
         ))}
 
-        {/* Vegetation factor — lifted above the "How is this calculated?"
-         *  button so NDVI gets the visual weight its operational importance
-         *  deserves. Mathematically the multiplier sits outside the weighted
-         *  product (raw = vpd^a × wind^b × drought^c with fitted a/b/c; score =
-         *  vegFactor × raw), so it doesn't get a percentage-bar treatment — but it does
-         *  get its own card-within-a-card with the source named explicitly
-         *  ("NDVI" vs "Summer"/etc) and an inline context line. */}
+        {/* Its own card, not a percentage bar. Vegetation multiplies the other three
+            instead of sitting alongside them. */}
         <div
           style={{
             marginTop: 'auto',
@@ -268,9 +259,7 @@ export function FactorBreakdown({
             ) : null}
           </div>
 
-          {/* Existing methodology link — kept in its existing single-link
-           *  position so it covers VPD/Wind/Drought + the vegetation factor
-           *  (the ExplainerModal documents all four). */}
+          {/* One link for all four. The modal explains them together. */}
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
             <button
               type="button"

@@ -1,5 +1,5 @@
-// Design tokens for the Ember web app — ported from tokens.jsx.
-// Server-safe (no React, no DOM). Aesthetics are switchable via AestheticProvider.
+// Design tokens. No React and no DOM, so this is safe on the server.
+// AestheticProvider switches between the three looks below.
 
 export type RiskLevel = 'low' | 'moderate' | 'high' | 'extreme';
 export type AccentHue = 'amber' | 'orange' | 'red';
@@ -7,11 +7,11 @@ export type AestheticId = 'gov' | 'startup' | 'tactical';
 
 export interface RiskTone {
   label: string;
-  /** Hex color, e.g. "#3FB68B". */
+  /** Hex color, like "#3FB68B". */
   color: string;
-  /** RGB triple as a comma-separated string for use inside rgba(...). e.g. "63, 182, 139". */
+  /** The same color as "63, 182, 139", ready to drop inside rgba(). */
   glow: string;
-  /** 1-based ordinal — low=1, extreme=4. Used by Regional Risk meter. */
+  /** Rank from 1 for low to 4 for extreme, for the risk meter. */
   bar: number;
 }
 
@@ -22,11 +22,9 @@ export const RISK_LEVELS: Record<RiskLevel, RiskTone> = {
   extreme:  { label: 'Extreme',  color: '#F04438', glow: '240, 68, 56',   bar: 4 },
 };
 
-/** Domain colors for the three fire-weather factors (VPD / wind / drought).
- *  Single source of truth so the Factor Breakdown bars, the Explainer bullets,
- *  and the Dominant Driver share strip can't drift apart (they had: VPD was
- *  orange in one card and red in another). Semantic factor colors — the overlap
- *  with RISK_LEVELS.high/moderate is incidental, not a risk-tier meaning. */
+/** One color per fire-weather factor, so the breakdown bars, explainer bullets and
+ *  driver strip can't drift apart. Where these match a risk tier's color, it means
+ *  nothing. */
 export const FACTOR_COLORS: Record<'vpd' | 'wind' | 'drought', { color: string; glow: string }> = {
   vpd:     { color: '#FF7A3A', glow: '255, 122, 58' },
   wind:    { color: '#4FA8FF', glow: '79, 168, 255' },
@@ -66,7 +64,7 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
     lineStrong: 'rgba(255,255,255,0.14)',
     text: '#F2F4F7',
     textDim: 'rgba(255,255,255,0.62)',
-    // 0.52 (~5.7:1 on the dark bg) clears WCAG AA 4.5:1 for small text (0.42 ≈ 4.2:1).
+    // 0.52 gives about 5.7:1 here, clearing the 4.5:1 AA bar for small text.
     textMute: 'rgba(255,255,255,0.52)',
     fontDisplay: 'var(--font-display), -apple-system, system-ui, sans-serif',
     fontBody: 'var(--font-body), -apple-system, system-ui, sans-serif',
@@ -75,8 +73,7 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
     radiusLg: 16,
     cardBorder: '0.5px solid rgba(255,255,255,0.09)',
     titleWeight: 700,
-    // -0.025em tightens display headings just enough to register as premium
-    // (mass-market sans uses -0.01..-0.02; editorial dashboards use -0.025+).
+    // Tight enough to feel editorial. Ordinary sans sits nearer -0.015.
     titleTracking: '-0.025em',
     chipUpper: true,
   },
@@ -124,7 +121,7 @@ export const AESTHETICS: Record<AestheticId, Aesthetic> = {
   },
 };
 
-/** Accent hue overrides for high/extreme risk colors. low/moderate are fixed. */
+/** Retint high and extreme for the chosen accent. Low and moderate are fixed. */
 export function getRisk(level: RiskLevel, accentHue: AccentHue = 'orange'): RiskTone {
   const base = RISK_LEVELS[level];
   if (level !== 'high' && level !== 'extreme') return base;
@@ -137,7 +134,7 @@ export function getRisk(level: RiskLevel, accentHue: AccentHue = 'orange'): Risk
   return { ...base, color, glow };
 }
 
-/** Convert #RGB or #RRGGBB to a comma-separated RGB triple for use inside rgba(). */
+/** Turn a hex color into the "r, g, b" form rgba() wants. */
 export function hexToRgb(hex: string): string {
   const h = hex.replace('#', '');
   const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
@@ -145,11 +142,8 @@ export function hexToRgb(hex: string): string {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(', ');
 }
 
-/** Coerce a `low` level to `moderate` for AMBIENT chrome (page background,
- *  hero band palette, card border tint, glows). The literal risk pill / label
- *  should still pass the actual `level` so the user sees "LOW" in green —
- *  this only floors the surrounding visual treatment so the page doesn't
- *  read as washed-out / muted when the underlying risk is low. */
+/** Bump a low level up to moderate for background chrome only, since a low page
+ *  looks washed out in green. Pass the real level to the pill and the label. */
 export function floorLow(level: RiskLevel): RiskLevel {
   return level === 'low' ? 'moderate' : level;
 }

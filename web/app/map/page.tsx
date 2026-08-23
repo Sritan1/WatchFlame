@@ -1,6 +1,6 @@
-// Live Map route. MapScreen owns the leaflet integration + right rail.
-// Wrapped in <Suspense> because MapScreen uses useSearchParams (for the
-// "?from=fema" intent handoff) — Next 16 enforces this for static prerender.
+// MapScreen owns the leaflet integration and the right rail. It needs a
+// Suspense boundary because it reads useSearchParams for the "?from=fema"
+// handoff, which Next 16 requires for static prerender.
 
 import { Suspense } from 'react';
 

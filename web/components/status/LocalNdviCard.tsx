@@ -1,8 +1,7 @@
 'use client';
 
-// "Vegetation stress" — NDVI anomaly from Sentinel-2 satellite.
-// Premium chrome to match LocalKbdiCard: TiltCard + corner glow + GridPattern
-// + diverging-bar visualization with a centered zero tick.
+// Vegetation stress, the NDVI anomaly from Sentinel-2. Chrome matches
+// LocalKbdiCard, with a diverging bar centered on zero.
 
 import { LevelPill } from '@/components/status/LevelPill';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
@@ -98,9 +97,9 @@ export function LocalNdviCard({
                 display: 'flex',
                 alignItems: 'baseline',
                 justifyContent: 'space-between',
-                // Wrap so the level pill drops below the value instead of being
-                // clipped by the card's overflow on narrow (mobile) widths. The
-                // ≥380px desktop card has room, so it never wraps there.
+                // Wrap so the level pill drops below the value instead of getting
+                // clipped on a narrow screen. The desktop card has room and never
+                // wraps.
                 flexWrap: 'wrap',
                 gap: 12,
               }}
@@ -175,17 +174,15 @@ export function LocalNdviCard({
                 background: 'rgba(255, 255, 255, 0.04)',
               }}
             />
-            {/* Gauge tier-label row skeleton — the loaded NdviGauge draws a row
-             *  of labels under the bar, so without this the card grows a row
-             *  taller when the data lands. */}
+            {/* NdviGauge draws labels under the bar, so without this row the card
+                jumps a line taller on load. */}
             <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
               <div style={{ height: 9, width: 72, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
               <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
             </div>
-            {/* Caption skeleton — mirrors the two-line description footprint
-             *  (incl. its top divider) so the text doesn't flash in fully while
-             *  the number + gauge are still loading. Matches LocalKbdiCard. */}
+            {/* Matches the two-line caption and its divider, so the text doesn't
+                flash in while the number and gauge are still loading. */}
             <div
               style={{
                 margin: '20px 0 0',
@@ -231,8 +228,8 @@ export function LocalNdviCard({
   );
 }
 
-/** Diverging NDVI gauge — red ← center → green with a zero tick. Marker
- *  position scales the [-0.30, +0.30] anomaly to [0, 100]%. */
+/** Diverging gauge, red on the left and green on the right of a zero tick. The
+ *  marker scales the anomaly range onto 0 to 100 percent. */
 function NdviGauge({
   ae,
   value,

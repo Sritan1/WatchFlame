@@ -1,18 +1,11 @@
-"""Phase 3 - calibration + honest scorecard + chart deliverables.
+"""The honest scorecard, plus the calibration charts.
 
-Generates out-of-fold predictions with the spatial GroupKFold, so every
-probability comes from a model that never trained on that row. Then:
-  * reports the honest scorecard (ROC-AUC, PR-AUC, Brier score)
-  * shows the RAW model's probabilities are miscalibrated and an isotonic
-    calibrator fixes them
-  * saves docs/ignition_eval.png (ROC curve + reliability curves)
+Every probability comes from a model that never trained on that row's region. Shows
+the raw probabilities are skewed and that calibration straightens them out. Those
+probabilities are calibrated against this dataset's positive rate, not the rate
+fires start in the world, which is why the app shows a percentile and not a percent.
 
-NOTE: probabilities are calibrated to this dataset's 16.7% positive rate, not
-the true real-world ignition rate. The app therefore ships a percentile index,
-not an absolute "% chance" (see ML.md).
-
-Usage:
-    python scripts/evaluate_ignition_model.py
+Run with python scripts/evaluate_ignition_model.py
 """
 from __future__ import annotations
 
@@ -54,7 +47,7 @@ def main() -> int:
     cal = cross_val_predict(cal_model, X, y, cv=cv, groups=g,
                             method="predict_proba", n_jobs=-1)[:, 1]
 
-    roc_auc = roc_auc_score(y, raw)          # ranking; calibration preserves it
+    roc_auc = roc_auc_score(y, raw)          # ranking, which calibration preserves
     pr_auc = average_precision_score(y, raw)
     brier_raw = brier_score_loss(y, raw)
     brier_cal = brier_score_loss(y, cal)
@@ -67,7 +60,7 @@ def main() -> int:
     gate = roc_auc > 0.70 and pr_auc > 2 * base
     print(f"  Decision gate: {'PASS' if gate else 'REVIEW'}")
 
-    # ── Charts ───────────────────────────────────────────────────────────────
+    # Charts
     import _chart_theme as chart_theme
     pal = chart_theme.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))

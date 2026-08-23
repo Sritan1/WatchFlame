@@ -1,12 +1,8 @@
-"""Shared pytest configuration.
+"""Shared pytest configuration. Runs before any test module imports api.main, so
+the env set here is what get_settings() reads.
 
-Runs before any test module imports `api.main`, so the env set here is what
-`get_settings()` (lru-cached at import) reads.
-
-Rate limiting is disabled for the suite: Starlette's TestClient keys every
-request to a single client host, so the 60/min global limit would otherwise
-trip partway through a fast run and fail unrelated tests. The limiter's own
-behavior is verified in isolation by test_security.py with a fresh app.
+Rate limiting is off for the suite. TestClient keys everything to one host and the
+60/min cap would trip mid-run. test_security.py verifies the limiter on a fresh app.
 """
 import os
 

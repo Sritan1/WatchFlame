@@ -1,20 +1,8 @@
 'use client';
 
-// Fire Detail — unified screen for both a FIRMS satellite pixel AND a named
-// NIFC/Cal Fire incident. Mirrors mobile app/fire-detail.tsx 1:1 functionally,
-// dressed in the premium two-column desktop layout from web-incident*.jsx.
-//
-// URL params (always present): lat, lon
-// URL params (FIRMS only): brightness, confidence, acq_date, acq_time,
-//                          satellite, daynight
-//
-// The page always renders the same skeleton. If `useNamedIncidentsNear` finds
-// a named incident within FIRMS_TO_INCIDENT_TIEBREAK_MI (the same radius Status
-// uses to treat a FIRMS pixel and a named incident as the same physical fire),
-// the eyebrow flips to "Active incident", the title to the incident's name, and
-// two extra blocks (Incident facts + Incident details) appear in the
-// appropriate columns. Matching Status's radius keeps a detection's identity and
-// its "Threat to You" tier consistent across the two screens.
+// One screen for both kinds of fire, a raw satellite pixel and a named incident. If
+// a named incident is close enough to be the same fire, the page relabels itself and
+// grows two extra blocks. Same radius Status uses, so a fire reads the same on both.
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -57,7 +45,7 @@ const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? '';
 const RED = '#F04438';
 const RED_RGB = '240, 68, 56';
 
-// Mini-map is leaflet-based — keep it behind dynamic({ ssr: false }).
+// Leaflet can't render on the server.
 const MiniMap = dynamic(
   () => import('./MiniMapImpl').then((m) => m.MiniMapImpl),
   {
@@ -84,11 +72,8 @@ const MiniMap = dynamic(
   },
 );
 
-// ─── Geometry helpers (inlined; web has no shared lib/geo) ────────────────
-
-// distanceMiles + bearingTo come from web/lib/composite-risk so the threat
-// math and the displayed numbers stay in lockstep. cardinal8 comes from
-// CompassRose so all surfaces share the same 8-point label set.
+// Distance and bearing come from composite-risk, so the numbers on screen match
+// the ones the threat math used. The compass labels come from CompassRose.
 
 function formatDate(iso: string): string {
   try {
@@ -104,7 +89,7 @@ function formatDate(iso: string): string {
   }
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────
+// Screen
 
 type Ae = ReturnType<typeof useAesthetic>['ae'];
 
@@ -123,11 +108,9 @@ export function FireDetailScreen() {
   const daynight = params.get('daynight');
 
   const coordsValid = Number.isFinite(fireLat) && Number.isFinite(fireLon);
-  // Memoized so its identity is stable across renders (only changes when the
-  // coords do). Downstream query hooks key by lat/lon *value* so this doesn't
-  // affect fetching, but it restores the memoization of the distance/bearing/
-  // detectionId/nearbyOthers useMemos below, which a fresh object each render
-  // would otherwise defeat.
+  // Stable identity between renders. The queries key on the numbers so this
+  // doesn't change fetching, but a fresh object each render would defeat every
+  // memo below it.
   const fireLoc: LatLon | undefined = useMemo(
     () => (coordsValid ? { lat: fireLat, lon: fireLon } : undefined),
     [coordsValid, fireLat, fireLon],
@@ -135,16 +118,13 @@ export function FireDetailScreen() {
 
   const me = useUserLocation();
   const weather = useWeather(fireLoc);
-  // User-location weather — used to align the "Threat to You" formula's
-  // wind alignment modifier from the USER's perspective (same source Status uses for the
-  // composite). TanStack dedupes on the query key, so this is free when
-  // Status already loaded the same coords.
+  // Weather where the user is, not where the fire is, because the wind alignment
+  // is about which way it blows toward them. Free if Status already fetched it.
   const userWeather = useWeather(me.coords);
   const risk = useRiskFromWeather(weather.data, fireLoc);
   const nearby = useFiresNear(fireLoc, 8, 7);
-  // reportHealth:false — detail-screen queries must not drive the global
-  // feed-health (a transient failure here was poisoning the Map/sidebar FIRMS
-  // + incident status until a manual refresh).
+  // This screen's queries don't report feed health. A blip here used to leave
+  // the map and sidebar claiming an outage until someone hit refresh.
   const incidents = useNamedIncidentsNear(fireLoc, FIRMS_TO_INCIDENT_TIEBREAK_MI, 5, false);
 
   const matched: NamedIncident | null = incidents.data?.[0] ?? null;
@@ -154,7 +134,7 @@ export function FireDetailScreen() {
     () => (me.coords && fireLoc ? distanceMiles(me.coords, fireLoc) : null),
     [me.coords, fireLoc],
   );
-  // Bearing in raw degrees — feeds `personalThreatBucket` for wind alignment.
+  // Raw degrees, which is what the threat math wants for wind alignment.
   const bearingDegFromMe = useMemo(
     () => (me.coords && fireLoc ? bearingTo(me.coords, fireLoc) : null),
     [me.coords, fireLoc],
@@ -172,8 +152,8 @@ export function FireDetailScreen() {
 
   const passes = useMemo(() => {
     if (!nearby.data) return [];
-    // FIRMS acq_time is "HHMM" but not always zero-padded ("542" = 05:42), so
-    // pad before the string compare or "542" would sort after "1842".
+    // Acquisition times arrive unpadded, so "542" means 05:42 and would sort
+    // after "1842" if compared as text.
     const hhmm = (t: string | null | undefined) => (t ?? '').padStart(4, '0');
     return [...nearby.data.features]
       .sort(
@@ -191,18 +171,9 @@ export function FireDetailScreen() {
     );
   }, [nearby.data, fireLoc, fireLat, fireLon]);
 
-  // "Threat to You" — uses the same per-fire helper as Status's Active Fire
-  // Threat axis so a fire reads the same on both screens. Same modifiers:
-  // distance + size + wind alignment (user-side wind) + time decay for
-  // stale FIRMS + containment dampener. Synchronous; wind/age modifiers
-  // gracefully degrade when their inputs aren't yet loaded (null wind →
-  // skip wind modifier). No new loading state introduced.
-  // Only FIRMS-only flows (no matched incident) participate in the
-  // stale-pixel dampener; reuse the shared helper so the threshold is in
-  // one place.
-  // NOTE: these two hooks (firmsAge, threatLevel) must stay ABOVE the
-  // `!coordsValid` early return — moving them below it would make the hook
-  // count vary between renders when coordsValid flips (React error).
+  // The same helper Status uses, so one fire reads the same on both screens. Missing
+  // wind or age drops those modifiers instead of blocking. Both hooks have to stay
+  // above the early return below, or the hook count changes between renders.
   const firmsAge = useMemo(
     () => (matched ? null : firmsAgeHours(acqDate, acqTime)),
     [matched, acqDate, acqTime],
@@ -268,8 +239,7 @@ export function FireDetailScreen() {
     );
   }
 
-  // Severity tone for the screen — driven by the local risk (weather at the
-  // fire's location). Matches mobile RiskTile.
+  // The page's color, from the weather at the fire itself.
   const riskLevel: RiskLevel | null = risk.data
     ? dangerToRisk(risk.data.danger_level)
     : null;
@@ -278,10 +248,8 @@ export function FireDetailScreen() {
 
   const openInMaps = `https://www.google.com/maps?q=${fireLat},${fireLon}`;
 
-  // Fire-weather (local /weather + /risk) failed to load. Excluded from
-  // `fireWeatherLoading` so the Risk Level cell doesn't skeleton forever when
-  // risk errors after weather resolves — the `weather.data != null && risk.data
-  // == null` clause below would otherwise stay true indefinitely on error.
+  // Kept out of the loading flag, or the cell skeletons forever when the score
+  // fails after the weather succeeded.
   const fireWeatherFailed = weather.isError || risk.isError;
   const fireWeatherLoading =
     !fireWeatherFailed &&
@@ -293,39 +261,29 @@ export function FireDetailScreen() {
       : 'NIFC WFIGS'
     : detectionId;
 
-  // Three panels are FIRMS-specific (Brightness, Confidence, Detection
-  // Metadata). When opened from a named incident with no paired FIRMS pixel,
-  // their values would all be '—' — so hide each independently based on
-  // whether its source param is present. A FIRMS pixel that *also* matches
-  // an incident still shows them since the params are in the URL.
+  // Three panels only make sense for a satellite detection. Arrive from a named
+  // incident and they'd be all dashes, so each hides when its data is absent. A
+  // pixel that also matched an incident still shows them.
   const hasBrightness = brightnessParam != null;
   const hasConfidence = confidenceParam != null;
   const hasFirmsDetection =
     acqDate != null || acqTime != null || satellite != null || daynight != null;
 
-  // Satellite-only = a FIRMS pixel (opened from a satellite detection) that has
-  // NOT matched a named incident. That's when the mini-map's main marker is the
-  // flame glyph instead of the incident nucleus.
+  // A detection with no incident behind it, which is when the map draws a flame
+  // and not a nucleus.
   const isFirmsDetection = hasBrightness || hasConfidence || hasFirmsDetection;
   const isSatelliteOnly = isFirmsDetection && !matched;
-  // Withhold the main marker until we KNOW exactly what to draw, rather than
-  // showing one thing then swapping. Two things must settle:
-  //   1. the KIND (flame vs nucleus) — hinges on the incident-match query for a
-  //      FIRMS page; a non-FIRMS page is always the nucleus and needn't wait.
-  //   2. for the NUCLEUS, its severity COLOR — so it never flashes the red
-  //      fallback then flips to the real tint. The flame carries no severity, so
-  //      it never waits on this. If the risk lookup failed, we stop waiting and
-  //      show the red fallback (there's no real colour coming).
+  // Hold the marker back until we know what to draw instead of drawing one thing and
+  // swapping it. Which shape waits on the incident match, and a nucleus also waits on
+  // its color so it never flashes the red fallback. A failed score lookup takes it.
   const markerKindKnown = !isFirmsDetection || incidentResolved;
   const incidentColorReady = riskLevel != null || fireWeatherFailed;
   const mainMarkerReady = markerKindKnown && (isSatelliteOnly || incidentColorReady);
 
-  // FIRMS acq_time is "HHMM" but not always zero-padded ("542" = 05:42), so pad
-  // and insert the colon before display (the passes panel does the same). Raw,
-  // it rendered a meaningless "542 UTC" / "0 UTC" for any pre-10:00 detection.
+  // Pad and punctuate before showing it, or an early-morning detection comes out as
+  // a meaningless "542 UTC".
   const acqTimeLabel = (() => {
-    // Empty string is "missing" (matches the passes panel's truthy check), not
-    // midnight — only a real value like "0" / "542" should format to a time.
+    // A blank means missing, not midnight. Only a real value becomes a time.
     if (!acqTime) return '—';
     const p = acqTime.padStart(4, '0');
     return `${p.slice(0, 2)}:${p.slice(2)} UTC`;
@@ -342,7 +300,6 @@ export function FireDetailScreen() {
 
   return (
     <PageSection top={32} bottom={64} maxWidth={1320}>
-      {/* ─── Hero ────────────────────────────────────────────────── */}
       <Hero
         ae={ae}
         idLabel={idLabel}
@@ -356,7 +313,6 @@ export function FireDetailScreen() {
         loading={!incidentResolved}
       />
 
-      {/* ─── Main grid ───────────────────────────────────────────── */}
       <div
         className="app-stack app-detail-grid"
         style={{
@@ -367,9 +323,9 @@ export function FireDetailScreen() {
           alignItems: 'start',
         }}
       >
-        {/* ─── LEFT COLUMN ───────────────────────────────────────── */}
+        {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-          {/* Local fire map — nearby recent detections + a wind-direction arrow */}
+          {/* Local fire map, nearby recent detections and a wind arrow */}
           <IncPanel
             ae={ae}
             eyebrow="Local fire map · wind"
@@ -438,14 +394,14 @@ export function FireDetailScreen() {
             </p>
           </IncPanel>
 
-          {/* Detection Metadata — FIRMS-only */}
+          {/* Detection metadata, FIRMS only */}
           {hasFirmsDetection ? (
             <IncPanel ae={ae} eyebrow="Detection Metadata" right="FIRMS / VIIRS" padding={22} className="app-detail-late">
               <MetadataList ae={ae} rows={detectionMetaRows} />
             </IncPanel>
           ) : null}
 
-          {/* Recent passes — only if more than one pass */}
+          {/* Recent passes, only if there is more than one */}
           {passes.length > 1 ? (
             <IncPanel ae={ae} eyebrow="Recent satellite passes" padding={22}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -507,7 +463,7 @@ export function FireDetailScreen() {
             </IncPanel>
           ) : null}
 
-          {/* Incident details — matched only */}
+          {/* Incident details, only when we matched one */}
           {matched ? (
             <IncPanel ae={ae} eyebrow="Incident details" padding={22} className="app-detail-late">
               {matched.county ? <DetailRow ae={ae} k="County" v={matched.county} /> : null}
@@ -564,9 +520,9 @@ export function FireDetailScreen() {
           ) : null}
         </div>
 
-        {/* ─── RIGHT COLUMN ──────────────────────────────────────── */}
+        {/* Right column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-          {/* Risk + Threat compound */}
+          {/* Risk and Threat compound */}
           <AssessmentSplit
             ae={ae}
             riskLevel={riskLevel}
@@ -580,7 +536,7 @@ export function FireDetailScreen() {
             threatLoading={incidents.isLoading}
           />
 
-          {/* Incident facts — matched only (2x2 mini grid) */}
+          {/* Incident facts in a 2x2 grid, again only when matched */}
           {matched ? (
             <IncPanel ae={ae} eyebrow="Incident facts" padding={22}>
               <div
@@ -631,7 +587,7 @@ export function FireDetailScreen() {
             />
           </IncPanel>
 
-          {/* Brightness — FIRMS-only */}
+          {/* Brightness, FIRMS only */}
           {hasBrightness ? (
             <IncPanel
               ae={ae}
@@ -643,7 +599,7 @@ export function FireDetailScreen() {
             </IncPanel>
           ) : null}
 
-          {/* Confidence — FIRMS-only */}
+          {/* Confidence, FIRMS only */}
           {hasConfidence ? (
             <IncPanel ae={ae} eyebrow="Confidence" right="VIIRS rating" padding={22}>
               <ConfidenceBlock ae={ae} value={confidenceParam} />
@@ -658,7 +614,7 @@ export function FireDetailScreen() {
   );
 }
 
-// ─── Hero ──────────────────────────────────────────────────────────────────
+// Hero
 
 function Hero({
   ae,
@@ -677,7 +633,7 @@ function Hero({
 }) {
   return (
     <div style={{ position: 'relative' }}>
-      {/* Top strip — back + ID */}
+      {/* Top strip with the back button and the ID */}
       <div
         style={{
           display: 'flex',
@@ -807,9 +763,9 @@ function buildDescription(
     distFromMe != null && bearing
       ? `${formatDistance(distFromMe, distanceUnit, 1)} ${bearing} of your location.`
       : 'Active thermal anomaly detected by NASA satellite.';
-  // matched → describe the incident. No match: distinguish a genuine "nothing
-  // within range" from an incident-lookup that FAILED (isError), so we never
-  // assert "no named incident" when we simply could not check.
+  // With a match, describe the incident. Without one, separate "nothing in
+  // range" from "the lookup failed", so we never claim there's no named incident
+  // when we simply couldn't check.
   const tail = matched
     ? `Reported by ${matched.agency ?? 'the responsible agency'}${
         matched.started ? ` on ${formatDate(matched.started)}` : ''
@@ -872,7 +828,7 @@ function LivePill({ ae, matched }: { ae: Ae; matched: boolean }) {
   );
 }
 
-// ─── Panel chrome ─────────────────────────────────────────────────────────
+// Panel chrome
 
 function IncPanel({
   ae,
@@ -889,7 +845,7 @@ function IncPanel({
   children: ReactNode;
   padding?: number;
   glow?: string;
-  /** Extra class for mobile reordering hooks (desktop ignores it). */
+  /** A hook for the mobile reordering rules. Desktop ignores it. */
   className?: string;
 }) {
   return (
@@ -996,7 +952,7 @@ function IncPanel({
   );
 }
 
-// ─── Risk + Threat compound ───────────────────────────────────────────────
+// Risk and threat compound
 
 function AssessmentSplit({
   ae,
@@ -1018,13 +974,12 @@ function AssessmentSplit({
   threatTone: string;
   threatGlow: string;
   riskLoading: boolean;
-  /** Local /weather or /risk errored — the Risk Level cell shows an explicit
-   *  "Unavailable" instead of a bare "—" (which reads as unknown, not failed). */
+  /** The weather or score lookup failed, so the cell says "Unavailable". A dash
+   *  would look like unknown instead of broken. */
   riskError?: boolean;
-  /** The nearby-incident match (which supplies the fire's size + containment)
-   *  is still loading. Without this the Threat cell computes a firm tier from a
-   *  null size (max size multiplier) and then visibly jumps once the match
-   *  lands, so skeleton it until the incident query settles. */
+  /** The incident match, which carries the fire's size and containment, hasn't
+   *  landed. Without waiting, the threat cell states a confident tier computed
+   *  from no size at all and then visibly jumps. */
   threatLoading?: boolean;
 }) {
   return (
@@ -1205,7 +1160,7 @@ function SegMeter({
   height = 7,
 }: {
   ae: Ae;
-  /** 0..4 — 0 means none filled. */
+  /** How many bars to fill, from none to four. */
   level: number;
   color: string;
   height?: number;
@@ -1236,7 +1191,7 @@ function SegMeter({
   );
 }
 
-// ─── Distance / Brightness / Confidence ───────────────────────────────────
+// Distance, brightness and confidence
 
 function DistanceViz({
   ae,
@@ -1245,13 +1200,12 @@ function DistanceViz({
   unit,
 }: {
   ae: Ae;
-  /** Distance from user to fire in miles (always miles internally). */
+  /** Distance to the fire. Always miles inside the app. */
   distMi: number | null;
   bearing: string | null;
   unit: DistanceUnit;
 }) {
-  // Reference uses a 0..120mi rail. We anchor to the same cap so very-far
-  // fires don't slam against the right edge.
+  // Capped at 120 miles so a very distant fire doesn't jam against the end.
   const ratio = distMi != null ? Math.min(distMi / 120, 0.95) : 0;
   const xPct = 6 + ratio * 88;
 
@@ -1457,11 +1411,9 @@ function ThermalScale({ ae, kelvin }: { ae: Ae; kelvin: number | null }) {
 }
 
 function ConfidenceBlock({ ae, value }: { ae: Ae; value: string | null }) {
-  // FIRMS confidence is either a categorical letter (L/N/H, VIIRS) or a numeric
-  // 0-100 score (MODIS). Parse via the shared confidenceLabel so this panel
-  // stays in sync with the map rail if FIRMS_SOURCE ever switches sensors (its
-  // own L/N/H-only lookup used to render "—" for a numeric reading the rail
-  // showed as "High"). The segmented bars keep the L/N/H presentation.
+  // Confidence arrives as a letter from one sensor and a number from another.
+  // Use the shared helper so this panel and the map rail agree. Its own
+  // letters-only lookup used to show a dash where the rail said "High".
   const states = [
     { k: 'L', label: 'Low' },
     { k: 'N', label: 'Nominal' },
@@ -1546,7 +1498,7 @@ function ConfidenceBlock({ ae, value }: { ae: Ae; value: string | null }) {
   );
 }
 
-// ─── Misc helpers ──────────────────────────────────────────────────────────
+// Misc helpers
 
 function MiniStat({
   ae,
@@ -1561,9 +1513,8 @@ function MiniStat({
   unit?: string;
   tone?: string;
 }) {
-  // Numeric-style values (and the lone "—" placeholder) get the big display
-  // font. Text values like "Undetermined" or "Human caused" use a smaller
-  // body font and wrap, so they don't overflow the half-column tile.
+  // Numbers get the big display font. Words like "Human caused" get a smaller
+  // one that wraps, or they overflow the tile.
   const isNumericLike = /^[\d,.\-—%\s]*$/.test(value);
   return (
     <div
@@ -1728,7 +1679,7 @@ function SpreadArrow({
   ae,
 }: {
   windDeg: number;
-  /** Wind speed in km/h. Conversion to user-pref mph happens inside `formatSpeed`. */
+  /** Wind in km/h. formatSpeed handles the user's preference. */
   windKph: number;
   speedUnit: 'mph' | 'kph';
   ae: Ae;

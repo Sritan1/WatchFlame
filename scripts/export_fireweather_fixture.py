@@ -1,13 +1,10 @@
-"""Export a fire-weather parity fixture for the web test suite.
+"""Export a fixture that keeps the two scorers honest.
 
-Runs the authoritative Python `compute_risk` over a representative grid of
-inputs and writes the (input -> expected score) pairs as JSON. The web vitest
-suite loads this fixture and asserts its TypeScript scorer (`scoreV4` in
-web/lib/risk-local.ts) reproduces the same numbers — turning the
-backend/frontend "duplicated algorithm" risk into an enforced guard.
+Runs the real Python scorer over a spread of inputs and writes the answers to JSON.
+The web suite loads it and checks its TypeScript copy produces the same numbers,
+which turns duplicated math from a hazard into something CI catches.
 
-Regenerate after any RiskParams re-fit:
-    python scripts/export_fireweather_fixture.py
+Regenerate after any re-fit with python scripts/export_fireweather_fixture.py
 """
 from __future__ import annotations
 
@@ -22,11 +19,9 @@ from api.core.risk_algorithm import compute_risk  # noqa: E402
 
 OUT = ROOT / "web" / "lib" / "__tests__" / "fixtures" / "v4_parity.json"
 
-# (temp_c, rh_pct, wind_kph, days_since_rain, season, kbdi, ndvi_anomaly)
-# Covers: KBDI path vs days-since-rain path, NDVI path vs season path, calm vs
-# strong wind, humid vs bone-dry, each season, the extreme corner, AND every
-# clamp boundary (NDVI factor floor 0.40 + ceiling 1.00, KBDI [0, 800]) so a
-# TS scorer that dropped a clamp fails the parity guard instead of passing.
+# Cases worth pinning are both drought paths, both vegetation paths, calm against
+# gale, humid against bone dry, all four seasons, the extreme corner, and every
+# clamp boundary. A scorer that dropped a clamp should fail here.
 CASES = [
     (35.0, 15.0, 30.0, 10, "summer", 600.0, None),
     (20.0, 60.0, 10.0, 2, "spring", 200.0, None),
@@ -34,11 +29,11 @@ CASES = [
     (10.0, 80.0, 5.0, 0, "winter", 50.0, 0.05),
     (28.0, 35.0, 18.0, 7, "fall", None, None),      # days-since-rain drought path
     (30.0, 25.0, 22.0, 5, "summer", None, -0.08),   # NDVI veg path, no KBDI
-    (15.0, 95.0, 0.0, 0, "winter", 0.0, None),       # edge: 0 wind, ~saturated air
-    (45.0, 5.0, 60.0, 40, "summer", 800.0, -0.30),   # extreme corner; NDVI ceiling 1.00
+    (15.0, 95.0, 0.0, 0, "winter", 0.0, None),       # edge, 0 wind, nearly saturated air
+    (45.0, 5.0, 60.0, 40, "summer", 800.0, -0.30),   # extreme corner, at the NDVI ceiling
     (25.0, 50.0, 15.0, 3, "spring", 300.0, 0.20),    # greener-than-normal veg
     (33.0, 20.0, 25.0, 14, "fall", 500.0, None),
-    (30.0, 20.0, 20.0, 5, "summer", 400.0, 0.60),    # NDVI floor clamp: factor -> 0.40
+    (30.0, 20.0, 20.0, 5, "summer", 400.0, 0.60),    # NDVI floor clamp, so the factor lands at 0.40
     (38.0, 12.0, 35.0, 20, "summer", 950.0, None),   # KBDI > 800 clamps to 800
     (22.0, 55.0, 12.0, 1, "spring", -75.0, None),    # KBDI < 0 clamps to 0
 ]

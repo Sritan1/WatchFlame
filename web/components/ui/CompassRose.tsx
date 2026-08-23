@@ -1,8 +1,7 @@
 'use client';
 
-// Compass with 4 cardinal letters + tick marks + rotating arrow needle.
-// `bearingDeg` is the direction the needle points (0° = N, 90° = E, etc).
-// `cardinal` is the closest 4-point cardinal label (N/E/S/W) to highlight.
+// Compass with four cardinal letters, tick marks and a rotating needle.
+// `bearingDeg` is where the needle points, zero degrees being north.
 
 import { useAesthetic } from '@/lib/aesthetic';
 
@@ -28,7 +27,7 @@ export function CompassRose({
   // Direction letters around the rose
   const letters: ('N' | 'E' | 'S' | 'W')[] = ['N', 'E', 'S', 'W'];
 
-  // Tick marks (24 of them, every 15°)
+  // Tick marks, one every 15 degrees
   const ticks: React.ReactElement[] = [];
   for (let i = 0; i < 24; i++) {
     const a = (i * 15 * Math.PI) / 180;
@@ -114,8 +113,7 @@ export function CompassRose({
   );
 }
 
-/** Pick the nearest 4-point cardinal (N/E/S/W) for a bearing. For the 8-point
- *  label (NE/SE/...), use cardinal8. */
+/** The nearest four-point cardinal for a bearing. Use cardinal8 for the finer one. */
 export function cardinalOf(bearingDeg: number): 'N' | 'E' | 'S' | 'W' {
   const norm = ((bearingDeg % 360) + 360) % 360;
   if (norm < 45 || norm >= 315) return 'N';
@@ -124,7 +122,7 @@ export function cardinalOf(bearingDeg: number): 'N' | 'E' | 'S' | 'W' {
   return 'W';
 }
 
-/** Eight-point cardinal label (used in text like "fire is NE at 4.2 mi"). */
+/** Eight-point cardinal label, for text like "fire is NE at 4.2 mi". */
 export function cardinal8(bearingDeg: number): string {
   const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   const norm = ((bearingDeg % 360) + 360) % 360;

@@ -1,4 +1,4 @@
-"""Verify api/data/regional_thresholds.json after the handoff calibration run."""
+"""Sanity-check the calibration file after a build run."""
 import json
 import sys
 from pathlib import Path

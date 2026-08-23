@@ -1,7 +1,6 @@
 'use client';
 
-// User unit preferences. Persisted to localStorage so a refresh keeps choices.
-// Defaults: °C / mph / mi (US-with-metric — matches the reference scenario).
+// Unit preferences, saved to localStorage so a refresh keeps them.
 
 import {
   createContext,
@@ -37,7 +36,7 @@ const Ctx = createContext<UnitsState | null>(null);
 export function UnitsProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<UnitPreferences>(DEFAULTS);
 
-  // Hydrate from localStorage after mount (avoid SSR mismatch).
+  // Read storage after mount, or the server and client render differently.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -46,7 +45,7 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
         setPrefs({ ...DEFAULTS, ...parsed });
       }
     } catch {
-      // localStorage might be unavailable (private mode etc) — silently keep defaults.
+      // No localStorage in private mode, so keep the defaults.
     }
   }, []);
 
@@ -78,27 +77,20 @@ export function useUnits(): UnitsState {
   return ctx;
 }
 
-// ─── Conversion helpers (pure functions) ────────────────────────────────────
-
 export function formatTemp(celsius: number, unit: TempUnit, digits = 0): string {
   const n = unit === 'F' ? (celsius * 9) / 5 + 32 : celsius;
   return `${n.toFixed(digits)}°${unit}`;
 }
 
-/** Format a wind speed for display. The backend always returns wind_speed in
- *  km/h (api/services/owm.py converts OWM's m/s → kph, Open-Meteo asks for
- *  kph, and /risk's wind_speed field is documented as km/h). So the canonical
- *  internal unit on the client is kph; this helper converts to mph for the
- *  user if their preference is mph. Matches app/lib/units.tsx. */
+/** Format a wind speed. Everything on the client holds wind in km/h, since that is
+ *  what the backend sends, so pass km/h in and this converts only if asked. */
 export function formatSpeed(kph: number, unit: SpeedUnit, digits = 0): string {
   const n = unit === 'mph' ? kph * 0.621371 : kph;
   return `${n.toFixed(digits)} ${unit}`;
 }
 
-/** Miles → the user's distance unit, as a number (no formatting). Use this when
- *  the unit label is rendered separately (e.g. a differently-styled <span>);
- *  otherwise prefer formatDistance, which returns the value + unit as one
- *  string. Keeps the mi↔km constant in a single place. */
+/** Miles into the user's unit, as a bare number, for when the label is styled
+ *  separately. Otherwise use formatDistance. */
 export function convertDistance(miles: number, unit: DistanceUnit): number {
   return unit === 'km' ? miles * 1.60934 : miles;
 }

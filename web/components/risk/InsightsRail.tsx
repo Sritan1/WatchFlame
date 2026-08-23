@@ -1,19 +1,8 @@
 'use client';
 
-// Full-width Dominant Driver hero card. Sits below the inputs grid on the
-// Risk page. Left side: eyebrow + driver name + description. Right side: a
-// 3-column share strip (VPD / Wind / Drought) with domain-colored
-// percentages so the user can see all three factor shares at once instead
-// of just the dominant one.
-//
-// Premium chrome mirrors HeroScorePanel's pattern: ember-hero-card for the
-// top accent stripe + corner halo pseudo-elements, GridPattern overlay for
-// the technical/measured feel, red-tinted border + bottom-left radial glow
-// for the "this is the driver" emphasis.
-//
-// File name is historical — this used to be a sticky right-rail housing
-// multiple insight cards. Trimmed to one card, then promoted to a
-// full-width hero when the inputs grid was restructured.
+// The card under the sliders naming what's driving the score, with all three factor
+// shares alongside it and not just the winner. The name is left over from when this
+// was a rail of several cards down the right side.
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
@@ -29,15 +18,11 @@ export function InsightsRail({
 }: {
   dominantLabel: string;
   dominantDescription: string;
-  /** Each factor's WEIGHTED share of the score (raw factor × its fire-weather exponent
-   *  weight, normalized to sum to 1). Same basis as the dominant-driver pick,
-   *  so the named driver is always the largest share and the three add to 100%. */
+  /** Each factor's weighted share, worked out the same way the driver is picked,
+   *  so the named one is always the biggest and the three add to 100%. */
   shares: { vpd: number; wind: number; drought: number };
-  /** When true, replace the inner content (driver name + description +
-   *  3 share columns) with skeleton placeholders. The full chrome (border,
-   *  grid pattern, top stripe, halos) stays visible so the card doesn't
-   *  pop in/out across location switches — matches the rhythm of the
-   *  InputPanel / VegetationPanel / DroughtPanel loading states. */
+  /** Skeletons the contents but keeps the card, so it doesn't pop in and out
+   *  across a location switch. */
   isLoading?: boolean;
 }) {
   const { ae } = useAesthetic();
@@ -58,15 +43,10 @@ export function InsightsRail({
         ['--card-accent-soft' as string]: `rgba(${accentGlow}, 0.12)`,
       }}
     >
-      {/* Faint grid texture — same technical feel as HeroScorePanel + the
-       *  Status hero cards. 4% opacity stays barely-there but adds the
-       *  "measured instrument" character the reference has. */}
+      {/* Same faint grid the hero card uses. */}
       <GridPattern opacity={0.04} />
 
-      {/* Bottom-left corner halo — complements ember-hero-card's built-in
-       *  top-right halo (::after) and the top stripe (::before). Together
-       *  they form a diagonal red gradient across the card matching the
-       *  reference's glow. */}
+      {/* Opposite corner from the card's own glow, so the two make a diagonal. */}
       <div
         aria-hidden="true"
         style={{
@@ -178,7 +158,7 @@ function ShareColumn({
   color,
 }: {
   label: string;
-  /** 0-1 factor value; rendered as a percentage. */
+  /** The share, drawn as a percentage. */
   pct: number;
   color: string;
 }) {

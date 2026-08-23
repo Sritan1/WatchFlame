@@ -1,10 +1,8 @@
 'use client';
 
-// Settings page — Aesthetic switcher · Units · Important Notice · About + Data Sources.
-// Two-column inspector pattern: each section is a SettingsRow with a narrow
-// header rail (eyebrow + title + description + key/value meta) and a wide
-// control well. Important Notice + About are full-bleed variants.
-// No auth/profile yet, so this is the limit of mutable preferences.
+// Settings. The look, the units, the notice people should read, and where the data
+// comes from. Each section is a row with its description down the left and its
+// controls on the right. There is no account, so this is every preference there is.
 
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
@@ -17,7 +15,7 @@ import { useUnits, type DistanceUnit, type SpeedUnit, type TempUnit } from '@/li
 
 type AE = Aesthetic;
 
-// Chrome accent matches the floating sidebar/topbar — peach orange.
+// The same peach as the sidebar and topbar.
 const CHROME_RGB = '255, 167, 106';
 
 // Important Notice tone (amber warn).
@@ -34,7 +32,7 @@ export function SettingsScreen() {
   return (
     <div style={{ background: ae.bg, paddingBottom: 48 }}>
       <PageSection top={28} bottom={32} maxWidth={1200}>
-        {/* ───── Page header ───────────────────────────────────── */}
+        {/* Page header */}
         <header style={{ marginBottom: 28 }}>
           <div
             style={{
@@ -114,7 +112,7 @@ export function SettingsScreen() {
           </p>
         </header>
 
-        {/* ───── Aesthetic ─────────────────────────────────────── */}
+        {/* Aesthetic */}
         <SettingsRow
           ae={ae}
           eyebrow="Visual tone"
@@ -156,7 +154,7 @@ export function SettingsScreen() {
           </div>
         </SettingsRow>
 
-        {/* ───── Units ─────────────────────────────────────────── */}
+        {/* Units */}
         <SettingsRow
           ae={ae}
           eyebrow="Units"
@@ -173,13 +171,8 @@ export function SettingsScreen() {
           <div
             style={{
               display: 'grid',
-              // Each toggle is capped at 200px and the leftover desktop width is
-              // distributed BETWEEN them, so on a wide well they spread evenly
-              // across the row instead of stretching to ~300px (sparse) or
-              // clustering on the left. On a phone the well is narrower than
-              // 3×200, so the tracks shrink to fill it (no leftover → the
-              // space-between is a no-op) and the toggles fill the width exactly
-              // as before.
+              // Each toggle is capped and the spare width goes between them, not
+              // into them, so they neither stretch nor huddle to one side.
               gridTemplateColumns: 'repeat(3, minmax(0, 200px))',
               justifyContent: 'space-between',
               gap: 12,
@@ -221,7 +214,7 @@ export function SettingsScreen() {
           </div>
         </SettingsRow>
 
-        {/* ───── Important Notice (full-bleed) ─────────────────── */}
+        {/* Important notice */}
         <SettingsRow
           ae={ae}
           fullBleed
@@ -310,7 +303,7 @@ export function SettingsScreen() {
           </p>
         </SettingsRow>
 
-        {/* ───── Data sources (full-bleed) ─────────────────────── */}
+        {/* Data sources */}
         <SettingsRow
           ae={ae}
           fullBleed
@@ -402,7 +395,7 @@ export function SettingsScreen() {
           </div>
         </SettingsRow>
 
-        {/* ───── Footer build line ─────────────────────────────── */}
+        {/* Footer build line */}
         <div
           style={{
             marginTop: 32,
@@ -413,7 +406,7 @@ export function SettingsScreen() {
             gap: 18,
           }}
         >
-          {/* Row 1 — build line + data sources */}
+          {/* Row 1, the build line and the data sources */}
           <div
             style={{
               display: 'flex',
@@ -473,7 +466,7 @@ export function SettingsScreen() {
           </div>
           </div>
 
-          {/* Row 2 — legal links + copyright */}
+          {/* Row 2, the legal links and the copyright */}
           <div
             style={{
               display: 'flex',
@@ -523,7 +516,7 @@ export function SettingsScreen() {
   );
 }
 
-// ─── Internal layout helpers ────────────────────────────────────────────────
+// Internal layout helpers
 
 interface SettingsRowProps {
   ae: AE;
@@ -536,11 +529,8 @@ interface SettingsRowProps {
   meta?: { label: string; value: string }[];
   children: ReactNode;
   fullBleed?: boolean;
-  /** Vertically center the control well against the (taller) header rail
-   *  instead of top-aligning it. Used when the control is short (e.g. the unit
-   *  toggles) so it sits balanced beside the description rather than stranded
-   *  at the top with a large blank space below. Desktop only — the grid is a
-   *  single column on mobile, where alignItems has no effect. */
+  /** Centers a short control against its taller description instead of stranding it
+   *  at the top. Desktop only. Mobile stacks them anyway. */
   alignCenter?: boolean;
 }
 
@@ -758,8 +748,8 @@ function AestheticOption({
   onClick,
   accentRgb,
 }: AestheticOptionProps) {
-  // The preview tile is rendered in the OPTION's own tokens so the card itself
-  // demonstrates what selecting it would do — radii, font weight, chip casing.
+  // Each preview is drawn in its own option's styling, so the card shows what
+  // picking it would do.
   const opt = AESTHETICS[value];
   return (
     <button

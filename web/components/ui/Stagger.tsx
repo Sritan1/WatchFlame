@@ -1,4 +1,4 @@
-/** Word-by-word fade-up/blur-in stagger — pair with big headlines.
+/** Word-by-word fade-up/blur-in stagger, pair with big headlines.
  *  CSS keyframe `px-word-in` is defined in globals.css. */
 export function Stagger({
   text,
@@ -15,8 +15,8 @@ export function Stagger({
   return (
     <span style={style}>
       {words.map((w, i) => (
-        // Words use position-based keys; same headline may render twice on
-        // risk-level changes but the key reset is intentional (replays the anim).
+        // Keyed by position, so a re-render on a risk change replays the animation
+        // instead of leaving the words settled. The replay is wanted.
         <span key={i} className="px-word" style={{ animationDelay: `${startDelay + i * baseDelay}ms` }}>
           {w}
           {i < words.length - 1 ? ' ' : ''}

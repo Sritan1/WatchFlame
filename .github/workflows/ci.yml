@@ -20,16 +20,16 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install dependencies
-        # Dev file = prod (requirements.txt) + test/lint/audit/notebook tooling.
+        # The dev file is prod (requirements.txt) plus test, lint, audit and notebook tooling.
         run: pip install -r api/requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check api/
       - name: Run tests
         run: python -m pytest api/ -q
       - name: Dependency audit (advisory)
-        # Audits the PRODUCTION dependency set specifically (requirements.txt) —
-        # i.e. exactly what deploys. Surfaces known CVEs without hard-failing
-        # every PR on an upstream advisory; review and pin/upgrade as needed.
+        # Audits the PRODUCTION dependency set specifically (requirements.txt),
+        # exactly what deploys. Surfaces known CVEs without hard-failing
+        # every PR on an upstream advisory. Review and pin or upgrade as needed.
         continue-on-error: true
         run: pip-audit -r api/requirements.txt
 
@@ -47,9 +47,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
-        # `npm install`, not `npm ci`: the lockfile is generated on Windows and
-        # omits a Linux-only transitive optional subtree (the WASM runtime of
-        # Tailwind v4's native engine — @napi-rs/wasm-runtime -> @emnapi/*), so
+        # `npm install`, not `npm ci`, because the lockfile is generated on Windows
+        # and omits a Linux-only transitive optional subtree (the WASM runtime of
+        # Tailwind v4's native engine, @napi-rs/wasm-runtime pulling @emnapi/*), so
         # the strict `npm ci` integrity check fails on the Linux runner with
         # "Missing @emnapi/core/runtime from lock file". `npm install` reconciles
         # and installs the same versions without that cross-platform strictness,
@@ -60,7 +60,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Lint (advisory)
         # eslint surfaces issues (incl. the new react-hooks/set-state-in-effect
-        # rule) but isn't a merge gate yet — several findings are legitimate
+        # rule) but isn't a merge gate yet. Several findings are legitimate
         # localStorage-hydration patterns pending a dedicated cleanup.
         continue-on-error: true
         run: npm run lint
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     # Dependabot PRs run with a restricted, secret-less token that gitleaks-action
     # errors on, and a dependency version bump cannot introduce a secret anyway.
-    # Scan on pushes to main and on human PRs; skip Dependabot's own PRs.
+    # Scan on pushes to main and on human PRs, skipping Dependabot's own PRs.
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4

@@ -1,19 +1,9 @@
-"""NLCD land-cover lookup — the v2 "is there anything to burn?" feature.
+"""What's on the ground at a point, which is really "is there anything to burn?"
 
-Queries the National Land Cover Database via an ArcGIS ImageServer `identify`
-point op (same ArcGIS-REST pattern as services/open_shelters.py) and collapses
-the NLCD class code (0-95) into a small set of fuel categories. Gives the
-ignition model a signal that an urban/water pixel won't ignite no matter how
-hot/dry/windy it is — fixing the v1 over-flagging of low-fire regions.
-
-Land cover is essentially static, so present-day NLCD is valid for historical
-fires too, and results can be cached indefinitely. Graceful: returns None on
-any failure or off-grid (e.g. offshore) point.
-
-Two entry points share one mapping:
-  * land_cover_class(lat, lon)            - async, for the live /ignition path
-  * land_cover_class_cached(lat, lon, c)  - sync + disk-cache dict, for the
-                                            one-time training enrichment
+Asks the National Land Cover Database and folds its class codes into a handful of
+fuel categories. Without it the ignition model flagged downtown blocks as dangerous
+on a hot windy day. Land cover barely moves, so results cache forever. Offshore or
+off-grid comes back None.
 """
 from __future__ import annotations
 
@@ -23,21 +13,21 @@ from typing import Any
 
 import httpx
 
-# EnviroAtlas-hosted NLCD 2019 (CONUS, 30 m). Verified: `identify` resolves a
-# WGS84 point only when the SR is embedded in the geometry (not the inSR param).
+# EPA's copy of the 2019 data, 30m across the lower 48. `identify` only resolves a
+# lat/lon point when the spatial reference sits inside the geometry, not passed as
+# its own parameter.
 IMAGESERVER = (
     "https://enviroatlas.epa.gov/arcgis/rest/services/"
     "Supplemental/nlcd_2019_landcover/ImageServer"
 )
 IDENTIFY_URL = f"{IMAGESERVER}/identify"
 
-# Includes ValueError so a 200 with a non-JSON body (resp.json() decode failure)
-# degrades to None like a network error, instead of escaping the handler.
+# ValueError is in here so a 200 that isn't JSON fails like a network error
+# rather than escaping the handler.
 _NET_ERRORS = (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError, ValueError)
 
-# In-process cache of raw NLCD codes (land cover is static → no TTL). Caching
-# codes (not categories) means a mapping change in categorize() needs no re-query.
-# Only successful lookups are cached, so a transient failure is retried next time.
+# Cached forever, land cover doesn't move. Holds raw codes instead of
+# categories, so changing categorize() needs no re-query. Failures aren't cached.
 _cache: dict[str, int] = {}
 
 
@@ -57,12 +47,11 @@ def _params(lat: float, lon: float) -> dict[str, str]:
 
 
 def categorize(code: int | None) -> str | None:
-    """Map an NLCD class code into a fuel category, or None for no-data.
+    """Turn a land-cover code into a fuel category, or None where there is no data.
 
-    Developed intensity is kept SEPARATE on purpose: open-space developed (21,
-    grassy parks/lawns) genuinely burns, while high-intensity developed (24,
-    dense urban / downtown) has almost no wildland fuel. Collapsing them hid
-    that the over-flagged cities (Chicago = 24) are nothing like grassy 21."""
+    The four developed classes stay separate. Parks and lawns really do burn, while
+    downtown has almost nothing to burn. Lumping them together is what made the model
+    call dense cities dangerous."""
     if code is None:
         return None
     if code in (11, 12):
@@ -91,7 +80,7 @@ def categorize(code: int | None) -> str | None:
 
 
 def _parse_value(raw: Any) -> int | None:
-    """ImageServer returns the pixel value as a string ('24') or 'NoData'."""
+    """The server sends the pixel value as a string, or the word NoData."""
     try:
         code = int(float(raw))
     except (TypeError, ValueError):
@@ -104,7 +93,7 @@ def _code_from_response(data: dict[str, Any]) -> int | None:
 
 
 async def land_cover_class(lat: float, lon: float) -> str | None:
-    """Live (async) land-cover category for a point, or None on failure."""
+    """The category at a point, or None if the lookup failed."""
     key = _grid_key(lat, lon)
     if key in _cache:
         return categorize(_cache[key])
@@ -122,9 +111,8 @@ async def land_cover_class(lat: float, lon: float) -> str | None:
 
 
 def land_cover_class_cached(lat: float, lon: float, cache: dict[str, int]) -> str | None:
-    """Sync land-cover lookup backed by a caller-owned dict of raw NLCD codes
-    (persisted to disk by the training-enrichment script). Only successful
-    lookups are cached so a re-run after a transient failure fills the gap."""
+    """Same lookup, but synchronous and against a cache the caller owns and
+    writes to disk. Only successes go in, so a re-run fills any gaps."""
     key = _grid_key(lat, lon)
     if key in cache:
         return categorize(cache[key])

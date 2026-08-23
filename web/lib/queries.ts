@@ -1,7 +1,6 @@
 'use client';
 
-// TanStack Query hooks against the FastAPI backend (or the in-memory mocks).
-// Mirrors app/lib/hooks.ts so screen code reads identically across mobile + web.
+// TanStack Query hooks against the FastAPI backend, or the in-memory mocks.
 
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -9,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import type { FireCollection, LatLon } from './api';
 
-/** Generic value debounce — returns `value` after `ms` of stable input. */
+/** Returns `value` once it has held still for `ms`. */
 export function useDebounced<T>(value: T, ms = 250): T {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -19,15 +18,9 @@ export function useDebounced<T>(value: T, ms = 250): T {
   return v;
 }
 
-/** Compute risk from a fresh weather reading. 5 min cache + full coord
- *  precision (same reason as useWeather).
- *
- *  Inputs are rounded to the same integer precision the Risk Calculator's
- *  sliders use (`Math.round(localTemp)` etc. in RiskScreen.applyLocal).
- *  Status displays them rounded too (`formatTemp(t, unit, 0)`), so this
- *  guarantees the score on Status's Fire Weather card matches the score on
- *  Risk Calculator for the same coords — both surfaces feed the backend the
- *  same numbers the user sees in the UI. */
+/** Score a fresh weather reading. Inputs are rounded to whole numbers so both the
+ *  what-if sliders and Status send the backend exactly the numbers the user can
+ *  see, and their scores agree for the same coordinates. */
 export function useRiskFromWeather(
   weather: { temperature: number; humidity: number; wind_speed: number } | undefined,
   coords?: LatLon,
@@ -35,9 +28,8 @@ export function useRiskFromWeather(
   const tempInt = weather ? Math.round(weather.temperature) : undefined;
   const humidityInt = weather ? Math.round(weather.humidity) : undefined;
   const windInt = weather ? Math.round(weather.wind_speed) : undefined;
-  // season is part of the request (it selects the vegetation multiplier), so it
-  // must be in the key — otherwise a cached score is served across a season
-  // boundary even though the score should change.
+  // Season picks the vegetation multiplier, so it belongs in the key. Leave it out
+  // and a cached score survives a season change that should have moved it.
   const season = currentSeason();
   return useQuery({
     queryKey: ['risk', tempInt, humidityInt, windInt, coords?.lat, coords?.lon, season],
@@ -55,16 +47,8 @@ export function useRiskFromWeather(
   });
 }
 
-/** Short-term forward-looking trajectory for the user's location. Projects
- *  the fire-weather score 6 hours forward using Open-Meteo's hourly
- *  Forecast endpoint and returns one of three tiers (rising / steady /
- *  falling) plus per-frame weather + dominant driver. Drives the Status
- *  trajectory chip and the 2D phase-space arrow.
- *
- *  10 min staleTime — the forecast itself updates hourly upstream and
- *  the operationally interesting signal (next 6 hr) doesn't shift faster
- *  than that. Returns `null` cleanly on upstream failure (matches the
- *  backend's graceful-degrade contract). */
+/** Where the fire-weather score is heading over the next 6 hours. Cached 10
+ *  minutes, since the forecast behind it only updates hourly. */
 export function useTrajectory(loc: LatLon | undefined) {
   return useQuery({
     queryKey: ['trajectory', loc?.lat, loc?.lon],
@@ -74,10 +58,8 @@ export function useTrajectory(loc: LatLon | undefined) {
   });
 }
 
-/** Machine-learning fire-ignition-likelihood index for a location. Backed by
- *  `/ignition`, which derives features from the Open-Meteo archive (lags ~6
- *  days and changes slowly), so a long staleTime is plenty. Returns `null`
- *  cleanly when the model can't score the location. */
+/** The model's ignition-likelihood score. Its features come from the Open-Meteo
+ *  archive, which lags about 6 days and moves slowly, so cache it hard. */
 export function useIgnition(loc: LatLon | undefined) {
   return useQuery({
     queryKey: ['ignition', loc?.lat, loc?.lon],
@@ -87,10 +69,8 @@ export function useIgnition(loc: LatLon | undefined) {
   });
 }
 
-/** Per-state calibration thresholds + metadata for the Status calibration
- *  ladder. Backed by `/risk/calibration` which is essentially static —
- *  values change only when scripts/build_regional_thresholds.py re-runs,
- *  so we treat this as a long-lived session-level cache. */
+/** Per-state thresholds for the calibration ladder. These only change when
+ *  scripts/build_regional_thresholds.py re-runs, so fetch once per session. */
 export function useRiskCalibration() {
   return useQuery({
     queryKey: ['risk-calibration'],
@@ -100,10 +80,9 @@ export function useRiskCalibration() {
   });
 }
 
-/** Current weather for a point. Cache for 5 min (OWM updates every ~10 min)
- *  and use FULL coord precision in the queryKey — the previous .toFixed(2)
- *  silently collided neighboring locations (~1.1 km cell), serving stale
- *  data when you switched between two nearby cities. */
+/** Current weather for a point, cached 5 minutes since OpenWeather updates about
+ *  every 10. Full coordinate precision in the key, because rounding to 2 decimals used to
+ *  merge locations a kilometre apart and serve one city's weather for the other. */
 export function useWeather(loc: LatLon | undefined) {
   return useQuery({
     queryKey: ['weather', loc?.lat, loc?.lon],
@@ -113,11 +92,9 @@ export function useWeather(loc: LatLon | undefined) {
   });
 }
 
-// Health-reporting queries poll on this cadence while their screen is focused.
-// staleTime alone never triggers a refetch, so without an interval a feed that
-// is down when the screen mounts would stop re-reporting; its "feed down" note
-// would then age out of the source-health store (FRESH_MS = 20 min there) and
-// vanish while the feed is still down. Keep every interval below that 20 min.
+// How often the health-reporting queries poll while their screen is focused.
+// staleTime alone never refetches, so a feed down at mount stops re-reporting and
+// its note ages out while it's still down. Keep every interval under FRESH_MS.
 const HEALTH_REFETCH_MS = 15 * 60_000;
 
 /** Satellite fire detections around the user. */
@@ -132,10 +109,9 @@ export function useFiresAroundMe(me: LatLon | undefined, radiusMiles = 250) {
   });
 }
 
-/** Local cluster of detections around a single fire — for fire-detail view.
- *  reportHealth:false — this is a narrow, detail-only request; a transient
- *  failure here must NOT mark FIRMS down in the global feed-health store, which
- *  the primary screens (Map/Status) + the sidebar chip read. */
+/** Detections clustered around one fire, for the fire-detail view. Passes
+ *  reportHealth:false so a blip on this narrow request can't mark FIRMS down for
+ *  the Map, Status and the sidebar chip. */
 export function useFiresNear(point: LatLon | undefined, radiusMiles = 8, days = 7) {
   const bbox = point ? bboxAround(point, radiusMiles) : undefined;
   return useQuery<FireCollection>({
@@ -146,11 +122,9 @@ export function useFiresNear(point: LatLon | undefined, radiusMiles = 8, days = 
   });
 }
 
-/** Named NIFC/Cal Fire incidents near a point — provides management metadata
- *  (containment, personnel, evac statements) that satellite detections lack.
- *  `reportHealth` — pass false from detail/secondary screens (e.g. fire-detail)
- *  so a transient failure on their narrow request doesn't poison the global
- *  NIFC/Cal Fire feed-health the primary screens + sidebar chip read. */
+/** Named NIFC and Cal Fire incidents near a point, carrying the containment,
+ *  personnel and evacuation detail satellite pixels don't have. Pass
+ *  reportHealth:false from detail screens. */
 export function useNamedIncidentsNear(
   point: LatLon | undefined,
   radiusMi = 30,
@@ -158,17 +132,14 @@ export function useNamedIncidentsNear(
   reportHealth = true,
 ) {
   return useQuery({
-    // reportHealth is in the key on purpose: it drives a queryFn side effect
-    // (whether a failure marks NIFC/Cal Fire down in the global store), so a
-    // reportHealth:true and a reportHealth:false caller for the same point must
-    // never dedupe into one shared query — otherwise whichever mounts first
-    // silently decides the reporting behavior for both.
+    // reportHealth is in the key on purpose. It changes what a failure does, so
+    // callers on the same point must not dedupe into one query where whichever
+    // mounted first decides for both.
     queryKey: ['incidents-near', point?.lat, point?.lon, radiusMi, limit, reportHealth],
     queryFn: () => api.incidentsNear(point!.lat, point!.lon, radiusMi, limit, reportHealth),
     enabled: !!point,
     staleTime: 5 * 60_000,
-    // Only the health-reporting callers need to keep re-reporting; detail
-    // screens pass reportHealth:false and don't drive the down-note.
+    // Only the reporting callers need to keep polling.
     refetchInterval: reportHealth ? 5 * 60_000 : false,
   });
 }
@@ -191,13 +162,11 @@ export function useNearbyShelters(me: LatLon | undefined, radiusMi = 50, limit =
     queryFn: () => api.shelters(me!.lat, me!.lon, radiusMi, limit),
     enabled: !!me,
     staleTime: 60 * 60_000,
-    // Re-verify shelter-source health within FRESH_MS even though the data
-    // itself is cached for an hour.
+    // Re-check the sources on the health cadence even though the data itself is
+    // good for an hour.
     refetchInterval: HEALTH_REFETCH_MS,
   });
 }
-
-// ─── Tiny helpers (kept local so this file is self-contained) ───────────────
 
 function currentSeason(): 'winter' | 'spring' | 'summer' | 'fall' {
   const m = new Date().getMonth();
@@ -207,10 +176,9 @@ function currentSeason(): 'winter' | 'spring' | 'summer' | 'fall' {
   return 'fall';
 }
 
-/** Bounding box `lonW,latS,lonE,latN` for `radiusMi` around `me`, formatted as
- *  the API expects. */
+/** Box around a point, as the comma-joined string the API wants. */
 function bboxAround(me: LatLon, radiusMi: number): string {
-  const dLat = radiusMi / 69; // ~69 mi per degree of latitude
+  const dLat = radiusMi / 69; // about 69 miles to a degree of latitude
   const dLon = radiusMi / (69 * Math.cos((me.lat * Math.PI) / 180));
   return [me.lon - dLon, me.lat - dLat, me.lon + dLon, me.lat + dLat]
     .map((n) => n.toFixed(4))

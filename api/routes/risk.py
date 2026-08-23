@@ -25,9 +25,8 @@ Season = Literal["winter", "spring", "summer", "fall"]
 
 
 class RiskRequest(BaseModel):
-    # Bounded to record Earth surface extremes. Besides rejecting garbage, this
-    # keeps out NaN/Infinity (which pydantic accepts by default) and the
-    # t_c = -237.3 singularity in saturation_vapor_pressure_hpa.
+    # Bounded to Earth extremes. This also keeps out NaN and infinity, which
+    # pydantic otherwise accepts, and the saturation_vapor_pressure_hpa singularity.
     temperature: float = Field(..., ge=-90, le=60, description="Celsius")
     humidity: float = Field(..., ge=0, le=100, description="Percent 0-100")
     wind_speed: float = Field(..., ge=0, le=250, description="km/h")
@@ -38,42 +37,31 @@ class RiskRequest(BaseModel):
         description="Optional. If supplied with lon, response includes a regionally calibrated danger level.",
     )
     lon: float | None = Field(None, ge=-180, le=180)
-    # Manual KBDI override (0-800). When supplied the route skips the archive
-    # fetch entirely and uses this value as the drought input. Lets the
-    # what-if calculator drive the same KBDI signal the geolocated path uses.
+    # Sending a KBDI skips the archive fetch, which is how the what-if calculator
+    # drives the same drought signal the located path uses.
     kbdi: float | None = Field(None, ge=0, le=800)
-    # Manual NDVI anomaly override (typically -0.3 to +0.3). When supplied
-    # the route skips the CDSE fetch and uses this value as the vegetation
-    # signal in place of the calendar season multiplier — same path the
-    # geolocated Status flow takes.
+    # Same idea for vegetation, replacing the calendar season multiplier.
     ndvi_anomaly: float | None = Field(None, ge=-1.0, le=1.0)
-    # Optional regional-calibration override. The Risk Calculator surfaces a
-    # state dropdown so users can see how the same numeric inputs would be
-    # bucketed in different states. When set, this short-circuits the
-    # Census reverse-geocode (no coords needed) and uses the state directly
-    # for the regional_level/thresholds lookup.
+    # The what-if state dropdown. Setting it skips the Census lookup and needs no
+    # coordinates.
     state: str | None = Field(None, min_length=2, max_length=2)
 
 
 class RiskFactors(BaseModel):
-    vpd: float       # Vapor Pressure Deficit factor — replaces V1's separate temp + humidity
-    wind: float      # power-law (U/40)^1.5 with 0.2 floor
-    drought: float   # exponential 1 - exp(-days/15) with 0.1 floor
-    season: float    # vegetation/fuel-load proxy multiplier (0.4–1.0)
+    vpd: float       # vapor pressure deficit, temperature and humidity together
+    wind: float
+    drought: float   # from KBDI, or days since rain when there is no KBDI
+    season: float    # vegetation, either measured or guessed from the calendar
 
 
 class RegionalThresholds(BaseModel):
-    # Per-state cutoffs from the calibration JSON (50th / 75th / 90th / 97th
-    # percentile of historical fire-day scores). Lets the frontend orb fill
-    # by regional percentile so the dial and the regional_level pill agree
-    # visually — instead of the dial showing a raw 42% while the pill says
-    # EXTREME, the dial fills to ~97% when the score crosses the EXTREME cut.
+    # Percentiles of this state's historical fire-day scores. The frontend fills its
+    # dial against these, or the dial sits at 42% while the pill reads EXTREME.
     low: float
     moderate: float
     high: float
     extreme: float
-    # Max score observed in this state's fire-day sample; used as the upper
-    # anchor for the EXTREME band so anything above it pegs the dial at 100%.
+    # Highest score in this state's sample, anchoring the top of the dial.
     score_max: float
 
 
@@ -81,26 +69,18 @@ class RiskResponse(BaseModel):
     risk_score: float
     danger_level: Literal["LOW", "MODERATE", "HIGH", "EXTREME"]
     factors: RiskFactors
-    # Calibrated against the user's state (when lat/lon supplied and the state
-    # is in the calibration set). Falls back to None when ungeolocated or
-    # uncalibrated — the global danger_level always remains valid.
+    # Read against the user's own state, null with no coordinates or no fit for
+    # that state. danger_level is always valid.
     regional_level: Literal["LOW", "MODERATE", "HIGH", "EXTREME"] | None = None
     regional_state: str | None = None
     regional_thresholds: RegionalThresholds | None = None
-    # KBDI value (0-800) used for the drought factor when lat/lon is supplied.
-    # None when the request was manual (slider-driven days_since_rain) or when
-    # the upstream weather archive was unreachable.
+    # Null on a manual request or when the archive was unreachable.
     kbdi: float | None = None
-    # Days since the last rainfall >= 1 mm at the user's coords, derived from
-    # the same Open-Meteo precipitation pull that KBDI uses. None when the
-    # request was manual or when the archive was unreachable. Surfaced so the
-    # web Risk Calculator can auto-seed the "days since rain" slider with a
-    # real local value instead of a KBDI/100 proxy.
+    # From the same precipitation pull. The what-if screen seeds its slider off
+    # this instead of guessing from KBDI.
     days_since_rain_observed: int | None = None
-    # NDVI anomaly (current − same-month climatology) used in place of the
-    # calendar-based season multiplier. Negative = drier than normal (raises
-    # risk). Present only when lat/lon was sent and the CDSE satellite
-    # imagery archive returned usable observations.
+    # Vegetation against the same month in past years, negative meaning drier than
+    # normal. Only present when the satellite had a usable look.
     ndvi_anomaly: float | None = None
 
 
@@ -109,21 +89,15 @@ class RiskResponse(BaseModel):
 async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
     kbdi_value: float | None = body.kbdi
     ndvi_anom: float | None = body.ndvi_anomaly
-    # Observed days-since-rain from the archive (when fetched). Stays None on
-    # manual / no-coords requests; surfaced in the response so the Calculator
-    # can auto-seed its Days Since Rain slider with a real value.
     days_observed: int | None = None
-    # Explicit state override (Risk Calculator dropdown) wins over any
-    # geocoded lookup — the user picked a state, honor it.
+    # A state the caller named beats anything we could geocode.
     state_hint: str | None = body.state.upper() if body.state else None
     have_coords = body.lat is not None and body.lon is not None
     needs_kbdi_fetch = kbdi_value is None and have_coords
     needs_ndvi_fetch = ndvi_anom is None and have_coords
 
-    # Fan out every coordinate-dependent upstream call in parallel — they all
-    # hit different services (Open-Meteo, CDSE, Census), and the dominant
-    # cost on a cold cache is the CDSE NDVI fetches (~10–18s). KBDI saves
-    # ~2-4s, Census saves ~100–500ms by running alongside the others.
+    # Fire all the coordinate lookups at once. On a cold cache the satellite NDVI
+    # call dominates at 10 to 18 seconds, so the rest may as well run under it.
     if have_coords:
         month_utc = datetime.now(timezone.utc).month
         task_names: list[str] = []
@@ -131,10 +105,8 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
         if needs_kbdi_fetch:
             task_names.append("kbdi")
             tasks.append(fetch_kbdi_today(body.lat, body.lon))
-            # Lag-free days-since-rain from the Forecast endpoint, fanned out
-            # in parallel with KBDI. The Archive API (used for KBDI) trails
-            # real-time by ~6 days so any rain in the past week is invisible
-            # there; the Forecast endpoint exposes today's actuals.
+            # From the forecast endpoint, not the archive KBDI uses. The archive
+            # trails about 6 days, so rain this week is invisible to it.
             task_names.append("days_since_rain")
             tasks.append(fetch_days_since_rain_today(body.lat, body.lon))
         if needs_ndvi_fetch:
@@ -142,20 +114,15 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
             tasks.append(get_ndvi_current(body.lat, body.lon))
             task_names.append("ndvi_clim")
             tasks.append(get_ndvi_climatology(body.lat, body.lon, month_utc))
-        # Census reverse-geocode is the AUTHORITATIVE state lookup — it
-        # correctly disambiguates border-overlap points (e.g. Reno NV) that
-        # the bbox+centroid heuristic in regional_calibration misclassifies.
-        # Skip it when the caller already supplied an explicit `state` — no
-        # need to spend the round-trip to derive what we were just told.
+        # Census is the real answer for which state a point is in, getting border
+        # towns like Reno right where the bbox guess does not.
         needs_county = state_hint is None
         if needs_county:
             task_names.append("county")
             tasks.append(reverse_geocode(body.lat, body.lon))
 
-        # return_exceptions=True so any single upstream failure degrades to
-        # "that signal is unavailable" instead of 500-ing the whole route. The
-        # fall-backs below all accept a None here: days-since-rain proxy for
-        # KBDI, season multiplier for NDVI, bbox/centroid guess for the state.
+        # One upstream falling over costs that signal, not the whole route. Days
+        # since rain covers for KBDI, the season for NDVI, the bbox for Census.
         raw = await asyncio.gather(*tasks, return_exceptions=True)
         results = {
             name: (None if isinstance(val, Exception) else val)
@@ -165,9 +132,6 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
         kbdi_data = results.get("kbdi")
         if kbdi_data is not None:
             kbdi_value = kbdi_data["kbdi"]
-        # Days-since-rain comes from the SEPARATE Forecast-API fetcher (not
-        # the archive). Reports real wall-clock days from today, including
-        # the previous ~24h that the archive doesn't cover yet.
         days_observed = results.get("days_since_rain")
         current = results.get("ndvi_current")
         clim = results.get("ndvi_clim")
@@ -177,10 +141,8 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
         if county is not None:
             state_hint = county.state
 
-    # When KBDI fetch failed but we computed the days-since-rain from the
-    # same precip pull anyway, prefer that REAL value over whatever the
-    # client sent (Status hardcodes days_since_rain=7 as a neutral
-    # placeholder; the backend's own walk-back is strictly better).
+    # With KBDI gone but a real dry streak known, that beats whatever the client
+    # sent. Status just sends a flat 7 as a placeholder.
     days_for_compute = (
         days_observed if kbdi_value is None and days_observed is not None
         else body.days_since_rain
@@ -198,8 +160,7 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
     reg_level: str | None = None
     reg_state: str | None = None
     reg_thresholds: RegionalThresholds | None = None
-    # Calibrate when we have coordinates OR an explicit state hint (the
-    # Calculator's state-dropdown path supplies the latter without coords).
+    # Coordinates or a named state will do. The dropdown path has no coordinates.
     if have_coords or state_hint is not None:
         reg_level, reg_state = regional_level(
             result.score, body.lat, body.lon, state_hint=state_hint,
@@ -223,5 +184,5 @@ async def post_risk(request: Request, body: RiskRequest) -> RiskResponse:
 
 @router.get("/calibration")
 async def get_calibration() -> dict:
-    """Diagnostic — what calibration is the server currently serving."""
+    """Which calibration this server is running."""
     return calibration_info()

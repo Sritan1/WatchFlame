@@ -1,10 +1,7 @@
 'use client';
 
-// Client-side context for the active aesthetic + risk accent.
-// Defaults to "gov" + "orange" (matches the reference designs). The chosen
-// aesthetic is persisted to localStorage — like units and saved locations —
-// so a refresh keeps it (Settings tells the user "preferences are saved to
-// this browser").
+// Which look the app is wearing, plus the risk accent. Saved to localStorage,
+// since Settings promises preferences stick.
 
 import {
   createContext,
@@ -25,8 +22,7 @@ import {
 
 const STORAGE_KEY = 'ember:aesthetic';
 
-// The risk accent is a single fixed hue today (no UI toggles it). Kept as a
-// named constant so theme.getRisk still receives it explicitly.
+// Nothing in the UI changes the accent, but getRisk still takes one, so name it.
 const ACCENT: AccentHue = 'orange';
 
 interface AestheticState {
@@ -45,13 +41,13 @@ function isAestheticId(v: unknown): v is AestheticId {
 export function AestheticProvider({ children }: { children: ReactNode }) {
   const [aestheticId, setAestheticIdState] = useState<AestheticId>('gov');
 
-  // Hydrate from localStorage after mount (avoids SSR mismatch).
+  // Read storage after mount, or the server and client render differently.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (isAestheticId(raw)) setAestheticIdState(raw);
     } catch {
-      // localStorage may be unavailable (private mode) — keep the default.
+      // No localStorage in private mode, so keep the default.
     }
   }, []);
 

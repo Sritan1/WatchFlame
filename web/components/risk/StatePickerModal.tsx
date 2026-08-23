@@ -1,14 +1,12 @@
 'use client';
 
-// All 17 fitted states + a "Global" option (uses default cutoffs).
-// Replaces the inline 4-button row in the Risk hero with a single dropdown
-// trigger that opens this modal.
+// Every fitted state, plus a Global option that uses the default cutoffs.
 
 import { Modal } from '@/components/ui/Modal';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
 
-/** Mirrors app/components/ui/StatePicker.tsx FITTED_STATES. */
+/** The states with a fitted calibration, in display order. */
 export const FITTED_STATES: { code: string; name: string }[] = [
   { code: 'AZ', name: 'Arizona' },
   { code: 'CA', name: 'California' },
@@ -37,7 +35,7 @@ export function StatePickerModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** null = Global (no per-state calibration). */
+  /** Null means Global, with no per-state calibration. */
   value: string | null;
   onChange: (state: string | null) => void;
 }) {

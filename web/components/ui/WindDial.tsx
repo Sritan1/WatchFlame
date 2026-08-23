@@ -1,7 +1,7 @@
 'use client';
 
-// Small compass with a rotating arrow + tick marks. `angle` is the direction
-// the wind is blowing TOWARD, measured clockwise from north (0° = N).
+// Small compass with a rotating arrow and tick marks. `angle` is the direction the
+// wind is blowing toward, clockwise from north.
 
 import { useEffect, useRef, useState } from 'react';
 
@@ -25,9 +25,9 @@ export function WindDial({
   const cy = size / 2;
   const ringR = size / 2 - 2;
 
-  // Keep the needle rotation continuous across the 0/360 wrap so the CSS
-  // transition always animates the SHORT way (<=180 deg). Feeding the raw angle
-  // straight in makes a 359 -> 1 shift interpolate the long way around backward.
+  // Keep the rotation continuous across the 0/360 wrap, so the transition always
+  // animates the short way. The raw angle sends a small shift near the wrap the
+  // long way around instead.
   const [rot, setRot] = useState(angle);
   const rotRef = useRef(angle);
   useEffect(() => {

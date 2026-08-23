@@ -1,7 +1,7 @@
 'use client';
 
-// Segmented control with glass/glow on the active segment.
-// Reused by Risk (Season vs NDVI) and Safety (Away From Fire vs Nearest Shelter).
+// Segmented control with a glass glow on the active segment, shared by the
+// what-if vegetation toggle and the Safety evacuation modes.
 
 import { useAesthetic } from '@/lib/aesthetic';
 

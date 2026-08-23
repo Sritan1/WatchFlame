@@ -1,10 +1,6 @@
-// API barrel — dispatches every call to either the real FastAPI backend or
-// the in-memory mocks, based on env config. Default is mocks while we build.
-//
-//   NEXT_PUBLIC_API_URL    URL of the FastAPI server (e.g. http://localhost:8000)
-//   NEXT_PUBLIC_USE_MOCKS  'true' to force mocks regardless of API_URL
-//
-// Mocks are used when USE_MOCKS=true OR when API_URL is empty.
+// Sends every call to the real backend or to the in-memory mocks.
+// NEXT_PUBLIC_API_URL points at the FastAPI server and NEXT_PUBLIC_USE_MOCKS
+// forces mocks whatever the URL says. With no API URL set, it falls back to mocks.
 
 import type {
   CalibrationInfo,
@@ -40,19 +36,16 @@ async function request<T>(path: string, init?: RequestInit, reportHealth = true)
     const text = await res.text().catch(() => '');
     throw new Error(`API ${res.status} ${path}: ${text || res.statusText}`);
   }
-  // Per-request source health rides in a response header (see
-  // lib/source-health.ts). Report it as a side effect so screens can show a
-  // "this feed is down" note. Detail/secondary queries pass reportHealth:false
-  // so a transient failure on a narrow request (e.g. the fire-detail cluster)
-  // doesn't poison the global feed-health the primary screens + sidebar read.
-  // Never let a malformed header break the request.
+  // Feed health rides along in a header, see lib/source-health.ts. Detail queries
+  // pass reportHealth:false so a blip on their narrow request can't mark a feed
+  // down app-wide. A malformed header must never fail the request.
   if (reportHealth) {
     const health = res.headers.get('X-Source-Health');
     if (health) {
       try {
         reportSourceHealth(JSON.parse(health));
       } catch {
-        /* ignore malformed health header */
+        /* ignore a malformed header */
       }
     }
   }

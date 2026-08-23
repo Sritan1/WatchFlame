@@ -1,16 +1,8 @@
 'use client';
 
-// "Score Breakdown" — opens from a small text trigger on the Status hero.
-// Walks the user through their headline tier as a TWO-STAGE story, both stages
-// being published lookup matrices (no hidden weights):
-//
-//   Stage 1 — Environmental danger:  Fire Weather (W) ⊗ Ignition Likelihood (I)
-//             via ENV_MATRIX (hazard = likelihood × consequence) → E
-//   Stage 2 — Your headline:         Environment (E) × Active-fire Threat (T)
-//             via COMPOSITE_MATRIX → headline tier
-//
-// Pure presentational. All inputs flow from StatusScreen so the modal reflects
-// exactly what the user sees on the page.
+// The score breakdown, opened from the Status hero. Two steps, both published tables
+// with no hidden weights. Fire weather and ignition combine into one environmental
+// tier, and that meets the active-fire threat. Presentation only.
 
 import {
   CompositeMatrixGrid,
@@ -39,9 +31,8 @@ const TIER_PHRASE: Record<RiskLevel, string> = {
   extreme: 'an extreme-risk day. Be ready to act',
 };
 
-// Distinct categorical dot colors so the three factors are easy to tell apart
-// in the legend. These are just visual keys — NOT risk-tier colors; each
-// factor's actual severity shows on its value card below.
+// Three colors to tell the factors apart. They say nothing about severity, which
+// each card carries itself.
 const FACTOR_DOT = {
   ignition: '#4FA8FF', // blue
   weather: '#E8B339', // amber
@@ -72,21 +63,21 @@ export function CompositeExplainerModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Fire-weather severity tier from the calibrated bucketing. */
+  /** The calibrated fire-weather tier. */
   weatherBucket: RiskLevel | null;
-  /** ML ignition-likelihood tier; null while loading or unavailable. */
+  /** The ignition tier, null while loading or unavailable. */
   ignitionBucket: RiskLevel | null;
-  /** Ignition percentile (0-100) for display; null when unavailable. */
+  /** Its percentile, for display. */
   ignitionPercentile: number | null;
-  /** Stage-1 environmental tier E = ENV_MATRIX[W][I]. */
+  /** The two of them combined. */
   envBucket: RiskLevel | null;
-  /** Threat tier; null when no fire is within THREAT_RADIUS_MI=50. */
+  /** The threat tier, null when nothing is in range. */
   threatBucket: RiskLevel | null;
-  /** Headline tier — already computed upstream. */
+  /** The headline, worked out upstream. */
   compositeBucket: RiskLevel | null;
-  /** Raw fire-weather score for display. */
+  /** The raw score, for display. */
   weatherRawScore: number | null;
-  /** Aggregate threat score (0-1). */
+  /** The aggregate threat. */
   threatSignal: number | null;
   regionalState: string | null;
   regionalThresholds: RegionalThresholds | null;
@@ -101,12 +92,9 @@ export function CompositeExplainerModal({
         The overall risk comes from three factors, each answering a different question.
       </p>
 
-      {/* Plain-language legend of the three factors. Order reads as cause and
-          effect: could a fire start, how intense if it does, and is one already
-          threatening you. Each dot is tinted to that factor's current tier. Names
-          use the aesthetic's display font/weight (so it tracks the user's chosen
-          look) and are enlarged so the legend stands out; the sizes trim on
-          mobile via .app-factor-* (globals.css). */}
+      {/* The order runs cause to effect. Could a fire start, how intense if it does,
+          and is one already threatening you. Each dot is tinted to that factor's
+          current tier. */}
       <div className="app-factor-legend" style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
         <FactorLegendRow
           ae={ae}
@@ -169,7 +157,7 @@ export function CompositeExplainerModal({
         />
       </div>
 
-      {/* Stage 1 — environment */}
+      {/* Stage 1, the environment */}
       <Section ae={ae} title="Step 1: The environment around you">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
           This step combines the fire weather with ignition likelihood. If either one is low, your
@@ -185,7 +173,7 @@ export function CompositeExplainerModal({
         ) : null}
       </Section>
 
-      {/* Stage 2 — headline */}
+      {/* Stage 2, the headline */}
       <Section ae={ae} title="Step 2: Your overall risk level">
         <p style={{ ...textBody(ae), marginBottom: 6 }}>
           Now your environment is weighed against the most serious active fire near you. Your result
@@ -202,7 +190,7 @@ export function CompositeExplainerModal({
   );
 }
 
-// ─── Subcomponents ────────────────────────────────────────────────────────
+// Subcomponents
 
 function FactorLegendRow({
   ae,

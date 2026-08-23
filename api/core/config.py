@@ -1,14 +1,8 @@
-"""Central, security-relevant configuration.
+"""Security-relevant config. CORS origins, environment, upstream secrets, the
+rate-limit budget.
 
-Single source of truth for the knobs that matter at the trust boundary:
-allowed CORS origins, the runtime environment, the required upstream secrets,
-and the rate-limit budget. Per-service cache TTLs stay where they are (they are
-not security-sensitive) — this module deliberately does NOT try to absorb every
-`os.getenv` in the codebase, only the ones that gate the public surface.
-
-`get_settings()` is lazy + cached so it reads the environment AFTER `main.py`
-has called `load_dotenv()`. Field names map case-insensitively to env vars
-(e.g. `allowed_origins` <- `ALLOWED_ORIGINS`).
+get_settings() is lazy and cached so it reads the environment after main.py calls
+load_dotenv(). Field names map to env vars case-insensitively.
 """
 from __future__ import annotations
 
@@ -20,38 +14,35 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
 
-    # dev | prod — drives fail-fast checks and HSTS. Anything other than a
-    # production marker is treated as development (permissive).
+    # Drives the fail-fast checks and HSTS. Anything that isn't a production marker
+    # counts as dev, which is the permissive path.
     environment: str = "dev"
 
-    # Comma-separated allowlist, e.g. "https://app.vercel.app,http://localhost:3000".
-    # "*" is allowed in dev only; rejected at startup in prod.
+    # Comma-separated allowlist. "*" is a dev-only convenience and prod refuses to
+    # start with it.
     allowed_origins: str = "*"
 
-    # Upstream secrets. Optional here so a dev box missing a key can still boot
-    # (the owning service raises lazily when actually called); `startup_problems`
-    # enforces the required ones in prod.
+    # Optional so a dev box missing a key still boots. startup_problems enforces
+    # them in prod.
     nasa_firms_api_key: str | None = None
     openweathermap_api_key: str | None = None
     cdse_client_id: str | None = None
     cdse_client_secret: str | None = None
 
-    # Rate-limit budget (slowapi limit strings). Tiered so the endpoints that
-    # fan out to paid / quota-limited upstreams are capped tighter than the
-    # cheap cached ones.
+    # slowapi limit strings. Routes hitting quota-limited upstreams are capped
+    # tighter than the default.
     rate_limit_enabled: bool = True
-    rate_limit_default: str = "60/minute"      # global per-IP fallback
-    rate_limit_expensive: str = "20/minute"    # /risk /trajectory /weather /geocode /shelters
-    rate_limit_cheap: str = "120/minute"       # /fires /healthz
+    # The fallback every undecorated route gets, /fires included.
+    rate_limit_default: str = "60/minute"
+    # /risk /trajectory /weather /geocode /shelters /ignition
+    rate_limit_expensive: str = "20/minute"
 
-    # Number of trusted reverse proxies in front of the app (Railway = 1). The
-    # rate-limit key is taken this many entries from the RIGHT of X-Forwarded-For
-    # — the IP the trusted proxy appended — so a client-supplied (leftmost) XFF
-    # can't be rotated to dodge the per-IP cap. 0 = use the direct peer.
+    # How many reverse proxies sit in front of us (Railway is 1). The rate-limit key
+    # reads that many entries from the RIGHT of X-Forwarded-For, so a client can't
+    # spoof past the cap. Set 0 to key on the direct peer.
     rate_limit_trusted_proxies: int = 1
 
-    # Hard cap on request body size (bytes) — guards POST /risk against
-    # oversized payloads. 16 KiB is ~100x the largest legitimate body.
+    # Body-size cap in bytes for POST /risk. 16 KiB is about 100x anything real.
     max_request_bytes: int = 16_384
 
     @property
@@ -64,14 +55,13 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        """What to hand the CORS middleware. Empty allowlist falls back to '*'
-        in dev; prod never reaches here with a wildcard (startup refuses it)."""
+        """What to hand the CORS middleware. Empty means '*' in dev. Prod never gets
+        here with a wildcard, startup refuses to boot first."""
         return self.origins_list or ["*"]
 
     def startup_problems(self) -> list[str]:
-        """Fatal misconfigurations for the current environment (empty = OK).
-        Enforced at app startup so a misconfigured prod deploy fails loudly
-        instead of silently serving an open or keyless surface."""
+        """Anything fatal about the current config. A bad prod deploy should die
+        loudly rather than serve an open or keyless API."""
         problems: list[str] = []
         if self.is_prod:
             if not self.origins_list or "*" in self.origins_list:

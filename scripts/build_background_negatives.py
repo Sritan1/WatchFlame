@@ -1,26 +1,12 @@
-"""Route B — background negatives from genuinely non-fire US locations.
+"""Collect quiet days from places that have never had a recorded fire.
 
-Adds label=0 examples at random CONUS points that did NOT have a recorded fire.
-With these, the model finally has examples of "developed/urban/water/barren place
-that doesn't ignite," so it learns those areas fire far less than wildland for the
-SAME weather — fixing the v1 over-flagging of low-fire regions (e.g. Chicago).
+Every fire location is somewhere that burned, so same-location negatives can't teach
+the model that a parking lot doesn't ignite. These can. They stopped it calling a
+cool windy spring day in Chicago dangerous. Points spread over the lower 48 plus
+metro clusters for developed ground. Land cover is checked first because it is free.
+Cache-first and quota-aware, so re-run across days. Writes background_negatives.csv.
 
-Why the existing same-location negatives can't do this: every fire location is, by
-definition, a place that burned, so land_cover there carries no "won't burn" signal.
-Background points break that — many are developed/water with no positive at all.
-
-Sampling: uniform over CONUS (representative land-cover mix) + targeted points around
-major metros (guarantees developed coverage, where the over-flag lives). Land cover is
-looked up first (free); only valid US-land points spend an Open-Meteo weather pull.
-
-Quota-aware + incremental, like the original fire enrichment: weather is cache-first
-and backs off on 429, so re-run across days to accumulate more as quota refreshes.
-
-Output: data/background_negatives.csv — appended into the training set by
-build_ignition_dataset.py.
-
-Usage (re-runnable):
-    python scripts/build_background_negatives.py
+Run with python scripts/build_background_negatives.py
 """
 from __future__ import annotations
 
@@ -53,8 +39,8 @@ CONUS = (24.6, 49.0, -124.6, -67.0)  # lat_min, lat_max, lon_min, lon_max
 
 OUT_PATH = PROJECT_ROOT / "data" / "background_negatives.csv"
 
-# Major US metro centers — targeted points get small random offsets so they land
-# on developed pixels (the classes the over-flag mis-reads).
+# Metro centers. Points near these get a small random nudge so they land on
+# genuinely developed ground.
 CITIES = [
     (40.71, -74.01), (34.05, -118.24), (41.88, -87.63), (29.76, -95.37),
     (33.45, -112.07), (39.95, -75.17), (29.42, -98.49), (32.72, -117.16),
@@ -68,7 +54,8 @@ CITIES = [
 
 
 def candidate_locations(rng: random.Random, n: int) -> list[tuple[float, float]]:
-    """Oversampled candidate points (city-targeted + uniform CONUS)."""
+    """More candidates than we need, split N_CITY/TARGET near cities and the rest
+    spread across the lower 48."""
     lat0, lat1, lon0, lon1 = CONUS
     pts: list[tuple[float, float]] = []
     n_city = int(n * N_CITY / TARGET)
@@ -89,7 +76,7 @@ def main() -> int:
     if LC_CACHE_PATH.exists():
         lc_cache = json.loads(LC_CACHE_PATH.read_text(encoding="utf-8"))
 
-    # Resume: skip locations already in the frozen background CSV.
+    # Pick up where the last run left off.
     done: set[str] = set()
     rows: list[dict] = []
     if OUT_PATH.exists():
@@ -103,9 +90,8 @@ def main() -> int:
         print(f"  already at target ({len(rows):,}); nothing to do.", flush=True)
         return 0
     span = (DATE_MAX - DATE_MIN).days
-    # INTERLEAVED: for each candidate, land cover -> (if valid US land) weather -> row.
-    # Writes the CSV every 25 rows so progress is visible immediately. Oversample
-    # candidates to cover ocean / non-US rejections.
+    # Land cover first, then weather only if the point is real US land. Writes
+    # every 25 rows so progress shows up straight away.
     candidates = candidate_locations(rng, needed * 5)
     print(f"  enriching toward {needed:,} more rows (interleaved; watch "
           f"data/background_negatives.csv)...", flush=True)
@@ -118,7 +104,7 @@ def main() -> int:
         if key in done:
             continue
         lc = land_cover_class_cached(lat, lon, lc_cache)
-        if lc is None:  # ocean / outside-US / no-data — skip before spending a weather pull
+        if lc is None:  # ocean or abroad, so don't spend a weather fetch on it
             skipped += 1
             if skipped % 200 == 0:
                 LC_CACHE_PATH.write_text(json.dumps(lc_cache), encoding="utf-8")
@@ -129,9 +115,9 @@ def main() -> int:
         if not s or any(s.get(c) is None for c in CORE_WEATHER):
             failed += 1
             consec_fail += 1
-            # ~40 misses in a row = Open-Meteo quota hit (individual sparse-window
-            # failures are random, not consecutive). Stop cleanly instead of
-            # grinding ~30s/point through the rest of the candidate list.
+            # Forty misses in a row means the quota is gone. Ordinary failures
+            # come scattered, not back to back. Stop rather than grind through
+            # the rest at half a minute each.
             if consec_fail >= 40:
                 print(f"  stopping: {consec_fail} consecutive weather failures = "
                       f"Open-Meteo quota hit. Re-run after the daily refresh "
