@@ -7,6 +7,7 @@ import { LevelPill } from '@/components/status/LevelPill';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { GridPattern } from '@/components/ui/GridPattern';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { TiltCard } from '@/components/ui/TiltCard';
 import { useAesthetic } from '@/lib/aesthetic';
 import { RISK_LEVELS } from '@/lib/theme';
@@ -155,31 +156,14 @@ export function LocalNdviCard({
           </>
         ) : isLoading ? (
           <>
-            <div
-              style={{
-                marginTop: 16,
-                height: 48,
-                width: 180,
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.04)',
-                animation: 'ember-flicker 1.6s ease-in-out infinite',
-              }}
-            />
-            <div
-              style={{
-                marginTop: 20,
-                height: 10,
-                width: '100%',
-                borderRadius: 99,
-                background: 'rgba(255, 255, 255, 0.04)',
-              }}
-            />
+            <Skeleton width={180} height={48} rounded="md" style={{ marginTop: 16, display: 'block' }} />
+            <Skeleton width="100%" height={10} rounded="full" style={{ marginTop: 20, display: 'block' }} />
             {/* NdviGauge draws labels under the bar, so without this row the card
                 jumps a line taller on load. */}
             <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
-              <div style={{ height: 9, width: 72, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
-              <div style={{ height: 9, width: 48, borderRadius: 4, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <Skeleton width={48} height={9} rounded="sm" />
+              <Skeleton width={72} height={9} rounded="sm" />
+              <Skeleton width={48} height={9} rounded="sm" />
             </div>
             {/* Matches the two-line caption and its divider, so the text doesn't
                 flash in while the number and gauge are still loading. */}
@@ -193,8 +177,8 @@ export function LocalNdviCard({
                 gap: 7,
               }}
             >
-              <div style={{ height: 10, width: '100%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
-              <div style={{ height: 10, width: '62%', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)' }} />
+              <Skeleton width="100%" height={10} rounded="sm" />
+              <Skeleton width="62%" height={10} rounded="sm" />
             </div>
           </>
         ) : (
