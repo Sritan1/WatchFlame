@@ -7,7 +7,7 @@
 pytest>=8.3
 # Pinned, not floating. Ruff adds default rules in minor releases and CI then
 # fails on rules the code never opted into. Bump it after running it locally.
-ruff==0.15.12
+ruff==0.16.5
 pip-audit>=2.7
 pip-tools>=7.4   # pip-compile --generate-hashes for the deploy lock (see SECURITY.md)
 
