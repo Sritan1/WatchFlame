@@ -7,7 +7,7 @@
 
 *Wildfire awareness for any location in the United States.*
 
-[![Live demo](https://img.shields.io/badge/live_demo-online-FF7A3A?style=flat-square)](https://watchflame-wildfire.vercel.app) [![Methodology](https://img.shields.io/badge/docs-methodology-555?style=flat-square)](docs/METHODOLOGY.md) [![Model card](https://img.shields.io/badge/docs-model_card-555?style=flat-square)](docs/IGNITION_MODEL_CARD.md) [![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)](LICENSE)
+[![Live demo](https://img.shields.io/badge/live_demo-online-FF7A3A?style=flat-square)](https://watchflame-wildfire.com) [![Methodology](https://img.shields.io/badge/docs-methodology-555?style=flat-square)](docs/METHODOLOGY.md) [![Model card](https://img.shields.io/badge/docs-model_card-555?style=flat-square)](docs/IGNITION_MODEL_CARD.md) [![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)](LICENSE)
 
 [![Next.js](https://img.shields.io/badge/Next.js_16-000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Python](https://img.shields.io/badge/Python_3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
@@ -17,7 +17,7 @@ Type in a location and WatchFlame shows the current fire risk there, the active 
 
 Wildfire information is scattered, and it usually falls on the reader to interpret the separate pieces: how likely a fire is to start, what is already burning nearby, how dangerous the weather is. Each source shows one signal and leaves you to judge the rest. I built WatchFlame so all of it lives in one place and resolves to a single risk tier, so anyone can know where they stand in a few seconds instead of assembling it themselves.
 
-**▶ Try it live: [watchflame-wildfire.vercel.app](https://watchflame-wildfire.vercel.app)**
+**▶ Try it live: [watchflame-wildfire.com](https://watchflame-wildfire.com)**
 
 ![WatchFlame Status page: the overall wildfire risk orb, a "Heightened Risk" headline, and confidence and trajectory chips](docs/screenshots/hero.png)
 
@@ -199,13 +199,13 @@ The 13 rows are 11 live upstreams, MapTiler tiles, and the offline FPA-FOD datas
 
 # Run Locally
 
-WatchFlame is live at [watchflame-wildfire.vercel.app](https://watchflame-wildfire.vercel.app). These steps are for running it yourself or contributing.
+WatchFlame is live at [watchflame-wildfire.com](https://watchflame-wildfire.com). These steps are for running it yourself or contributing.
 
 The commands below are for macOS and Linux (bash or zsh). Windows differences are noted with the backend steps.
 
 ### Prerequisites
 
-- **Python 3.11+** (developed on 3.14): use the [python.org](https://www.python.org/downloads/) installer, not the Microsoft Store stub.
+- **Python 3.11+** (production runs 3.12, developed on 3.14): use the [python.org](https://www.python.org/downloads/) installer, not the Microsoft Store stub.
 - **Node.js 20.9+** (required by Next.js 16).
 - API keys (all free): [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/api/map_key/), [OpenWeatherMap](https://openweathermap.org/api), and [MapTiler](https://www.maptiler.com/) for the map, with [CDSE](https://dataspace.copernicus.eu/) optional for NDVI.
 
@@ -286,7 +286,7 @@ This is an informational tool, not a substitute for emergency services. **Always
 
 # Credits & License
 
-**Algorithm references.** Fosberg (1978); Goodrick (2002, Fosberg + drought); Keetch & Byram (1968, KBDI); Noble et al. (1980, McArthur); Rothermel (1972); Srock et al. (2018, Hot-Dry-Windy); Tetens (1930).
+**Algorithm references.** Fosberg (1978) · Goodrick (2002, Fosberg with drought) · Keetch & Byram (1968, KBDI) · Rothermel (1972) · Srock et al. (2018, Hot-Dry-Windy) · Tetens (1930).
 
 **Data attribution.** Fire detections: NASA FIRMS (VIIRS/MODIS). Weather: OpenWeatherMap, Open-Meteo. Imagery: ESA Sentinel-2 via Copernicus. Incidents: NIFC WFIGS, Cal Fire. Shelters & declarations: FEMA. Geographies: US Census, OpenStreetMap (© OpenStreetMap contributors, ODbL), NCES. Historical fires: Karen C. Short, *Spatial wildfire occurrence data for the United States, 1992-2015* (FPA-FOD).
 

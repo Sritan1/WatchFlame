@@ -88,7 +88,7 @@ Three factors then adjust the base threat up or down. These are what make the sc
 - The size factor rises with acreage and never fully caps, so a megafire still outranks a merely large fire.
 - Satellite detections from FIRMS do not report acreage, so their size factor stays neutral at 1.0 and distance alone drives the threat.
 - Only fires within 50 miles count, and the cutoff is gradual: a fire's contribution fades between 46 and 50 miles.
-- The final threat sums across every qualifying fire nearby.
+- The final threat comes from the single highest-scoring fire in range, so the headline number and the fire named as its driver can never disagree.
 
 <br>
 
@@ -116,7 +116,7 @@ Two things back the scoring system: local calibration and held-out validation.
 
 The raw 0 to 1 fire-weather score is bucketed into LOW / MODERATE / HIGH / EXTREME, and the boundaries are calibrated per state. Each state's bands are set from the 50th / 75th / 97th percentiles of its own historical fire-day scores, so the same raw score can land at EXTREME in one state and HIGH in another.
 
-17 states are fitted (the West, the Southeast belt, TX, and OK), covering the highest-fire-risk regions. The rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. The state is resolved at request time by the US Census reverse-geocoder, which is accurate even at border points like Reno, NV that a bounding-box heuristic would misclassify. Source data is the FPA-FOD database (~1.88M wildfires, 1992 to 2015), with about 500 fire-days sampled per state (roughly 8,500 across the 17). This per-state sample is separate from the frozen 498-fire benchmark used below.
+17 states are fitted (the West, the Southeast belt, TX, and OK), covering the highest-fire-risk regions. The rest fall back to global cutoffs of 0.3 / 0.6 / 0.8. The state is resolved at request time by the US Census reverse-geocoder, which is accurate even at border points like Reno, NV that a bounding-box heuristic would misclassify. Source data is the FPA-FOD database (~1.88M wildfires, 1992 to 2015), with up to 100 fire-days sampled per state (1,637 across the 17). This per-state sample is separate from the frozen 498-fire benchmark used below.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="charts-dark/regional_thresholds.png"><img src="regional_thresholds.png" alt="Per-state risk-band thresholds. Each fitted state's LOW, MODERATE, HIGH, and EXTREME cutoffs come from its own historical fire-day score percentiles, so the same raw score can map to a different tier by state." width="600"></picture>
 

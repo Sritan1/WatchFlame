@@ -351,7 +351,7 @@ export function SettingsScreen() {
             <strong style={{ color: ae.text, fontWeight: 600 }}>Cal Fire</strong>. Current conditions from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>OpenWeatherMap</strong>, with drought (KBDI) history from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>Open-Meteo</strong>{' '}and live vegetation stress (NDVI) from{' '}
-            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index, based on the Fosberg, Hot-Dry-Windy, and McArthur indices, calibrated per state against historical fire records (<strong style={{ color: ae.text, fontWeight: 600 }}>FPA-FOD</strong>), using{' '}
+            <strong style={{ color: ae.text, fontWeight: 600 }}>Copernicus Sentinel-2</strong>. The risk score is a transparent rule-based fire-weather index, based on the Fosberg index and benchmarked against Hot-Dry-Windy, calibrated per state against historical fire records (<strong style={{ color: ae.text, fontWeight: 600 }}>FPA-FOD</strong>), using{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>US Census</strong>{' '}geographies. The machine-learning ignition model also reads land cover (fuel type) from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>NLCD / EnviroAtlas</strong>. Federal disaster declarations and open shelters from{' '}
             <strong style={{ color: ae.text, fontWeight: 600 }}>FEMA</strong>. Map tiles by{' '}
