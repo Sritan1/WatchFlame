@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 
+from api.core import http
 from api.services import cdse
 
 
@@ -33,7 +34,7 @@ class _StubAsyncClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def post(self, url, data=None):
+    async def post(self, url, data=None, **_kw):
         return _StubResp(self._payload)
 
 
@@ -44,9 +45,7 @@ def _patch(monkeypatch, payload: dict) -> None:
     # Fresh cache and lock so the fetch path runs and we don't cross event loops.
     monkeypatch.setattr(cdse, "_token_cache", {"token": "", "expires_at": 0.0})
     monkeypatch.setattr(cdse, "_token_lock", asyncio.Lock())
-    monkeypatch.setattr(
-        cdse.httpx, "AsyncClient", lambda *a, **k: _StubAsyncClient(payload)
-    )
+    monkeypatch.setattr(http, "client", lambda *a, **k: _StubAsyncClient(payload))
 
 
 def test_token_missing_access_token_returns_none(monkeypatch):

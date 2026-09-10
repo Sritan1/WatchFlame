@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from api.core import http
 from api.core.source_health import SourceUnavailable
 from api.main import app
 
@@ -374,6 +375,38 @@ def test_risk_regional_thresholds_absent_for_unknown_state():
     assert j["regional_thresholds"] is None
 
 
+def test_kbdi_concurrent_callers_make_one_fetch(monkeypatch):
+    """Status asks /risk and /trajectory for the same point at the same moment.
+    Both used to miss the cache together and both pull a year of archive, so the
+    cache only ever helped the next page load."""
+    import asyncio
+
+    from api.services import openmeteo_history as oh
+
+    oh._CACHE.clear()
+    calls = 0
+
+    async def slow_fetch(lat, lon):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.05)  # long enough for the second caller to arrive
+        return {"kbdi": 123.0, "mean_annual_precip_mm": 900.0,
+                "end_date": "2026-09-03", "n_days": 365}
+
+    monkeypatch.setattr(oh, "_fetch_kbdi_today", slow_fetch)
+
+    async def race():
+        return await asyncio.gather(
+            oh.fetch_kbdi_today(37.77, -122.42),
+            oh.fetch_kbdi_today(37.77, -122.42),
+            oh.fetch_kbdi_today(37.77, -122.42),
+        )
+
+    results = asyncio.run(race())
+    assert calls == 1
+    assert all(r["kbdi"] == 123.0 for r in results)  # and everyone got the answer
+
+
 def test_risk_ndvi_partial_failure_falls_back_to_season(monkeypatch):
     """One of the two alone gives no anomaly, so the route falls back to season."""
     async def stub_current(lat, lon):
@@ -475,7 +508,7 @@ def test_geocode_city_raises_on_upstream_error(monkeypatch):
         async def get(self, *a, **k):
             raise _httpx.ConnectError("simulated owm-geocode outage")
 
-    monkeypatch.setattr(owm.httpx, "AsyncClient", lambda *a, **k: _FailingClient())
+    monkeypatch.setattr(http, "client", lambda *a, **k: _FailingClient())
 
     with pytest.raises(HTTPException) as ei:
         asyncio.run(owm.geocode_city("fresno"))
@@ -509,11 +542,11 @@ def test_geocode_city_scopes_to_us(monkeypatch):
         async def __aexit__(self, *exc):
             return False
 
-        async def get(self, url, params=None):
+        async def get(self, url, params=None, **_kw):
             captured["params"] = params
             return _Resp()
 
-    monkeypatch.setattr(owm.httpx, "AsyncClient", lambda *a, **k: _Client())
+    monkeypatch.setattr(http, "client", lambda *a, **k: _Client())
 
     out = asyncio.run(owm.geocode_city("London"))
     assert captured["params"]["q"].endswith(",US")  # query scoped to the US

@@ -281,9 +281,8 @@ button:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 @keyframes hs-draw1     { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes hs-dataflow  { to { stroke-dashoffset: -40; } }
 @keyframes hs-sysblob   { 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(4%,3%) scale(1.1); } }
-@keyframes hs-sweep     { 0%{ transform: translateX(-60%) skewX(-14deg); opacity:0; } 35%{ opacity:.5; } 65%{ opacity:.5; } 100%{ transform: translateX(160%) skewX(-14deg); opacity:0; } }
 @media (prefers-reduced-motion: reduce) {
-  .hs-spin, .hs-spin-rev, .hs-twinkle, .hs-marker-ring, .hs-core-pulse, .hs-halo, .hs-sweep { animation: none !important; }
+  .hs-spin, .hs-spin-rev, .hs-twinkle, .hs-marker-ring, .hs-core-pulse, .hs-halo { animation: none !important; }
 }
 
 /* Containment-bar traveling sheen */

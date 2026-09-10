@@ -13,7 +13,9 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.kbdi import compute_kbdi_series
+from ..core.single_flight import once
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -31,8 +33,16 @@ def _grid_key(lat: float, lon: float) -> str:
 
 
 async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
-    """Today's KBDI for the grid cell around a point, or None if the fetch
-    failed. Comes with the precipitation and window it was computed from."""
+    """Today's KBDI for the grid cell around a point, or None if the fetch failed.
+
+    /risk and /trajectory both want this and Status fires them together, so the
+    call is single-flighted. Without it both miss the cache in the same instant
+    and both pull the same year of archive.
+    """
+    return await once(f"kbdi:{_grid_key(lat, lon)}", lambda: _fetch_kbdi_today(lat, lon))
+
+
+async def _fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
     cache_key = _grid_key(lat, lon)
     now = time.time()
     cached = _CACHE.get(cache_key)
@@ -52,10 +62,9 @@ async def fetch_kbdi_today(lat: float, lon: float) -> dict[str, Any] | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(ARCHIVE_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(ARCHIVE_URL, params=params, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,
@@ -124,6 +133,10 @@ def _recent_ttl() -> int:
 async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
     """How long since it last rained properly here, where 0 means today. None if
     the fetch failed, which callers can show as unknown."""
+    return await once(f"rain:{_grid_key(lat, lon)}", lambda: _fetch_days_since_rain_today(lat, lon))
+
+
+async def _fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
     cache_key = _grid_key(lat, lon)
     now = time.time()
     cached = _RECENT_CACHE.get(cache_key)
@@ -142,10 +155,9 @@ async def fetch_days_since_rain_today(lat: float, lon: float) -> int | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(FORECAST_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(FORECAST_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

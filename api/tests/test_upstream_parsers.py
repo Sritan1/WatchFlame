@@ -11,6 +11,7 @@ import asyncio
 import httpx
 import pytest
 
+from api.core import http
 from api.core.source_health import SourceUnavailable
 from api.services import firms, nifc
 
@@ -37,14 +38,14 @@ class _StubAsyncClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url, params=None):
+    async def get(self, url, params=None, **_kw):
         return _StubResp(self._payload)
 
 
 def _patch_client(monkeypatch, payload: dict) -> None:
     monkeypatch.setattr(nifc, "_CACHE", {"ts": 0.0, "data": []})
     monkeypatch.setattr(
-        nifc.httpx, "AsyncClient", lambda *a, **k: _StubAsyncClient(payload)
+        http, "client", lambda *a, **k: _StubAsyncClient(payload)
     )
 
 
@@ -115,11 +116,11 @@ def test_nifc_non_json_200_degrades_to_outage(monkeypatch):
         async def __aexit__(self, *exc):
             return False
 
-        async def get(self, url, params=None):
+        async def get(self, url, params=None, **_kw):
             return _BadJsonResp()
 
     monkeypatch.setattr(nifc, "_CACHE", {"ts": 0.0, "data": [], "fail_ts": 0.0})
-    monkeypatch.setattr(nifc.httpx, "AsyncClient", lambda *a, **k: _BadJsonClient())
+    monkeypatch.setattr(http, "client", lambda *a, **k: _BadJsonClient())
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(nifc.fetch_all_incidents(force=True))
@@ -156,7 +157,7 @@ def _firms_client(bodies: dict[str, str]):
         async def __aexit__(self, *exc):
             return False
 
-        async def get(self, url):
+        async def get(self, url, **_kw):
             # The source name is the third-from-last path segment.
             source = url.split("/csv/")[1].split("/")[1]
             if source not in bodies:
@@ -178,7 +179,7 @@ def test_firms_non_csv_200_body_reports_down(monkeypatch):
         "VIIRS_NOAA20_NRT": "Invalid MAP_KEY.",
         "VIIRS_SNPP_NRT": "You have exceeded your allocated transaction limit.",
     }
-    monkeypatch.setattr(firms.httpx, "AsyncClient", _firms_client(bodies))
+    monkeypatch.setattr(http, "client", _firms_client(bodies))
     with pytest.raises(SourceUnavailable):
         asyncio.run(firms.fetch_fires_geojson(days=1, bbox="-121,37,-119,40"))
 
@@ -195,7 +196,7 @@ def test_firms_merges_sources_and_dedups_keeping_brightest(monkeypatch):
     # SNPP sees the same fire about 14 m away and brighter.
     snpp = "\n".join([_FIRMS_HEADER, _firms_row(38.0001, -120.0001, 330)])
     monkeypatch.setattr(
-        firms.httpx, "AsyncClient",
+        http, "client",
         _firms_client({"VIIRS_NOAA20_NRT": n20, "VIIRS_SNPP_NRT": snpp}),
     )
     fc = asyncio.run(firms.fetch_fires_geojson(days=1, bbox="-121,37,-119,40"))
@@ -215,7 +216,7 @@ def test_firms_partial_success_is_not_an_outage(monkeypatch):
     firms._FAIL_CACHE.clear()
     n20 = "\n".join([_FIRMS_HEADER, _firms_row(38.0, -120.0, 300)])
     # Only one satellite answers. The fake client fails the other.
-    monkeypatch.setattr(firms.httpx, "AsyncClient", _firms_client({"VIIRS_NOAA20_NRT": n20}))
+    monkeypatch.setattr(http, "client", _firms_client({"VIIRS_NOAA20_NRT": n20}))
     fc = asyncio.run(firms.fetch_fires_geojson(days=1, bbox="-121,37,-119,40"))
     assert len(fc["features"]) == 1
     assert fc["features"][0]["properties"]["brightness"] == 300.0

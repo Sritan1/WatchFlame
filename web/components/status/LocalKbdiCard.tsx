@@ -159,7 +159,7 @@ export function LocalKbdiCard({
               }}
             >
               Keetch-Byram Drought Index, fitted from a year of local weather. Replaces the
-              days-since-rain proxy when your location is known.
+              days-since-rain backup estimate when your location is known.
             </p>
           </>
         ) : isLoading ? (
@@ -212,7 +212,7 @@ export function LocalKbdiCard({
               }}
             >
               Couldn&apos;t reach the Open-Meteo weather archive. The risk score falls back to a
-              days-since-rain proxy when this happens.
+              days-since-rain backup estimate when this happens.
             </p>
           </>
         )}

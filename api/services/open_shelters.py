@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.geo import bbox_around
 from ..core.source_health import SourceUnavailable
 
@@ -231,10 +232,9 @@ async def _fetch_nss_open_shelters(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(NSS_OPEN_SHELTERS_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(NSS_OPEN_SHELTERS_URL, params=params, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
     except (httpx.HTTPError, ValueError) as e:
         # A real outage, so note it and report down.
         logger.warning("FEMA NSS open-shelters query failed: %s", e)

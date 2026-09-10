@@ -143,9 +143,9 @@ How the system fits together, what it's built on, and how it behaves when an ups
 
 The composite math lives in pure, testable functions ([web/lib/composite-risk.ts](web/lib/composite-risk.ts)).
 
-**Graceful degradation.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty or null payload instead of failing the request. Every critical path has a fallback: regional calibration to global cutoffs, NDVI to a calendar season factor, KBDI to a days-since-rain proxy, and open shelters to candidate locations. The Fire-Weather What-If runs with no GPS and no keys at all.
+**Graceful degradation.** When an upstream returns 4xx/5xx/timeout, the route logs once and returns an empty or null payload instead of failing the request. Every critical path has a fallback: regional calibration to global cutoffs, NDVI to a calendar season factor, KBDI to a days-since-rain estimate, and open shelters to candidate locations. The Fire-Weather What-If runs with no GPS and no keys at all.
 
-**Hosting and caching.** The frontend is on Vercel, the FastAPI backend on Railway. A request fans out to its upstreams in parallel and comes back in roughly 200 ms once a location is cached. A fully cold location runs about 10 to 15 seconds, because it waits on a fresh Sentinel-2 vegetation read and the free Copernicus tier limits how fast those calls can go. That read is cached on disk for 7 days, or 30 for the monthly normal, and live fire feeds are held in memory for 5 minutes. FIRMS only refreshes every 1 to 4 hours, so a shorter window would not return anything new.
+**Hosting and caching.** The frontend is on Vercel, the FastAPI backend on Railway. A request fans out to its upstreams in parallel and comes back in roughly 200 ms once a location is cached. A fully cold location runs about 4 to 5 seconds, because it waits on a fresh Sentinel-2 vegetation read and the free Copernicus tier limits how fast those calls can go. That read is cached on disk for 7 days, or 30 for the monthly normal, and live fire feeds are held in memory for 5 minutes. FIRMS only refreshes every 1 to 4 hours, so a shorter window would not return anything new.
 
 <br>
 
@@ -253,7 +253,7 @@ Optional: set `NEXT_PUBLIC_USE_MOCKS=true` to run the entire UI against bundled 
 
 # Testing
 
-The full backend suite is **196 tests**. Run it with:
+The full backend suite is **197 tests**. Run it with:
 
 ```bash
 source .venv/bin/activate

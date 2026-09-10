@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalLayout title="Privacy Policy" lastUpdated="July 17, 2026">
+    <LegalLayout title="Privacy Policy" lastUpdated="September 9, 2026">
       <p>
         WatchFlame is built to need as little of your data as possible. It has{' '}
         <strong>no user accounts</strong>{' '}and sets <strong>no advertising or tracking cookies</strong>.
@@ -44,8 +44,9 @@ export default function PrivacyPage() {
       <p>
         To return local data, your coordinates are passed to the relevant public data providers, such as
         OpenWeatherMap, Open-Meteo, NASA FIRMS, NIFC, CAL FIRE, Copernicus / Sentinel-2, the U.S.
-        Census Bureau, NCES, FEMA, and map tiles via MapTiler / OpenStreetMap. Their own privacy terms
-        govern their handling of that request.
+        Census Bureau, NCES, NLCD / EnviroAtlas, FEMA, the Overpass API for OpenStreetMap shelter
+        data, and map tiles via MapTiler / OpenStreetMap. Their own privacy terms govern their
+        handling of that request.
       </p>
 
       <h2>Cookies &amp; tracking</h2>

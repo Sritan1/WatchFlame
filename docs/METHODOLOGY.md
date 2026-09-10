@@ -32,7 +32,7 @@ A fire needs heat, dryness, wind, and fuel together. Because the factors multipl
 | **VPD** | Vapor pressure deficit from temperature and humidity (Tetens/Magnus) | The dominant driver |
 | **Wind** | Sustained 10-minute speed | Saturates at a 52 km/h plateau (~32 mph), floored at 0.0458 so calm days still register |
 | **Drought** | Keetch-Byram Drought Index (KBDI, 0 to 800) | Soil-moisture deficit from a 365-day precipitation and evapotranspiration window (Open-Meteo). The drought factor is floored at 0.2786 so days after rain still register |
-| **Vegetation** | NDVI anomaly: current greenness minus the 3-year same-month normal over a 1 km buffer (ESA Sentinel-2 via Copernicus) | Below normal raises the multiplier, above normal lowers it. When a cloud-blocked pass leaves NDVI unavailable, it falls back to a calendar season factor (winter 0.40, spring 0.80, summer 1.00, fall 0.90) |
+| **Vegetation** | NDVI anomaly: current greenness minus the 2-year same-month normal over a 1 km buffer (ESA Sentinel-2 via Copernicus) | Below normal raises the multiplier, above normal lowers it. When a cloud-blocked pass leaves NDVI unavailable, it falls back to a calendar season factor (winter 0.40, spring 0.80, summer 1.00, fall 0.90) |
 
 The exponents, saturation scales, and floors live in a `RiskParams` dataclass in [api/core/risk_algorithm.py](../api/core/risk_algorithm.py) and are fitted against historical fires. To see how they are fitted and validated, see [Performance and Validation](#performance-and-validation) below.
 

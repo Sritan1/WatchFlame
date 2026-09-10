@@ -13,8 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
+from ..core import http
 from ..core.source_health import SourceUnavailable
 
 OPENFEMA_URL = (
@@ -114,10 +113,9 @@ async def fetch_active_for_county(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(OPENFEMA_URL, params=params)
-            resp.raise_for_status()
-            payload = resp.json()
+        resp = await http.get(OPENFEMA_URL, params=params, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
     except Exception as e:
         # A real outage. Never cache the empty result as "nothing declared".
         _FAIL_CACHE[cache_key] = now

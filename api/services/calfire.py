@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.parse import safe_float
 from ..core.source_health import SourceUnavailable
 
@@ -59,16 +60,16 @@ async def fetch_active_incidents(force: bool = False) -> list[CalFireIncident]:
 
     headers = {"User-Agent": "wildfire-app/0.2 (portfolio)", "Accept": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(
-                CALFIRE_URL,
-                params={"inactive": "false"},
-                headers=headers,
-            )
-            resp.raise_for_status()
-            # A Cloudflare or maintenance page arrives as a 200 full of HTML, which
-            # raises here. That is an outage, not a crash.
-            data = resp.json()
+        resp = await http.get(
+            CALFIRE_URL,
+            params={"inactive": "false"},
+            headers=headers,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        # A Cloudflare or maintenance page arrives as a 200 full of HTML, which
+        # raises here. That is an outage, not a crash.
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

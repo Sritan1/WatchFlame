@@ -13,6 +13,7 @@ import time
 import httpx
 import pytest
 
+from api.core import http
 from api.core.source_health import SourceUnavailable
 from api.services import calfire, nces, nifc, open_shelters, overpass
 
@@ -56,9 +57,9 @@ class _FlipClient:
         return await self._call()
 
 
-def _patch(monkeypatch, mod, calls, mode, payload):
+def _patch(monkeypatch, calls, mode, payload):
     monkeypatch.setattr(
-        mod.httpx, "AsyncClient", lambda *a, **k: _FlipClient(calls, mode, payload)
+        http, "client", lambda *a, **k: _FlipClient(calls, mode, payload)
     )
 
 
@@ -67,7 +68,7 @@ def _patch(monkeypatch, mod, calls, mode, payload):
 def test_nifc_outage_raises_and_backs_off(monkeypatch):
     nifc._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
     calls: list = []
-    _patch(monkeypatch, nifc, calls, {"fail": True}, {})
+    _patch(monkeypatch, calls, {"fail": True}, {})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(nifc.fetch_all_incidents())
@@ -81,7 +82,7 @@ def test_nifc_recovers_after_fail_ttl(monkeypatch):
     nifc._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
     calls: list = []
     mode = {"fail": True}
-    _patch(monkeypatch, nifc, calls, mode, {"features": []})
+    _patch(monkeypatch, calls, mode, {"features": []})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(nifc.fetch_all_incidents())
@@ -97,7 +98,7 @@ def test_nifc_recovers_after_fail_ttl(monkeypatch):
 def test_calfire_outage_raises_and_backs_off(monkeypatch):
     calfire._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
     calls: list = []
-    _patch(monkeypatch, calfire, calls, {"fail": True}, [])
+    _patch(monkeypatch, calls, {"fail": True}, [])
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(calfire.fetch_active_incidents())
@@ -112,7 +113,7 @@ def test_calfire_non_list_body_raises(monkeypatch):
     a silently-empty feed."""
     calfire._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
     calls: list = []
-    _patch(monkeypatch, calfire, calls, {"fail": False}, {"error": "maintenance"})
+    _patch(monkeypatch, calls, {"fail": False}, {"error": "maintenance"})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(calfire.fetch_active_incidents())
@@ -123,7 +124,7 @@ def test_calfire_skips_non_dict_rows(monkeypatch):
     calfire._CACHE.update(ts=0.0, data=[], fail_ts=0.0)
     calls: list = []
     good = {"Latitude": 37.5, "Longitude": -120.0, "Name": "Test Fire"}
-    _patch(monkeypatch, calfire, calls, {"fail": False}, [good, None, "junk"])
+    _patch(monkeypatch, calls, {"fail": False}, [good, None, "junk"])
 
     rows = asyncio.run(calfire.fetch_active_incidents())
     assert len(rows) == 1
@@ -138,7 +139,7 @@ def test_overpass_outage_raises_and_backs_off(monkeypatch):
     overpass._CACHE.clear()
     overpass._FAIL_CACHE.clear()
     calls: list = []
-    _patch(monkeypatch, overpass, calls, {"fail": True}, {})
+    _patch(monkeypatch, calls, {"fail": True}, {})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(overpass.fetch_shelters(38.0, -120.0))
@@ -167,7 +168,7 @@ def test_overpass_serves_stale_cache_on_failure(monkeypatch):
             }
         ]
     }
-    _patch(monkeypatch, overpass, calls, mode, payload)
+    _patch(monkeypatch, calls, mode, payload)
 
     # Warm the cache.
     first = asyncio.run(overpass.fetch_shelters(38.0, -120.0))
@@ -195,7 +196,7 @@ def test_nces_outage_raises_and_backs_off(monkeypatch):
     nces._CACHE.clear()
     nces._FAIL_CACHE.clear()
     calls: list = []
-    _patch(monkeypatch, nces, calls, {"fail": True}, {})
+    _patch(monkeypatch, calls, {"fail": True}, {})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(nces.fetch_schools(38.0, -120.0))
@@ -212,7 +213,7 @@ def test_open_shelters_outage_raises_and_backs_off(monkeypatch):
     open_shelters._CACHE.clear()
     open_shelters._FAIL_CACHE.clear()
     calls: list = []
-    _patch(monkeypatch, open_shelters, calls, {"fail": True}, {})
+    _patch(monkeypatch, calls, {"fail": True}, {})
 
     with pytest.raises(SourceUnavailable):
         asyncio.run(open_shelters.fetch_open_shelters(38.0, -120.0))

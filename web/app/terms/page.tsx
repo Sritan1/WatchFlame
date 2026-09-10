@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalLayout title="Terms of Use" lastUpdated="July 17, 2026">
+    <LegalLayout title="Terms of Use" lastUpdated="September 9, 2026">
       <div className="legal-callout">
         <strong>WatchFlame is an informational tool, not an emergency service.</strong>{' '}It is not a
         substitute for official warnings from the National Weather Service, CAL FIRE, your local

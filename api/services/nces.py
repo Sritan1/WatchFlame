@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.geo import bbox_around, in_us
 from ..core.source_health import SourceUnavailable
 
@@ -79,10 +80,9 @@ async def fetch_schools(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(NCES_FEATURESERVER, params=params)
-            resp.raise_for_status()
-            payload = resp.json()
+        resp = await http.get(NCES_FEATURESERVER, params=params, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

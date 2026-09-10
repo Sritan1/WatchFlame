@@ -17,7 +17,11 @@ import httpx
 import numpy as np
 import pandas as pd
 
+import asyncio
+
+from ..core import http
 from ..core.openmeteo import summarize_window_with_kbdi
+from ..core.single_flight import once
 from ..core.validation import doy_to_season
 from .landcover import land_cover_class
 
@@ -74,6 +78,33 @@ def _load_artifact() -> dict[str, Any] | None:
     return _artifact
 
 
+async def warm_model() -> None:
+    """Load the model and push one row through it, off the event loop.
+
+    joblib's load costs about 2 seconds and scikit-learn's first predict another
+    2, both of them synchronous. Paying that inside the first request blocks the
+    whole loop, so every other call on the page waits behind it. Later predicts
+    run in single-digit milliseconds. Called from the app lifespan.
+    """
+    def _warm() -> None:
+        art = _load_artifact()
+        if art is None:
+            return
+        # Built from the model's own feature list so it cannot drift out of sync.
+        row: dict[str, Any] = dict.fromkeys(art["features"], 0.0)
+        row.update({
+            "temperature_c": 20.0, "humidity_pct": 40.0, "wind_kph": 10.0,
+            "days_since_rain": 5, "kbdi": 300.0,
+            "season": "fall", "month": 9, "land_cover": "unknown",
+        })
+        score_features(row)
+
+    try:
+        await asyncio.to_thread(_warm)
+    except Exception as e:  # noqa: BLE001 - warming is best effort, never fatal
+        print(f"[ignition] model warm-up skipped ({type(e).__name__}: {e})")
+
+
 def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
     """Score one feature dict, no network. VPD and land cover default when absent,
     but the caller has to supply season and month."""
@@ -104,6 +135,13 @@ def score_features(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
+    """Single-flighted so two callers for one cell make one archive request. The
+    window is deliberately not shared with openmeteo_history, which rounds to 2
+    decimals over 365 days where training used 3 over 366."""
+    return await once(f"ign-window:{round(lat, 3)}|{round(lon, 3)}", lambda: _fetch_window_uncached(lat, lon))
+
+
+async def _fetch_window_uncached(lat: float, lon: float) -> dict[str, Any] | None:
     """Fetch the daily weather window for a location. The span and the coordinate
     rounding both copy training. Get either wrong and the served KBDI comes from a
     different window or grid cell than every row the model learned from."""
@@ -119,10 +157,9 @@ async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
         "timezone": "auto",
     }
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(ARCHIVE_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(ARCHIVE_URL, params=params, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,
@@ -143,7 +180,10 @@ async def _fetch_window(lat: float, lon: float) -> dict[str, Any] | None:
 
 async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None:
     """The ignition index for a location, or None if anything went wrong."""
-    if _load_artifact() is None:
+    # Off the loop like the scoring below. Warm it is a dict lookup, but if the
+    # lifespan warm-up did not run this is the joblib load, and doing that here
+    # would stall every other request on the page.
+    if await asyncio.to_thread(_load_artifact) is None:
         return None
     key = _grid_key(lat, lon)
     now = time.time()
@@ -167,7 +207,10 @@ async def ignition_for_location(lat: float, lon: float) -> dict[str, Any] | None
             doy = target.timetuple().tm_yday
             # A failed lookup becomes "unknown" inside score_features.
             land_cover = await land_cover_class(lat, lon) or "unknown"
-            scored = score_features({
+            # Off the loop. Warm it is single-digit milliseconds, but an unwarmed
+            # first predict costs about two seconds and would stall every other
+            # request on the page behind it.
+            scored = await asyncio.to_thread(score_features, {
                 "temperature_c": s["temperature_c"],
                 "humidity_pct": s["humidity_pct"],
                 "wind_kph": s["wind_kph"],

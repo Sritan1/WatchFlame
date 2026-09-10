@@ -18,7 +18,9 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from .core.config import get_settings  # noqa: E402  (must come after load_dotenv)
 from .core.logging_setup import configure_logging  # noqa: E402
+from .core.http import close_all  # noqa: E402
 from .core.rate_limit import limiter  # noqa: E402
+from .services.ignition import warm_model  # noqa: E402
 from .routes import (  # noqa: E402
     disasters,
     fires,
@@ -146,7 +148,15 @@ async def lifespan(app: FastAPI):
         msg = "Insecure configuration:\n  - " + "\n  - ".join(problems)
         logger.error(msg)
         raise RuntimeError(msg)
+    # Load the ignition model and run one row through it before serving. Both are
+    # synchronous and cost a couple of seconds each the first time, so paying it
+    # here keeps it off the first visitor's page, where it blocked every other
+    # request on the screen.
+    await warm_model()
     yield
+    # Close the pooled HTTP clients, or a redeploy leaves them dangling and
+    # httpx complains about it on the way out.
+    await close_all()
 
 
 app = FastAPI(

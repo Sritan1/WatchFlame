@@ -5,6 +5,8 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
+from ..core import http
+
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
@@ -32,10 +34,9 @@ async def geocode_city(query: str, limit: int = 5) -> list[dict[str, Any]]:
         q = f"{q},US"
     params = {"q": q, "limit": int(limit), "appid": _api_key()}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError, ValueError) as e:
         # ValueError catches a 200 that isn't JSON at all.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")
@@ -80,10 +81,9 @@ async def fetch_current_weather(lat: float, lon: float) -> dict[str, Any]:
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "appid": _api_key(), "units": "metric"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

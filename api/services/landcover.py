@@ -13,6 +13,9 @@ from typing import Any
 
 import httpx
 
+from ..core import http
+from ..core.single_flight import once
+
 # EPA's copy of the 2019 data, 30m across the lower 48. `identify` only resolves a
 # lat/lon point when the spatial reference sits inside the geometry, not passed as
 # its own parameter.
@@ -93,15 +96,19 @@ def _code_from_response(data: dict[str, Any]) -> int | None:
 
 
 async def land_cover_class(lat: float, lon: float) -> str | None:
-    """The category at a point, or None if the lookup failed."""
+    """The category at a point, or None if the lookup failed. Single-flighted so
+    concurrent callers for one cell make one lookup."""
+    return await once(f"landcover:{_grid_key(lat, lon)}", lambda: _land_cover_class(lat, lon))
+
+
+async def _land_cover_class(lat: float, lon: float) -> str | None:
     key = _grid_key(lat, lon)
     if key in _cache:
         return categorize(_cache[key])
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(IDENTIFY_URL, params=_params(lat, lon))
-            resp.raise_for_status()
-            code = _code_from_response(resp.json())
+        resp = await http.get(IDENTIFY_URL, params=_params(lat, lon), timeout=15)
+        resp.raise_for_status()
+        code = _code_from_response(resp.json())
     except _NET_ERRORS as e:
         print(f"[landcover] upstream {type(e).__name__} for {lat},{lon}; returning None")
         return None

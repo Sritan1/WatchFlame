@@ -444,7 +444,7 @@ export function SettingsScreen() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {(['FIRMS', 'NIFC', 'CAL FIRE', 'OWM', 'OPEN-METEO', 'CDSE', 'CENSUS', 'FEMA', 'OSM', 'NCES'] as const).map(
+            {(['FIRMS', 'NIFC', 'CAL FIRE', 'OWM', 'OPEN-METEO', 'CDSE', 'CENSUS', 'NLCD', 'FEMA', 'OSM', 'NCES'] as const).map(
               (s, i, arr) => (
                 <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span

@@ -12,6 +12,7 @@ import time
 import httpx
 import pytest
 
+from api.core import http
 from api.core.source_health import SourceUnavailable
 from api.services import census, firms, openfema
 
@@ -41,7 +42,7 @@ class _CountingClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url, params=None):
+    async def get(self, url, params=None, **_kw):
         self._calls.append(1)
         if self._mode["fail"]:
             raise RuntimeError("simulated upstream outage")
@@ -68,7 +69,7 @@ def _patch(monkeypatch, mod, calls, mode, payload):
     mod._CACHE.clear()
     mod._FAIL_CACHE.clear()
     monkeypatch.setattr(
-        mod.httpx, "AsyncClient", lambda *a, **k: _CountingClient(calls, mode, payload)
+        http, "client", lambda *a, **k: _CountingClient(calls, mode, payload)
     )
 
 
@@ -138,11 +139,11 @@ def test_firms_negative_cache_bounds_upstream_calls(monkeypatch):
         async def __aexit__(self, *exc):
             return False
 
-        async def get(self, url):
+        async def get(self, url, **_kw):
             calls.append(1)
             raise httpx.ConnectError("simulated firms outage")
 
-    monkeypatch.setattr(firms.httpx, "AsyncClient", lambda *a, **k: _FailingClient())
+    monkeypatch.setattr(http, "client", lambda *a, **k: _FailingClient())
 
     bbox = "-121,37,-120,38"
     with pytest.raises(SourceUnavailable):

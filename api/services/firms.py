@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.parse import safe_float
 from ..core.source_health import SourceUnavailable
 
@@ -107,10 +108,9 @@ async def _fetch_source(source: str, area: str, days: int) -> list[dict[str, Any
     # backstop.
     url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{_api_key()}/{source}/{area}/{days}"
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            text = resp.text
+        resp = await http.get(url, timeout=30)
+        resp.raise_for_status()
+        text = resp.text
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
         # FIRMS is flaky, and quota bursts come back as 400 rather than 429.
         status = getattr(getattr(e, "response", None), "status_code", "n/a")

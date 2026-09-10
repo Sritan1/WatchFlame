@@ -12,8 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
+from ..core import http
 from ..core.source_health import SourceUnavailable
 
 CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
@@ -85,10 +84,9 @@ async def reverse_geocode(lat: float, lon: float) -> CountyInfo | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(CENSUS_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(CENSUS_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
     except Exception as e:
         # A real outage. Say down, don't pretend the user is abroad.
         _FAIL_CACHE[cache_key] = now

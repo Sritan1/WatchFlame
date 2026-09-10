@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from ..core import http
+
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
 # How far ahead the trajectory looks.
@@ -59,10 +61,9 @@ async def fetch_forecast_hourly(lat: float, lon: float) -> dict[str, Any] | None
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(FORECAST_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await http.get(FORECAST_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

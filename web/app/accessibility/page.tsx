@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function AccessibilityPage() {
   return (
-    <LegalLayout title="Accessibility Statement" lastUpdated="June 17, 2026">
+    <LegalLayout title="Accessibility Statement" lastUpdated="September 9, 2026">
       <p>
         WatchFlame aims to be usable by everyone, and we work toward conformance with the{' '}
         <a

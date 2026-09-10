@@ -16,12 +16,18 @@ from typing import Any
 
 import httpx
 
+from ..core import http
+
 _AUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 _STATISTICS_URL_PATH = "/api/v1/statistics"
 
 # The free tier throttles hard. About 36 calls spaced 1.2s apart before the 429s
-# start, so the real budget is under one a second. 2.5s stays clear of it.
-_MIN_REQUEST_INTERVAL_S = float(os.getenv("CDSE_MIN_REQUEST_INTERVAL_S", "2.5"))
+# start, so the real budget is under one a second. Copernicus limits requests per
+# minute and processing units per minute separately, and blowing either returns a
+# 429. 1.5s buys about a second per call on a cold location, at the cost of most of
+# the margin that 2.5s left. Override with CDSE_MIN_REQUEST_INTERVAL_S if the 429s
+# come back.
+_MIN_REQUEST_INTERVAL_S = float(os.getenv("CDSE_MIN_REQUEST_INTERVAL_S", "1.5"))
 _MAX_RETRIES_429 = int(os.getenv("CDSE_MAX_RETRIES_429", "4"))
 
 # A line per request, so a long climatology run doesn't look like a hang.
@@ -112,17 +118,17 @@ async def _get_token() -> str | None:
             return str(cached)
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    _AUTH_URL,
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": _client_id(),
-                        "client_secret": _client_secret(),
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json()
+            resp = await http.post(
+                _AUTH_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": _client_id(),
+                    "client_secret": _client_secret(),
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            body = resp.json()
             # Parse in here too. Some gateways hand back an error object
             # with a 200.
             token = body["access_token"]
@@ -211,10 +217,9 @@ async def _post_statistics(payload: dict[str, Any]) -> dict[str, Any] | None:
         if _VERBOSE:
             print(f"[cdse] POST statistics (attempt {attempt + 1}/{_MAX_RETRIES_429 + 1})")
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                return resp.json()
+            resp = await http.post(url, json=payload, headers=headers, timeout=60)
+            resp.raise_for_status()
+            return resp.json()
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if status == 429 and attempt < _MAX_RETRIES_429:

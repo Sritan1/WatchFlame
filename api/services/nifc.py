@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.parse import safe_float, safe_int
 from ..core.source_health import SourceUnavailable
 
@@ -76,10 +77,9 @@ async def fetch_all_incidents(force: bool = False) -> list[NifcIncident]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(WFIGS_URL, params=params)
-            resp.raise_for_status()
-            payload = resp.json()
+        resp = await http.get(WFIGS_URL, params=params, timeout=30)
+        resp.raise_for_status()
+        payload = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

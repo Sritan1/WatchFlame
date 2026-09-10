@@ -202,8 +202,8 @@ export function LocalNdviCard({
                 lineHeight: 1.5,
               }}
             >
-              Heavy cloud cover, outside Sentinel-2 coverage, or upstream throttling. The score
-              falls back to a calendar-season multiplier when this happens.
+              Heavy cloud cover, outside Sentinel-2 coverage, or the imagery service is briefly
+              unavailable. The score falls back to a seasonal backup estimate when this happens.
             </p>
           </>
         )}

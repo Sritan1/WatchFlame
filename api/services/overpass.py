@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from ..core import http
 from ..core.geo import in_us
 from ..core.source_health import SourceUnavailable
 
@@ -147,10 +148,9 @@ out body 600;
         "Accept": "application/json",
     }
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(OVERPASS_URL, data={"data": query}, headers=headers)
-            resp.raise_for_status()
-            payload = resp.json()
+        resp = await http.post(OVERPASS_URL, data={"data": query}, headers=headers, timeout=30)
+        resp.raise_for_status()
+        payload = resp.json()
     except (
         httpx.HTTPStatusError,
         httpx.TimeoutException,

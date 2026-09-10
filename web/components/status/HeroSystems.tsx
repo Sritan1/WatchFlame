@@ -1054,11 +1054,6 @@ export function IntelligenceSystem({
 
         <IgnitionCoreCard data={ignition.data} isLoading={ignition.isLoading} isError={ignition.isError} onRetry={ignition.onRetry} />
       </div>
-
-      {/* unifying light sweep across all three modules */}
-      <div aria-hidden className="hs-sweep" style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none', overflow: 'hidden', borderRadius: 'inherit' }}>
-        <div style={{ position: 'absolute', top: '-10%', bottom: '-10%', width: '46%', left: 0, mixBlendMode: 'screen', background: `linear-gradient(90deg, transparent, rgba(${coreTone.glow}, 0.07), transparent)`, animation: 'hs-sweep 12s ease-in-out infinite 2s' }} />
-      </div>
     </div>
   );
 }
