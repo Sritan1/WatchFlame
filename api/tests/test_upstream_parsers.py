@@ -186,8 +186,7 @@ def test_firms_non_csv_200_body_reports_down(monkeypatch):
 
 def test_firms_merges_sources_and_dedups_keeping_brightest(monkeypatch):
     """The two satellites merge, and a fire both of them saw collapses into one
-    feature. The brighter pixel wins so the brightest-first cap downstream still
-    surfaces the strongest detection."""
+    feature. The brighter pixel wins, since it is the stronger reading of the same fire."""
     monkeypatch.setenv("NASA_FIRMS_API_KEY", "test-key")
     monkeypatch.setenv("FIRMS_SOURCES", "VIIRS_NOAA20_NRT,VIIRS_SNPP_NRT")
     firms._CACHE.clear()

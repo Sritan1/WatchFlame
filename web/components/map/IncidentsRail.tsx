@@ -25,9 +25,12 @@ import { formatDistance, useUnits } from '@/lib/use-units';
  *  neither outranks the other. */
 export type RailTab = 'incidents' | 'hotspots';
 
+const SAT_SOURCE_LINE = 'NASA FIRMS · last 24h · may include controlled burns';
+
 export function IncidentsRail({
   fires,
   satellites,
+  satelliteTotal = 0,
   selection,
   onSelect,
   locationLabel,
@@ -47,6 +50,8 @@ export function IncidentsRail({
   fires: NamedIncident[];
   /** The satellite detections on the map, also browsable as cards here. */
   satellites: FireFeature[];
+  /** How many detections the feed returned before the map capped them. */
+  satelliteTotal?: number;
   selection: MapSelection | null;
   onSelect: (sel: MapSelection | null) => void;
   locationLabel: string;
@@ -114,8 +119,13 @@ export function IncidentsRail({
     const note = firmsNote(health);
     if (note) return note;
     if (satellites.length === 0) return 'No satellite detections within range';
-    return 'NASA FIRMS · last 24h · may include controlled burns';
+    return SAT_SOURCE_LINE;
   })();
+  // Only under the normal source line, so it never sits beside a loading or outage message.
+  const satCapNote =
+    tab === 'hotspots' && railSubtitle === SAT_SOURCE_LINE && satelliteTotal > satellites.length
+      ? `Showing the nearest ${satellites.length.toLocaleString('en-US')} of ${satelliteTotal.toLocaleString('en-US')}`
+      : null;
 
   // Scroll the selected card into view, so a marker click brings it into focus.
   // Re-runs when the list arrives too, because a selection made while the feed was
@@ -350,6 +360,23 @@ export function IncidentsRail({
           </svg>
           <span style={{ minWidth: 0 }}>{railSubtitle}</span>
         </div>
+        {satCapNote ? (
+          // Indented past the pin so it lines up with the text above.
+          <div
+            style={{
+              marginTop: 4,
+              paddingLeft: 17,
+              fontFamily: ae.fontMono,
+              fontSize: 9.5,
+              color: ae.textMute,
+              letterSpacing: '0.06em',
+              textTransform: ae.chipUpper ? 'uppercase' : 'none',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {satCapNote}
+          </div>
+        ) : null}
       </div>
 
       {/* List */}

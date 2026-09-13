@@ -13,6 +13,7 @@ import { IncidentsRail, type RailTab } from '@/components/map/IncidentsRail';
 import type { MapSelection } from '@/components/map/MapImpl';
 import { severityOf } from '@/lib/severity';
 import { useAesthetic } from '@/lib/aesthetic';
+import { distanceMiles } from '@/lib/composite-risk';
 import { matchIncidentByFemaTitle } from '@/lib/fema-match';
 import { useFiresAroundMe, useNamedIncidentsNear } from '@/lib/queries';
 import type { RiskLevel } from '@/lib/theme';
@@ -58,14 +59,15 @@ export function MapScreen() {
   const incidentsQ = useNamedIncidentsNear(loc.coords, INCIDENT_RADIUS_MI, INCIDENT_LIMIT);
   const firesQ = useFiresAroundMe(loc.coords, 250); // satellite, last 24h
   const fires = useMemo(() => incidentsQ.data ?? [], [incidentsQ.data]);
-  // Keep the brightest, up to the cap.
+  // Keep the nearest, up to the cap.
+  const satelliteTotal = firesQ.data?.features.length ?? 0;
   const satellites = useMemo(() => {
     const all = firesQ.data?.features ?? [];
     if (all.length <= MAX_FIRMS_MARKERS) return all;
-    return [...all]
-      .sort((a, b) => (b.properties.brightness ?? 0) - (a.properties.brightness ?? 0))
-      .slice(0, MAX_FIRMS_MARKERS);
-  }, [firesQ.data]);
+    const dist = (f: (typeof all)[number]) =>
+      distanceMiles(loc.coords, { lat: f.properties.lat, lon: f.properties.lon });
+    return [...all].sort((a, b) => dist(a) - dist(b)).slice(0, MAX_FIRMS_MARKERS);
+  }, [firesQ.data, loc.coords]);
   const searchParams = useSearchParams();
 
   const [selection, setSelection] = useState<MapSelection | null>(null);
@@ -311,6 +313,7 @@ export function MapScreen() {
           firesQ.refetch();
         }}
         satellites={satellites}
+        satelliteTotal={satelliteTotal}
         satellitesLoading={firesQ.isLoading}
         tab={railTab}
         onTabChange={changeRailTab}
