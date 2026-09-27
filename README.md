@@ -15,7 +15,7 @@
 
 Type in a location and WatchFlame shows the current fire risk there, the active fires nearby, and the closest shelters with a suggested direction to head. It pulls live satellite, weather, and vegetation data to do this. The scoring system is fitted to 24 years of federal fire records and tested on fires held out from the fitting.
 
-Wildfire information is scattered, and it usually falls on the reader to interpret the separate pieces: how likely a fire is to start, what is already burning nearby, how dangerous the weather is. Each source shows one signal and leaves you to judge the rest. I built WatchFlame so all of it lives in one place and resolves to a single risk tier, so anyone can know where they stand in a few seconds instead of assembling it themselves.
+Checking wildfire risk usually means visiting several sites, comparing different factors and conditions, and working out on your own how they fit together. WatchFlame brings all of that into one place and gives a single risk level for your location.
 
 **▶ Try it live: [watchflame-wildfire.com](https://watchflame-wildfire.com)**
 
