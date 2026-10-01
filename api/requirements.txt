@@ -14,7 +14,7 @@ geojson>=3.1
 # The ignition model is loaded and scored per request in services/ignition.py,
 # which needs pandas, numpy and a joblib'd scikit-learn model.
 pandas>=2.2.4
-numpy>=2.2
+numpy>=2.5.3
 scikit-learn>=1.5
 joblib>=1.4
 
